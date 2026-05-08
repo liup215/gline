@@ -1,0 +1,138 @@
+package tools
+
+// InitDefaultRegistry initializes the default registry with all built-in tools
+func InitDefaultRegistry() *Registry {
+	registry := NewRegistry()
+
+	// File operations - allowed in both modes (read-only in plan)
+	registry.Register(&ToolInfo{
+		Tool:                 NewReadFileTool(),
+		Category:             CategoryFile,
+		AllowedModes:         []string{"plan", "act"},
+		RequiresConfirmation: false,
+	})
+
+	registry.Register(&ToolInfo{
+		Tool:                 NewListFilesTool(),
+		Category:             CategoryFile,
+		AllowedModes:         []string{"plan", "act"},
+		RequiresConfirmation: false,
+	})
+
+	// File write operations - act mode only
+	registry.Register(&ToolInfo{
+		Tool:                 NewWriteFileTool(),
+		Category:             CategoryFile,
+		AllowedModes:         []string{"act"},
+		RequiresConfirmation: true,
+	})
+
+	registry.Register(&ToolInfo{
+		Tool:                 NewReplaceInFileTool(),
+		Category:             CategoryFile,
+		AllowedModes:         []string{"act"},
+		RequiresConfirmation: true,
+	})
+
+	// Search operations - allowed in both modes
+	registry.Register(&ToolInfo{
+		Tool:                 NewSearchFilesTool(),
+		Category:             CategorySearch,
+		AllowedModes:         []string{"plan", "act"},
+		RequiresConfirmation: false,
+	})
+
+	registry.Register(&ToolInfo{
+		Tool:                 NewListCodeDefinitionNamesTool(),
+		Category:             CategorySearch,
+		AllowedModes:         []string{"plan", "act"},
+		RequiresConfirmation: false,
+	})
+
+	// Command execution - act mode only
+	registry.Register(&ToolInfo{
+		Tool:                 NewExecuteCommandTool(),
+		Category:             CategoryCommand,
+		AllowedModes:         []string{"act"},
+		RequiresConfirmation: true,
+	})
+
+	// User interaction - allowed in both modes
+	registry.Register(&ToolInfo{
+		Tool:                 NewAskFollowupQuestionTool(),
+		Category:             CategoryInteraction,
+		AllowedModes:         []string{"plan", "act"},
+		RequiresConfirmation: false,
+	})
+
+	// Plan mode response - plan mode only
+	registry.Register(&ToolInfo{
+		Tool:                 NewPlanModeRespondTool(),
+		Category:             CategoryInteraction,
+		AllowedModes:         []string{"plan"},
+		RequiresConfirmation: false,
+	})
+
+	// Completion - allowed in both modes
+	registry.Register(&ToolInfo{
+		Tool:                 NewAttemptCompletionTool(),
+		Category:             CategoryCompletion,
+		AllowedModes:         []string{"plan", "act"},
+		RequiresConfirmation: false,
+	})
+
+	return registry
+}
+
+// GetDefaultTools returns a list of all default tools
+func GetDefaultTools() []Tool {
+	return []Tool{
+		NewReadFileTool(),
+		NewWriteFileTool(),
+		NewReplaceInFileTool(),
+		NewListFilesTool(),
+		NewSearchFilesTool(),
+		NewListCodeDefinitionNamesTool(),
+		NewExecuteCommandTool(),
+		NewAskFollowupQuestionTool(),
+		NewPlanModeRespondTool(),
+		NewAttemptCompletionTool(),
+	}
+}
+
+// GetToolsForMode returns tools available for a specific mode
+func GetToolsForMode(mode string) []Tool {
+	allTools := GetDefaultTools()
+	var filtered []Tool
+
+	for _, tool := range allTools {
+		// Check if tool is allowed in this mode
+		// This is a simplified check - in production, use the registry
+		switch tool.Name() {
+		case "write_to_file", "replace_in_file", "execute_command":
+			if mode == "act" {
+				filtered = append(filtered, tool)
+			}
+		case "plan_mode_respond":
+			if mode == "plan" {
+				filtered = append(filtered, tool)
+			}
+		default:
+			filtered = append(filtered, tool)
+		}
+	}
+
+	return filtered
+}
+
+// IsToolAllowed checks if a tool is allowed in a specific mode
+func IsToolAllowed(toolName string, mode string) bool {
+	switch toolName {
+	case "write_to_file", "replace_in_file", "execute_command":
+		return mode == "act"
+	case "plan_mode_respond":
+		return mode == "plan"
+	default:
+		return true
+	}
+}

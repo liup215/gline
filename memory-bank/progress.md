@@ -2,9 +2,9 @@
 
 ## 项目状态概览
 
-**当前阶段**: 架构设计与 Memory Bank 初始化
+**当前阶段**: Phase 2 核心模块已完成
 
-**总体进度**: 10% - 完成设计阶段，准备进入实现阶段
+**总体进度**: 35% - 完成核心模块，准备进入 LLM 集成
 
 ## 已完成工作
 
@@ -63,15 +63,8 @@
 - ✅ `activeContext.md` - 当前上下文和计划
 - ✅ `progress.md` - 本文件
 
-## 进行中工作
+### 5. Phase 1: 基础框架 ✅
 
-暂无
-
-## 待开始工作
-
-### Phase 1: 基础框架 ✅
-
-**优先级**: 高
 **时间**: 2026-05-08
 **状态**: 已完成
 
@@ -90,7 +83,7 @@
 - `gline --help` - 帮助信息
 - `gline -v` - 详细输出模式
 
-### Phase 0: 项目初始化 ✅
+### 6. Phase 0: 项目初始化 ✅
 
 **时间**: 2026-05-08
 **状态**: 已完成
@@ -108,28 +101,82 @@
   - [x] Linux (amd64, arm64)
   - [x] Windows (amd64)
 
-### Phase 2: 核心模块
+### 7. Phase 2: 核心模块 ✅
 
-**优先级**: 高
-**预计时间**: 2-3 周
+**时间**: 2026-05-08
+**状态**: 已完成
 
-- [ ] Agent 接口定义
-- [ ] Provider 接口定义
-- [ ] Tool 接口定义
-- [ ] 基础 Agent 循环
-- [ ] Plan/Act 模式切换
-- [ ] 工具注册表
-- [ ] 基础工具实现
+- [x] Agent 接口定义 (`internal/agent/agent.go`)
+  - Agent 核心接口 (Run, SetMode, GetMode, Abort, etc.)
+  - BaseAgent 实现
+  - Plan/Act 模式定义
+- [x] Provider 接口定义 (`internal/agent/provider.go`)
+  - Provider 接口 (CreateMessage, SupportsTools, etc.)
+  - MessageRequest/MessageResponse 类型
+  - ToolCall/ToolDefinition 类型
+- [x] Tool 接口定义 (`internal/tools/tool.go`)
+  - Tool 接口 (Name, Description, InputSchema, Execute)
+  - ToolInfo 元数据
+  - 常用 JSON Schema 定义
+- [x] 基础 Agent 循环 (`internal/agent/agent.go`)
+  - 消息处理循环
+  - 工具调用处理
+  - 错误处理和重试
+- [x] Plan/Act 模式切换
+  - SetMode/GetMode 方法
+  - 工具权限过滤
+- [x] 工具注册表 (`internal/tools/registry.go`)
+  - 工具注册/注销
+  - 模式过滤
+  - 线程安全
+- [x] 基础工具实现 (10个工具)
+  - 文件操作: read_file, write_to_file, replace_in_file, list_files
+  - 命令执行: execute_command
+  - 搜索工具: search_files, list_code_definition_names
+  - 交互工具: ask_followup_question, attempt_completion, plan_mode_respond
+- [x] Anthropic Provider 实现 (`internal/api/anthropic.go`)
+  - Claude API 集成
+  - 工具调用支持
+  - 流式响应准备
+- [x] Provider 注册表 (`internal/api/registry.go`)
+  - Provider 工厂模式
+  - 动态注册
+- [x] 系统提示词管理 (`internal/prompts/system.go`)
+  - Plan/Act 模式提示词
+  - 工具描述生成
 
-### Phase 3: LLM 集成
+**项目结构**:
+```
+gline/
+├── internal/
+│   ├── agent/          # Agent 核心 (agent.go, provider.go)
+│   ├── api/            # LLM Provider (anthropic.go, registry.go)
+│   ├── tools/          # 工具系统 (10个工具实现)
+│   ├── prompts/        # 系统提示词
+│   ├── config/         # 配置管理
+│   ├── log/            # 日志系统
+│   └── version/        # 版本管理
+├── pkg/
+│   └── types/          # 共享类型 (message.go)
+└── cmd/gline/          # CLI 入口
+```
+
+## 进行中工作
+
+暂无
+
+## 待开始工作
+
+### Phase 3: LLM 集成 ⏳
 
 **优先级**: 高
 **预计时间**: 1-2 周
+**状态**: 待开始
 
-- [ ] Anthropic Provider
-- [ ] OpenAI Provider
+- [ ] OpenAI Provider 实现
 - [ ] 流式响应处理
-- [ ] 错误处理
+- [ ] 错误处理增强
+- [ ] CLI 命令集成
 
 ### Phase 4: UI 层
 
@@ -178,8 +225,8 @@
 | 里程碑 | 目标日期 | 状态 |
 |--------|----------|------|
 | 架构设计完成 | 2026-05-08 | ✅ 完成 |
-| 基础框架可用 | 2026-05-15 | ⏳ 计划中 |
-| Agent 核心可用 | 2026-05-29 | ⏳ 计划中 |
+| 基础框架可用 | 2026-05-08 | ✅ 完成 |
+| Agent 核心可用 | 2026-05-08 | ✅ 完成 |
 | LLM 集成完成 | 2026-06-12 | ⏳ 计划中 |
 | Alpha 版本 | 2026-06-26 | ⏳ 计划中 |
 | Beta 版本 | 2026-07-26 | ⏳ 计划中 |
@@ -193,6 +240,12 @@
 - 完成技术选型
 - 完成架构设计
 - 创建 Memory Bank
+- 完成 Phase 1: 基础框架 (CLI, 配置, 日志)
+- 完成 Phase 2: 核心模块 (Agent, Provider, Tool 接口和实现)
+  - 实现 Agent 核心循环和模式管理
+  - 实现工具系统 (10个基础工具)
+  - 实现 Anthropic Provider
+  - 实现系统提示词管理
 
 ## 资源
 
