@@ -111,19 +111,40 @@ func InitDefaultRegistry() {
 		return NewAnthropicProvider(config.APIKey, config.Model), nil
 	})
 
-	// TODO: Register other providers (OpenAI, OpenRouter, etc.)
+	// Register OpenAI-compatible provider
+	// Supports OpenAI, OpenRouter, and any OpenAI-compatible API
+	RegisterDefault("openai", func(config ProviderConfig) (agent.Provider, error) {
+		return NewOpenAIProvider(config.APIKey, config.Model, config.BaseURL), nil
+	})
 }
 
 // GetProvider creates a provider instance with the given configuration
 func GetProvider(name string, apiKey string, model string) (agent.Provider, error) {
+	return GetProviderWithBaseURL(name, apiKey, model, "")
+}
+
+// GetProviderWithBaseURL creates a provider instance with base URL configuration
+// This is useful for OpenAI-compatible providers that need a custom endpoint
+func GetProviderWithBaseURL(name string, apiKey string, model string, baseURL string) (agent.Provider, error) {
 	// Initialize registry if not already done
 	if DefaultRegistry.Count() == 0 {
 		InitDefaultRegistry()
 	}
 
 	config := ProviderConfig{
-		APIKey: apiKey,
-		Model:  model,
+		APIKey:  apiKey,
+		Model:   model,
+		BaseURL: baseURL,
+	}
+
+	return DefaultRegistry.Create(name, config)
+}
+
+// GetProviderFromConfig creates a provider from a full ProviderConfig
+func GetProviderFromConfig(name string, config ProviderConfig) (agent.Provider, error) {
+	// Initialize registry if not already done
+	if DefaultRegistry.Count() == 0 {
+		InitDefaultRegistry()
 	}
 
 	return DefaultRegistry.Create(name, config)

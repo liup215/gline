@@ -167,13 +167,17 @@ gline/
 
 ## 待开始工作
 
-### Phase 3: LLM 集成 ⏳
+### Phase 3: LLM 集成 🔄
 
 **优先级**: 高
 **预计时间**: 1-2 周
-**状态**: 待开始
+**状态**: 进行中
 
-- [ ] OpenAI Provider 实现
+- [x] OpenAI Provider 实现 (通用 OpenAI 兼容 Provider)
+  - [x] 支持 OpenAI 官方 API
+  - [x] 支持自定义 base_url (OpenRouter, DashScope, 本地模型等)
+  - [x] 支持工具调用
+  - [x] 完整的错误处理
 - [ ] 流式响应处理
 - [ ] 错误处理增强
 - [ ] CLI 命令集成
@@ -246,6 +250,13 @@ gline/
   - 实现工具系统 (10个基础工具)
   - 实现 Anthropic Provider
   - 实现系统提示词管理
+- **Phase 3 进展**: 接入通用 OpenAI Provider
+  - 创建 `internal/api/openai.go` - OpenAI 兼容 Provider
+  - 支持任意 OpenAI API 兼容服务 (OpenAI, OpenRouter, DashScope, Ollama 等)
+  - 配置支持 `url`, `key`, `model` 三个参数
+  - 更新 Provider 注册表支持 openai
+  - 更新配置系统支持 `base_url` 配置
+  - 添加完整单元测试
 
 ## 资源
 

@@ -205,11 +205,19 @@ provider:
     model: claude-3-sonnet
   
   # OpenAI settings
+  # Supports OpenAI official API, OpenRouter, and any OpenAI-compatible endpoint
   openai:
     # API key (can also be set via GLINE_OPENAI_API_KEY env var)
     api_key: ""
-    # Model to use (gpt-4, gpt-4-turbo, gpt-3.5-turbo)
+    # Model to use (gpt-4, gpt-4-turbo, gpt-3.5-turbo, etc.)
     model: gpt-4
+    # Base URL for API (optional, defaults to OpenAI official API)
+    # Examples:
+    #   OpenAI: https://api.openai.com/v1
+    #   OpenRouter: https://openrouter.ai/api/v1
+    #   DashScope: https://dashscope.aliyuncs.com/compatible-mode/v1
+    #   Local (Ollama): http://localhost:11434/v1
+    base_url: ""
 
 # UI Settings
 ui:
