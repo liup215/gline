@@ -69,17 +69,26 @@
 
 ## 待开始工作
 
-### Phase 1: 基础框架
+### Phase 1: 基础框架 ✅
 
 **优先级**: 高
-**预计时间**: 1-2 周
+**时间**: 2026-05-08
+**状态**: 已完成
 
 - [x] 创建目录结构
 - [x] 初始化 go.mod
-- [x] 添加基础依赖
+- [x] 添加基础依赖 (Cobra, Viper, Zerolog)
 - [x] 实现 CLI 命令结构
-- [ ] 实现配置管理
-- [ ] 实现日志系统
+- [x] 实现配置管理 (三层配置：workspace > global > env)
+- [x] 实现日志系统 (结构化日志，多级别，彩色输出)
+
+**实现的功能**:
+- `gline` - 启动交互式模式
+- `gline chat <message>` - 单次对话
+- `gline config` - 配置管理子命令 (get, set, list, path)
+- `gline version` - 版本信息
+- `gline --help` - 帮助信息
+- `gline -v` - 详细输出模式
 
 ### Phase 0: 项目初始化 ✅
 

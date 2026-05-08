@@ -1,0 +1,283 @@
+// Package config provides configuration management for gline.
+// It supports three levels of configuration with the following priority:
+// 1. Workspace config (.gline/config.yaml in current directory)
+// 2. Global config (~/.gline/config.yaml)
+// 3. Environment variables (GLINE_* prefix)
+package config
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/spf13/viper"
+)
+
+// Config holds all configuration for gline
+type Config struct {
+	// LLM Provider settings
+	Provider ProviderConfig `mapstructure:"provider"`
+
+	// UI settings
+	UI UIConfig `mapstructure:"ui"`
+
+	// Logging settings
+	Log LogConfig `mapstructure:"log"`
+}
+
+// ProviderConfig holds LLM provider settings
+type ProviderConfig struct {
+	// Default provider to use (anthropic, openai, etc.)
+	Default string `mapstructure:"default"`
+
+	// Anthropic provider settings
+	Anthropic ProviderSettings `mapstructure:"anthropic"`
+
+	// OpenAI provider settings
+	OpenAI ProviderSettings `mapstructure:"openai"`
+}
+
+// ProviderSettings holds settings for a specific LLM provider
+type ProviderSettings struct {
+	// API Key for the provider
+	APIKey string `mapstructure:"api_key"`
+
+	// Model to use
+	Model string `mapstructure:"model"`
+
+	// Base URL for API (optional, for custom endpoints)
+	BaseURL string `mapstructure:"base_url"`
+}
+
+// UIConfig holds UI-related settings
+type UIConfig struct {
+	// Theme for TUI (default, dark, light)
+	Theme string `mapstructure:"theme"`
+
+	// Enable animations in TUI
+	Animations bool `mapstructure:"animations"`
+}
+
+// LogConfig holds logging settings
+type LogConfig struct {
+	// Log level (debug, info, warn, error)
+	Level string `mapstructure:"level"`
+
+	// Log file path
+	File string `mapstructure:"file"`
+}
+
+// Manager handles configuration loading and access
+type Manager struct {
+	viper      *viper.Viper
+	config     *Config
+	configPath string
+}
+
+// NewManager creates a new configuration manager
+func NewManager() *Manager {
+	return &Manager{
+		viper: viper.New(),
+	}
+}
+
+// Load loads configuration from all sources
+// Priority: workspace > global > environment variables
+func (m *Manager) Load() error {
+	// Set up viper with defaults
+	m.setupDefaults()
+
+	// Load global config first
+	if err := m.loadGlobalConfig(); err != nil {
+		return fmt.Errorf("failed to load global config: %w", err)
+	}
+
+	// Load workspace config (overrides global)
+	if err := m.loadWorkspaceConfig(); err != nil {
+		return fmt.Errorf("failed to load workspace config: %w", err)
+	}
+
+	// Load environment variables (lowest priority per user requirement)
+	m.loadEnvironmentVariables()
+
+	// Unmarshal into struct
+	m.config = &Config{}
+	if err := m.viper.Unmarshal(m.config); err != nil {
+		return fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
+	return nil
+}
+
+// setupDefaults sets default configuration values
+func (m *Manager) setupDefaults() {
+	m.viper.SetDefault("provider.default", "anthropic")
+	m.viper.SetDefault("ui.theme", "default")
+	m.viper.SetDefault("ui.animations", true)
+	m.viper.SetDefault("log.level", "info")
+	m.viper.SetDefault("log.file", filepath.Join(getGlobalConfigDir(), "logs", "gline.log"))
+}
+
+// loadGlobalConfig loads configuration from global config directory
+func (m *Manager) loadGlobalConfig() error {
+	configDir := getGlobalConfigDir()
+	configFile := filepath.Join(configDir, "config.yaml")
+
+	// Create config directory if it doesn't exist
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	// Create default config file if it doesn't exist
+	if _, err := os.Stat(configFile); os.IsNotExist(err) {
+		if err := m.createDefaultConfig(configFile); err != nil {
+			return fmt.Errorf("failed to create default config: %w", err)
+		}
+	}
+
+	m.viper.SetConfigFile(configFile)
+	m.viper.SetConfigType("yaml")
+
+	// Read config file (ignore if not found)
+	if err := m.viper.ReadInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// loadWorkspaceConfig loads configuration from current workspace
+func (m *Manager) loadWorkspaceConfig() error {
+	workspaceConfig := filepath.Join(".gline", "config.yaml")
+
+	// Check if workspace config exists
+	if _, err := os.Stat(workspaceConfig); os.IsNotExist(err) {
+		return nil // No workspace config, that's fine
+	}
+
+	// Load workspace config (overrides global)
+	workspaceViper := viper.New()
+	workspaceViper.SetConfigFile(workspaceConfig)
+	workspaceViper.SetConfigType("yaml")
+
+	if err := workspaceViper.ReadInConfig(); err != nil {
+		return err
+	}
+
+	// Merge workspace config into main viper (workspace takes precedence)
+	for _, key := range workspaceViper.AllKeys() {
+		m.viper.Set(key, workspaceViper.Get(key))
+	}
+
+	return nil
+}
+
+// loadEnvironmentVariables loads configuration from environment variables
+func (m *Manager) loadEnvironmentVariables() {
+	m.viper.SetEnvPrefix("GLINE")
+	m.viper.AutomaticEnv()
+
+	// Map specific environment variables
+	m.viper.BindEnv("provider.anthropic.api_key", "GLINE_ANTHROPIC_API_KEY")
+	m.viper.BindEnv("provider.openai.api_key", "GLINE_OPENAI_API_KEY")
+	m.viper.BindEnv("provider.default", "GLINE_PROVIDER")
+	m.viper.BindEnv("log.level", "GLINE_LOG_LEVEL")
+}
+
+// createDefaultConfig creates a default configuration file
+func (m *Manager) createDefaultConfig(configFile string) error {
+	defaultConfig := `# Gline Configuration File
+# This is the global configuration file for gline.
+# Workspace-specific settings can be placed in .gline/config.yaml
+
+# LLM Provider Settings
+provider:
+  # Default provider to use (anthropic, openai)
+  default: anthropic
+  
+  # Anthropic (Claude) settings
+  anthropic:
+    # API key (can also be set via GLINE_ANTHROPIC_API_KEY env var)
+    api_key: ""
+    # Model to use (claude-3-opus, claude-3-sonnet, claude-3-haiku)
+    model: claude-3-sonnet
+  
+  # OpenAI settings
+  openai:
+    # API key (can also be set via GLINE_OPENAI_API_KEY env var)
+    api_key: ""
+    # Model to use (gpt-4, gpt-4-turbo, gpt-3.5-turbo)
+    model: gpt-4
+
+# UI Settings
+ui:
+  # Theme: default, dark, light
+  theme: default
+  # Enable animations in TUI
+  animations: true
+
+# Logging Settings
+log:
+  # Log level: debug, info, warn, error
+  level: info
+  # Log file path
+  file: ""
+`
+
+	// Create parent directory
+	if err := os.MkdirAll(filepath.Dir(configFile), 0755); err != nil {
+		return err
+	}
+
+	return os.WriteFile(configFile, []byte(defaultConfig), 0644)
+}
+
+// Get returns the loaded configuration
+func (m *Manager) Get() *Config {
+	return m.config
+}
+
+// GetViper returns the underlying viper instance
+func (m *Manager) GetViper() *viper.Viper {
+	return m.viper
+}
+
+// getGlobalConfigDir returns the global configuration directory
+func getGlobalConfigDir() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		// Fallback to current directory
+		return ".gline"
+	}
+	return filepath.Join(homeDir, ".gline")
+}
+
+// Save persists the current configuration to file
+func (m *Manager) Save() error {
+	if m.configPath == "" {
+		m.configPath = filepath.Join(getGlobalConfigDir(), "config.yaml")
+	}
+	return m.viper.WriteConfigAs(m.configPath)
+}
+
+// Set sets a configuration value
+func (m *Manager) Set(key string, value interface{}) {
+	m.viper.Set(key, value)
+}
+
+// GetString gets a string configuration value
+func (m *Manager) GetString(key string) string {
+	return m.viper.GetString(key)
+}
+
+// GetBool gets a boolean configuration value
+func (m *Manager) GetBool(key string) bool {
+	return m.viper.GetBool(key)
+}
+
+// GetInt gets an integer configuration value
+func (m *Manager) GetInt(key string) int {
+	return m.viper.GetInt(key)
+}
