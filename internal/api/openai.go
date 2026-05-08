@@ -2,12 +2,14 @@
 package api
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/liup215/gline/internal/agent"
@@ -73,6 +75,7 @@ type OpenAIRequest struct {
 	Tools       []OpenAITool   `json:"tools,omitempty"`
 	Temperature float64        `json:"temperature,omitempty"`
 	MaxTokens   int            `json:"max_tokens,omitempty"`
+	Stream      bool           `json:"stream,omitempty"`
 }
 
 // OpenAIResponse represents the response from OpenAI API
@@ -83,6 +86,43 @@ type OpenAIResponse struct {
 	Model   string         `json:"model"`
 	Choices []OpenAIChoice `json:"choices"`
 	Usage   OpenAIUsage    `json:"usage"`
+}
+
+// OpenAIStreamResponse represents a streaming response chunk from OpenAI API
+type OpenAIStreamResponse struct {
+	ID      string               `json:"id"`
+	Object  string               `json:"object"`
+	Created int64                `json:"created"`
+	Model   string               `json:"model"`
+	Choices []OpenAIStreamChoice `json:"choices"`
+}
+
+// OpenAIStreamChoice represents a choice in the streaming response
+type OpenAIStreamChoice struct {
+	Index        int                `json:"index"`
+	Delta        OpenAIStreamDelta  `json:"delta"`
+	FinishReason string             `json:"finish_reason"`
+}
+
+// OpenAIStreamDelta represents the delta in a streaming response
+type OpenAIStreamDelta struct {
+	Role       string           `json:"role,omitempty"`
+	Content    string           `json:"content,omitempty"`
+	ToolCalls  []OpenAIStreamToolCall `json:"tool_calls,omitempty"`
+}
+
+// OpenAIStreamToolCall represents a tool call in a streaming response
+type OpenAIStreamToolCall struct {
+	Index    int             `json:"index"`
+	ID       string          `json:"id,omitempty"`
+	Type     string          `json:"type,omitempty"`
+	Function OpenAIStreamFunction `json:"function,omitempty"`
+}
+
+// OpenAIStreamFunction represents a function call in a streaming response
+type OpenAIStreamFunction struct {
+	Name      string `json:"name,omitempty"`
+	Arguments string `json:"arguments,omitempty"`
 }
 
 // OpenAIChoice represents a choice in the response
@@ -338,4 +378,215 @@ func (p *OpenAIProvider) SetHTTPClient(client *http.Client) {
 // GetBaseURL returns the current base URL
 func (p *OpenAIProvider) GetBaseURL() string {
 	return p.baseURL
+}
+
+// CreateMessageStream sends a message to the OpenAI-compatible API and returns a stream of responses
+func (p *OpenAIProvider) CreateMessageStream(ctx context.Context, req *agent.MessageRequest) (<-chan agent.StreamChunk, error) {
+	if p.apiKey == "" {
+		return nil, fmt.Errorf("API key is required")
+	}
+
+	// Create the channel for streaming chunks
+	chunkChan := make(chan agent.StreamChunk)
+
+	// Build the request in a goroutine
+	go func() {
+		defer close(chunkChan)
+
+		// Convert messages to OpenAI format
+		openaiMessages := make([]OpenAIMessage, 0, len(req.Messages))
+		for _, msg := range req.Messages {
+			switch msg.Role {
+			case types.RoleSystem:
+				openaiMessages = append(openaiMessages, OpenAIMessage{
+					Role:    "system",
+					Content: msg.Content,
+				})
+			case types.RoleUser:
+				openaiMessages = append(openaiMessages, OpenAIMessage{
+					Role:    "user",
+					Content: msg.Content,
+				})
+			case types.RoleAssistant:
+				openaiMessages = append(openaiMessages, OpenAIMessage{
+					Role:    "assistant",
+					Content: msg.Content,
+				})
+			case types.RoleTool:
+				openaiMessages = append(openaiMessages, OpenAIMessage{
+					Role:       "tool",
+					Content:    msg.Content,
+					ToolCallID: msg.ToolCallID,
+				})
+			}
+		}
+
+		// Add system prompt if provided
+		if req.SystemPrompt != "" {
+			systemMsg := OpenAIMessage{
+				Role:    "system",
+				Content: req.SystemPrompt,
+			}
+			openaiMessages = append([]OpenAIMessage{systemMsg}, openaiMessages...)
+		}
+
+		// Convert tools to OpenAI format
+		openaiTools := make([]OpenAITool, 0, len(req.Tools))
+		for _, tool := range req.Tools {
+			openaiTools = append(openaiTools, OpenAITool{
+				Type: "function",
+				Function: OpenAIToolFunction{
+					Name:        tool.Name,
+					Description: tool.Description,
+					Parameters:  tool.InputSchema,
+				},
+			})
+		}
+
+		// Build request
+		openaiReq := OpenAIRequest{
+			Model:       p.model,
+			Messages:    openaiMessages,
+			Temperature: req.Temperature,
+			MaxTokens:   req.MaxTokens,
+			Stream:      true,
+		}
+
+		// Only add tools if there are any
+		if len(openaiTools) > 0 {
+			openaiReq.Tools = openaiTools
+		}
+
+		// Set defaults
+		if openaiReq.MaxTokens == 0 {
+			openaiReq.MaxTokens = 4096
+		}
+		if openaiReq.Temperature == 0 {
+			openaiReq.Temperature = 0.0
+		}
+
+		// Serialize request
+		jsonBody, err := json.Marshal(openaiReq)
+		if err != nil {
+			chunkChan <- agent.StreamChunk{Error: fmt.Errorf("failed to marshal request: %w", err), Done: true}
+			return
+		}
+
+		// Create HTTP request
+		httpReq, err := http.NewRequestWithContext(ctx, "POST", p.baseURL, bytes.NewBuffer(jsonBody))
+		if err != nil {
+			chunkChan <- agent.StreamChunk{Error: fmt.Errorf("failed to create request: %w", err), Done: true}
+			return
+		}
+
+		// Set headers
+		httpReq.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
+
+		// Send request
+		resp, err := p.httpClient.Do(httpReq)
+		if err != nil {
+			chunkChan <- agent.StreamChunk{Error: fmt.Errorf("failed to send request: %w", err), Done: true}
+			return
+		}
+		defer resp.Body.Close()
+
+		// Check status code
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			var openaiErr OpenAIError
+			if err := json.Unmarshal(body, &openaiErr); err == nil && openaiErr.Error.Message != "" {
+				chunkChan <- agent.StreamChunk{
+					Error: fmt.Errorf("OpenAI API error: %s (type: %s, code: %s)",
+						openaiErr.Error.Message, openaiErr.Error.Type, openaiErr.Error.Code),
+					Done: true,
+				}
+			} else {
+				chunkChan <- agent.StreamChunk{
+					Error: fmt.Errorf("OpenAI API returned status %d: %s", resp.StatusCode, string(body)),
+					Done:  true,
+				}
+			}
+			return
+		}
+
+		// Parse SSE stream
+		reader := bufio.NewReader(resp.Body)
+		toolCalls := make(map[int]*agent.ToolCall)
+
+		for {
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				if err != io.EOF {
+					chunkChan <- agent.StreamChunk{Error: fmt.Errorf("error reading stream: %w", err), Done: true}
+				}
+				break
+			}
+
+			line = strings.TrimSpace(line)
+			if line == "" || !strings.HasPrefix(line, "data: ") {
+				continue
+			}
+
+			// Extract JSON data
+			data := strings.TrimPrefix(line, "data: ")
+			if data == "[DONE]" {
+				chunkChan <- agent.StreamChunk{Done: true}
+				break
+			}
+
+			// Parse stream response
+			var streamResp OpenAIStreamResponse
+			if err := json.Unmarshal([]byte(data), &streamResp); err != nil {
+				continue
+			}
+
+			if len(streamResp.Choices) == 0 {
+				continue
+			}
+
+			choice := streamResp.Choices[0]
+			delta := choice.Delta
+
+			// Handle content
+			if delta.Content != "" {
+				chunkChan <- agent.StreamChunk{
+					Content: delta.Content,
+				}
+			}
+
+			// Handle tool calls
+			for _, tc := range delta.ToolCalls {
+				if tc.Index >= 0 {
+					if toolCalls[tc.Index] == nil {
+						toolCalls[tc.Index] = &agent.ToolCall{
+							ID:   tc.ID,
+							Name: tc.Function.Name,
+						}
+					}
+					// Accumulate arguments
+					toolCalls[tc.Index].Input += tc.Function.Arguments
+				}
+			}
+
+			// Check finish reason
+			if choice.FinishReason != "" {
+				// Send any complete tool calls
+				for i := 0; i < len(toolCalls); i++ {
+					if tc, ok := toolCalls[i]; ok && tc.ID != "" {
+						chunkChan <- agent.StreamChunk{
+							ToolCall: tc,
+						}
+					}
+				}
+				chunkChan <- agent.StreamChunk{
+					FinishReason: choice.FinishReason,
+					Done:         true,
+				}
+				break
+			}
+		}
+	}()
+
+	return chunkChan, nil
 }

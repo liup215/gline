@@ -105,16 +105,21 @@ func initConfig() {
 // startInteractiveMode starts the interactive TUI mode
 func startInteractiveMode() {
 	log.Info("Starting gline in interactive mode")
-	fmt.Println("🚀 Welcome to gline!")
-	fmt.Println()
-	fmt.Println("Interactive mode is not yet implemented.")
-	fmt.Println("Use 'gline chat <message>' to start a conversation.")
-	fmt.Println()
-	fmt.Println("Available commands:")
-	fmt.Println("  gline chat <message>  Start a chat session")
-	fmt.Println("  gline config          Manage configuration")
-	fmt.Println("  gline version         Show version information")
-	fmt.Println("  gline --help          Show all options")
+
+	// Initialize agent
+	agentInstance, err := initializeAgent()
+	if err != nil {
+		log.Errorf("Failed to initialize agent: %v", err)
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		fmt.Println()
+		fmt.Println("To get started:")
+		fmt.Println("  1. Set your API key: gline config set provider.openai.apikey YOUR_API_KEY")
+		fmt.Println("  2. Or set environment variable: OPENAI_API_KEY=your_key")
+		os.Exit(1)
+	}
+
+	// Start TUI chat
+	runTUIChat(agentInstance)
 }
 
 // chatCmd represents the chat command
@@ -126,7 +131,7 @@ var chatCmd = &cobra.Command{
 You can provide a message directly:
   gline chat "How do I implement a REST API in Go?"
 
-Or start an interactive chat session:
+Or start an interactive TUI chat session (default):
   gline chat`,
 	Example: `  gline chat "Explain this code"
   gline chat --file main.go "Review this code"
@@ -137,15 +142,22 @@ Or start an interactive chat session:
 			message = args[0]
 		}
 
-		log.Infof("Starting chat with message: %s", message)
-		fmt.Println("💬 Chat mode")
-		fmt.Println()
-
-		if message != "" {
-			fmt.Printf("You: %s\n", message)
+		// Initialize agent
+		agentInstance, err := initializeAgent()
+		if err != nil {
+			log.Errorf("Failed to initialize agent: %v", err)
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
 		}
 
-		fmt.Println("Chat functionality will be implemented in Phase 2.")
+		if message != "" {
+			// Single message mode - non-interactive
+			runSingleMessage(agentInstance, message)
+		} else {
+			// Interactive TUI mode (default)
+			log.Info("Starting TUI chat mode")
+			runTUIChat(agentInstance)
+		}
 	},
 }
 

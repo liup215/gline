@@ -12,6 +12,10 @@ type Provider interface {
 	// CreateMessage sends a message to the LLM and returns the response
 	CreateMessage(ctx context.Context, req *MessageRequest) (*MessageResponse, error)
 
+	// CreateMessageStream sends a message to the LLM and returns a stream of responses
+	// This is used for real-time output in TUI mode
+	CreateMessageStream(ctx context.Context, req *MessageRequest) (<-chan StreamChunk, error)
+
 	// SupportsTools returns true if the provider supports tool/function calling
 	SupportsTools() bool
 
@@ -20,6 +24,27 @@ type Provider interface {
 
 	// GetProviderName returns the provider name (e.g., "anthropic", "openai")
 	GetProviderName() string
+}
+
+// StreamChunk represents a chunk of a streaming response
+type StreamChunk struct {
+	// Content is the text content delta (incremental)
+	Content string
+
+	// ToolCall contains a tool call if this chunk is a tool call
+	ToolCall *ToolCall
+
+	// FinishReason indicates why the response finished (if this is the last chunk)
+	FinishReason string
+
+	// Usage contains token usage information (if available, usually in the last chunk)
+	Usage TokenUsage
+
+	// Error contains any error that occurred during streaming
+	Error error
+
+	// Done is true when the stream is complete
+	Done bool
 }
 
 // MessageRequest represents a request to the LLM

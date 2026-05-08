@@ -165,32 +165,51 @@ gline/
 
 暂无
 
-## 待开始工作
+## 已完成工作
 
-### Phase 3: LLM 集成 🔄
+### Phase 3: LLM 集成 ✅
 
-**优先级**: 高
-**预计时间**: 1-2 周
-**状态**: 进行中
+**时间**: 2026-05-08
+**状态**: 已完成
 
 - [x] OpenAI Provider 实现 (通用 OpenAI 兼容 Provider)
   - [x] 支持 OpenAI 官方 API
   - [x] 支持自定义 base_url (OpenRouter, DashScope, 本地模型等)
   - [x] 支持工具调用
   - [x] 完整的错误处理
-- [ ] 流式响应处理
-- [ ] 错误处理增强
-- [ ] CLI 命令集成
+  - [x] 单元测试覆盖
+- [x] 流式响应处理
+  - [x] Provider 接口扩展 - 添加 `CreateMessageStream` 方法
+  - [x] OpenAI 流式响应支持 (SSE 解析)
+  - [x] Anthropic 流式响应支持 (SSE 解析)
+- [x] TUI 交互式界面
+  - [x] Bubbletea TUI 框架实现 (`internal/ui/tui.go`)
+  - [x] 消息历史显示区域
+  - [x] 输入框组件
+  - [x] 状态栏 (显示 Provider/模型/模式)
+  - [x] Plan/Act 模式切换 (Tab 键)
+  - [x] 快捷键支持 (Ctrl+C 退出, Ctrl+L 清屏)
+- [x] CLI 命令集成
+  - [x] `gline` 命令默认启动 TUI 交互模式
+  - [x] `gline chat` 默认启动 TUI 交互模式
+  - [x] `gline chat "message"` 单消息模式
+  - [x] Agent 自动初始化
+  - [x] 支持 OpenAI 和 Anthropic Provider
+- [x] 错误处理增强
+  - [x] API 密钥未配置时的友好错误提示
+  - [x] 流式响应错误处理
+  - [x] TUI 友好的错误显示
 
 ### Phase 4: UI 层
 
 **优先级**: 中
 **预计时间**: 2-3 周
+**状态**: 已完成 (基础 TUI)
 
-- [ ] TUI 基础框架
-- [ ] 纯文本模式
-- [ ] 交互式对话
-- [ ] 任务历史界面
+- [x] TUI 基础框架
+- [x] 纯文本模式
+- [x] 交互式对话
+- [ ] 任务历史界面 (待实现)
 
 ### Phase 5: 高级功能
 

@@ -34,21 +34,65 @@
      - ✅ 完整的错误处理
      - ✅ 单元测试覆盖
 
+### 已完成任务 ✅
+
+**Phase 3: LLM 集成 - 已完成**
+
+根据用户要求，`gline chat` 已默认进入**交互式多轮对话（TUI）模式**。
+
+已实现的组件：
+1. ✅ **OpenAI Provider** - 已完成
+2. ✅ **流式响应处理** - 为 TUI 提供实时输出能力
+3. ✅ **TUI 交互式界面** - Bubbletea 多轮对话界面
+4. ✅ **CLI 命令集成** - gline chat 默认 TUI 模式
+5. ⏳ **错误处理增强** - 基础错误处理已集成
+
+### 当前工作
+
+**Phase 3 已完成**：
+- ✅ Provider 接口扩展 - 添加 `CreateMessageStream` 方法
+- ✅ OpenAI 流式响应支持（SSE 解析）
+- ✅ Anthropic 流式响应支持
+- ✅ Bubbletea TUI 框架实现
+- ✅ 消息历史显示
+- ✅ 输入框和状态栏
+- ✅ CLI 命令集成 (`gline chat` 默认 TUI)
+- ✅ Agent 初始化集成
+- ✅ `gline` 命令（无参数）也启动 TUI 交互模式
+- ✅ API 密钥未配置时的友好错误提示
+
+### 使用方式
+
+```bash
+# 交互式 TUI 模式（默认）
+gline
+gline chat
+
+# 单消息模式
+gline chat "How do I implement a REST API in Go?"
+```
+
+### 配置 API 密钥
+
+```bash
+# 设置 OpenAI API 密钥
+gline config set provider.openai.apikey YOUR_API_KEY
+
+# 或使用环境变量
+export OPENAI_API_KEY=your_key
+
+# 设置 Anthropic API 密钥
+gline config set provider.anthropic.apikey YOUR_API_KEY
+export ANTHROPIC_API_KEY=your_key
+```
+
 ### 下一步计划
 
-**继续 Phase 3: LLM 集成**
-
-需要实现的组件：
-1. ✅ **OpenAI Provider** - 已完成
-2. **流式响应处理** - 实时输出 LLM 响应
-3. **错误处理增强** - API 错误恢复和重试
-4. **CLI 命令集成** - 将 Agent 集成到 chat 命令
-
-**建议的实施顺序**：
-1. ✅ 实现 OpenAI Provider (已完成)
-2. 添加流式响应支持
-3. 完善错误处理机制
-4. 集成到 CLI 命令
+**Phase 4: 高级功能**
+- 任务历史持久化
+- 配置管理界面
+- 性能优化
+- 测试覆盖提升
 
 ## 最近决策
 
