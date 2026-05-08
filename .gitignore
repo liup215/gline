@@ -10,6 +10,8 @@ cline/
 *.test
 *.out
 /vendor/
+/bin/
+/dist/
 
 # IDE
 .idea/
