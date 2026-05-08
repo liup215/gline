@@ -1,0 +1,241 @@
+# System Patterns
+
+## 架构概述
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         gline CLI                          │
+├─────────────────────────────────────────────────────────────┤
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
+│  │   Command   │  │     UI      │  │      Config       │  │
+│  │   Layer     │  │   Layer     │  │      Layer        │  │
+│  │  (cobra)    │  │ (bubbletea) │  │     (viper)       │  │
+│  └──────┬──────┘  └──────┬──────┘  └─────────┬───────────┘  │
+│         │                │                   │              │
+│         └────────────────┴───────────────────┘              │
+│                          │                                  │
+│                   ┌──────┴──────┐                          │
+│                   │   Agent     │                           │
+│                   │   Core      │                           │
+│                   └──────┬──────┘                           │
+│                          │                                  │
+│         ┌────────────────┼────────────────┐              │
+│         │                │                │              │
+│    ┌────┴────┐    ┌─────┴─────┐    ┌────┴────┐        │
+│    │  Tools  │    │   LLM     │    │ Storage │        │
+│    │Registry │    │ Providers │    │  Layer  │        │
+│    └─────────┘    └───────────┘    └─────────┘        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## 核心设计模式
+
+### 1. 模块化架构
+
+每个功能模块独立，通过接口通信：
+
+```go
+// Agent 模块
+package agent
+
+type Agent interface {
+    Run(ctx context.Context, prompt string) error
+    SetMode(mode Mode)
+    Abort()
+}
+
+// LLM Provider 模块
+package api
+
+type Provider interface {
+    CreateMessage(ctx context.Context, req *MessageRequest) (*MessageResponse, error)
+    SupportsTools() bool
+}
+
+// Tool 模块
+package tools
+
+type Tool interface {
+    Name() string
+    Description() string
+    Execute(ctx context.Context, input json.RawMessage) (string, error)
+}
+```
+
+### 2. Agent 循环模式
+
+```
+┌──────────┐     ┌──────────┐     ┌──────────┐
+│   Start  │────▶│  System  │────▶│  User    │
+└──────────┘     │  Prompt  │     │  Input   │
+                 └────┬─────┘     └────┬─────┘
+                      │                │
+                      └────────┬───────┘
+                               │
+                          ┌────┴────┐
+                          │   LLM   │
+                          └────┬────┘
+                               │
+                    ┌──────────┼──────────┐
+                    │          │          │
+               ┌────┴───┐ ┌────┴───┐ ┌───┴────┐
+               │  Text  │ │  Tool  │ │ Finish │
+               │Response│ │  Call  │ │        │
+               └────────┘ └───┬────┘ └────────┘
+                              │
+                         ┌────┴────┐
+                         │ Execute │
+                         │  Tool   │
+                         └────┬────┘
+                              │
+                              ▼
+                         ┌────────┐
+                         │ Result │
+                         │ (loop) │
+                         └────────┘
+```
+
+### 3. Plan/Act 模式切换
+
+```go
+type Mode string
+
+const (
+    ModePlan Mode = "plan"
+    ModeAct  Mode = "act"
+)
+
+type ModeManager struct {
+    currentMode Mode
+    toolFilter  map[Mode][]string // 每种模式允许的工具
+}
+
+func (m *ModeManager) CanUseTool(mode Mode, toolName string) bool {
+    allowedTools := m.toolFilter[mode]
+    for _, t := range allowedTools {
+        if t == toolName {
+            return true
+        }
+    }
+    return false
+}
+```
+
+### 4. 工具注册表模式
+
+```go
+type Registry struct {
+    tools map[string]Tool
+}
+
+func (r *Registry) Register(tool Tool) {
+    r.tools[tool.Name()] = tool
+}
+
+func (r *Registry) Get(name string) (Tool, error) {
+    tool, ok := r.tools[name]
+    if !ok {
+        return nil, fmt.Errorf("tool not found: %s", name)
+    }
+    return tool, nil
+}
+
+func (r *Registry) GetAll() []Tool {
+    // 返回所有工具
+}
+```
+
+### 5. 状态管理模式
+
+```go
+type StateManager struct {
+    globalState    map[string]interface{}
+    workspaceState map[string]interface{}
+    sessionState   map[string]interface{} // 非持久化
+    db             *sql.DB
+}
+
+func (s *StateManager) GetGlobalState(key string) interface{}
+func (s *StateManager) SetGlobalState(key string, value interface{})
+func (s *StateManager) GetWorkspaceState(key string) interface{}
+func (s *StateManager) SetSessionOverride(key string, value interface{}) // 仅当前会话
+```
+
+### 6. 消息流模式
+
+```go
+type Message struct {
+    Role    string          // "system", "user", "assistant"
+    Content string
+    ToolCalls []ToolCall    // 工具调用
+}
+
+type Conversation struct {
+    Messages []Message
+    MaxTokens int
+}
+
+func (c *Conversation) AddMessage(msg Message) {
+    c.Messages = append(c.Messages, msg)
+    c.trimIfNeeded()
+}
+```
+
+## 目录结构模式
+
+```
+gline/
+├── cmd/
+│   └── gline/
+│       └── main.go              # 入口点，最小化
+├── internal/
+│   ├── agent/                   # Agent 核心（私有）
+│   ├── api/                     # LLM 提供商
+│   ├── tools/                   # 工具实现
+│   ├── prompts/                 # 提示词管理
+│   ├── storage/                 # 状态管理
+│   ├── ui/                      # 用户界面
+│   │   ├── tui/                 # TUI 实现
+│   │   └── plain/               # 纯文本模式
+│   └── config/                  # 配置管理
+├── pkg/
+│   └── types/                   # 共享类型（可导出）
+└── memory-bank/                 # 项目文档
+```
+
+## 关键决策
+
+### 1. 为什么使用 internal/
+- 明确区分公共 API 和内部实现
+- 防止外部依赖内部模块
+- 便于未来重构
+
+### 2. 为什么分离 UI 层
+- 支持多种 UI 模式（TUI、纯文本）
+- 便于测试（可以 mock UI）
+- 清晰的关注点分离
+
+### 3. 为什么使用接口定义
+- 便于测试（mock 实现）
+- 支持多种实现（不同 LLM 提供商）
+- 降低模块间耦合
+
+### 4. 状态管理策略
+- **Global State**: 用户配置、认证信息（持久化）
+- **Workspace State**: 项目特定设置（持久化）
+- **Session State**: 临时覆盖（非持久化）
+
+## 扩展点
+
+### 添加新的 LLM 提供商
+1. 实现 `api.Provider` 接口
+2. 在 `api/registry.go` 中注册
+
+### 添加新的工具
+1. 实现 `tools.Tool` 接口
+2. 在 `tools/registry.go` 中注册
+3. 更新系统提示词
+
+### 添加新的 UI 模式
+1. 实现 UI 接口
+2. 在 `ui/` 下创建新包

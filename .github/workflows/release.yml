@@ -1,0 +1,259 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  GO_VERSION: '1.24.4'
+
+permissions:
+  contents: write
+
+jobs:
+  # 运行测试
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run tests
+        run: go test -v ./...
+
+  # 构建所有平台
+  build:
+    name: Build (${{ matrix.os }}-${{ matrix.arch }})
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          # macOS
+          - os: darwin
+            arch: amd64
+            ext: ''
+          - os: darwin
+            arch: arm64
+            ext: ''
+          # Linux
+          - os: linux
+            arch: amd64
+            ext: ''
+          - os: linux
+            arch: arm64
+            ext: ''
+          # Windows
+          - os: windows
+            arch: amd64
+            ext: '.exe'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Get version info
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          COMMIT=$(git rev-parse --short HEAD)
+          BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S')
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "COMMIT=$COMMIT" >> $GITHUB_OUTPUT
+          echo "BUILD_TIME=$BUILD_TIME" >> $GITHUB_OUTPUT
+          echo "Building version: $VERSION (commit: $COMMIT)"
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: 0
+        run: |
+          OUTPUT="gline-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}"
+          LDFLAGS="-X github.com/liup215/gline/internal/version.Version=${{ steps.version.outputs.VERSION }} \
+            -X github.com/liup215/gline/internal/version.Commit=${{ steps.version.outputs.COMMIT }} \
+            -X github.com/liup215/gline/internal/version.BuildTime=${{ steps.version.outputs.BUILD_TIME }} \
+            -s -w"
+          go build -ldflags "$LDFLAGS" -o "bin/$OUTPUT" ./cmd/gline
+          echo "Built: bin/$OUTPUT"
+
+      - name: Package binary
+        run: |
+          mkdir -p dist
+          BINARY="gline-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}"
+          if [ "${{ matrix.os }}" = "windows" ]; then
+            (cd bin && zip "../dist/$BINARY.zip" "$BINARY")
+          else
+            (cd bin && tar -czf "../dist/$BINARY.tar.gz" "$BINARY")
+          fi
+          ls -la dist/
+
+      - name: Generate checksum
+        run: |
+          cd dist
+          for f in gline-*; do
+            sha256sum "$f" >> checksums.txt
+          done
+          cat checksums.txt
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gline-${{ matrix.os }}-${{ matrix.arch }}
+          path: dist/gline-*
+          if-no-files-found: error
+
+  # 创建 GitHub Release
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: gline-*
+
+      - name: Prepare release files
+        run: |
+          mkdir -p release
+          # 复制所有构建产物
+          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "checksums.txt" \) -exec cp {} release/ \;
+          # 生成总校验和文件
+          cd release
+          sha256sum gline-* > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          
+          # 获取上一个标签
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "")
+          
+          if [ -z "$PREVIOUS_TAG" ]; then
+            # 如果没有上一个标签，获取所有提交
+            CHANGELOG=$(git log --pretty=format:"- %s" --no-merges)
+          else
+            # 获取两个标签之间的提交
+            CHANGELOG=$(git log --pretty=format:"- %s" --no-merges "$PREVIOUS_TAG..HEAD")
+          fi
+          
+          # 设置多行输出
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Release ${{ steps.changelog.outputs.version }}
+          body: |
+            ## Changes in ${{ steps.changelog.outputs.version }}
+
+            ${{ steps.changelog.outputs.changelog }}
+
+            ## Installation
+
+            ### macOS
+            ```bash
+            # Intel
+            curl -L -o gline.tar.gz https://github.com/${{ github.repository }}/releases/download/${{ steps.changelog.outputs.version }}/gline-darwin-amd64.tar.gz
+            tar -xzf gline.tar.gz
+            sudo mv gline /usr/local/bin/
+
+            # Apple Silicon
+            curl -L -o gline.tar.gz https://github.com/${{ github.repository }}/releases/download/${{ steps.changelog.outputs.version }}/gline-darwin-arm64.tar.gz
+            tar -xzf gline.tar.gz
+            sudo mv gline /usr/local/bin/
+            ```
+
+            ### Linux
+            ```bash
+            # AMD64
+            curl -L -o gline.tar.gz https://github.com/${{ github.repository }}/releases/download/${{ steps.changelog.outputs.version }}/gline-linux-amd64.tar.gz
+            tar -xzf gline.tar.gz
+            sudo mv gline /usr/local/bin/
+
+            # ARM64
+            curl -L -o gline.tar.gz https://github.com/${{ github.repository }}/releases/download/${{ steps.changelog.outputs.version }}/gline-linux-arm64.tar.gz
+            tar -xzf gline.tar.gz
+            sudo mv gline /usr/local/bin/
+            ```
+
+            ### Windows
+            Download `gline-windows-amd64.zip` and extract to your PATH.
+
+            ## Checksums
+            See `SHA256SUMS` file for checksums of all binaries.
+          files: release/*
+          draft: false
+          prerelease: ${{ contains(github.ref, '-rc') || contains(github.ref, '-beta') || contains(github.ref, '-alpha') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # 发布完成通知
+  notify:
+    name: Notify
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Release Summary
+        run: |
+          echo "## 🎉 Release Published!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Available Binaries" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Platform | Architecture |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------------|" >> $GITHUB_STEP_SUMMARY
+          echo "| macOS | amd64 |" >> $GITHUB_STEP_SUMMARY
+          echo "| macOS | arm64 |" >> $GITHUB_STEP_SUMMARY
+          echo "| Linux | amd64 |" >> $GITHUB_STEP_SUMMARY
+          echo "| Linux | arm64 |" >> $GITHUB_STEP_SUMMARY
+          echo "| Windows | amd64 |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📦 [View Release](https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }})" >> $GITHUB_STEP_SUMMARY
