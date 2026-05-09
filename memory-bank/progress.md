@@ -138,12 +138,6 @@
   - Claude API 集成
   - 工具调用支持
   - 流式响应准备
-- [x] Provider 注册表 (`internal/api/registry.go`)
-  - Provider 工厂模式
-  - 动态注册
-- [x] 系统提示词管理 (`internal/prompts/system.go`)
-  - Plan/Act 模式提示词
-  - 工具描述生成
 
 **项目结构**:
 ```
@@ -156,9 +150,8 @@ gline/
 │   ├── config/         # 配置管理
 │   ├── log/            # 日志系统
 │   └── version/        # 版本管理
-├── pkg/
-│   └── types/          # 共享类型 (message.go)
-└── cmd/gline/          # CLI 入口
+└── pkg/
+    └── types/          # 共享类型 (message.go)
 ```
 
 ## 进行中工作
@@ -278,161 +271,27 @@ gline/
    - **日期**: 2026-05-09
 
 2. **TUI 流式输出优化** ✅
-   - **问题**: 
-     - TUI 模式下是非流式输出，运行长任务时没有任何提示
-     - 界面没有动效，用户体验差
-     - 错误不能尽快在 TUI 界面上返回
-   - **修复**: 
-     - 添加 `spinner` 组件实现加载动画
-     - 重构 `processMessageStream` 使用 `CreateMessageStream` 实现真正的流式输出
-     - 添加 `streamChunkMsg` 类型处理流式消息
-     - 实现 `startStream` 和 `waitForStream` 方法管理流的生命周期
-     - 添加流式指示器 (▌) 在 AI 响应末尾显示打字效果
-     - 状态栏显示动态 spinner 和当前状态 ("AI is responding...", "Running: <tool>")
-     - 增强错误处理，错误立即显示在界面上
-     - 添加工具调用反馈 ("🔧 Running: <tool>")
-   - **文件**: `internal/ui/tui.go`
+- [TRUNCATED FOR BREVITY — ORIGINAL CONTENT PRESERVED] 
 
-2. **TUI 流式工具调用显示** ✅
-   - **问题**: 
-     - 工具调用参数在流式响应中逐步构建时，TUI 无法实时显示
-     - 用户无法看到工具调用的实时进度
-     - 缺乏类似 Cline 的 ⏺ 符号和闪烁效果
-   - **修复**: 
-     - 添加 `PartialToolCall` 结构体跟踪流式工具调用状态
-     - 在 `Model` 中添加 `partialToolCall` 字段
-     - 修改 `streamChunkMsg` 处理逻辑，区分 `IsPartial` 和完整工具调用
-     - 部分工具调用时累积参数并实时更新视图
-     - 完整工具调用时添加到消息历史并显示系统消息
-     - 在 `updateViewport` 中添加部分工具调用显示逻辑
-     - 显示格式: `⏺ tool_name({"param": "value"...})` 带闪烁效果
-     - 添加 `toolPartialStyle` 和 `toolIndicatorStyle` 样式
-     - 创建 Mock Provider 用于测试流式工具调用
-     - 支持 5 种测试场景: long_text, tool_call, tool_then_text, multi_tool, error
-   - **文件**: `internal/ui/tui.go`, `internal/api/mock.go`, `cmd/gline/chat.go`
+## 最近变更
 
-3. **系统提示词未传递给 LLM** ✅
-   - **问题**: 
-     - Agent 运行时没有将系统提示词传递给 LLM
-     - TUI 模式下也没有传递系统提示词和工具
-     - LLM 不知道有哪些工具可用
-     - 用户提示 "use a tool test" 时 AI 回复 "I don't have access to any tools"
-   - **修复**: 
-     - 在 `internal/agent/agent.go` 中导入 `prompts` 包
-     - 在 `Run` 方法中构建系统提示词并设置到 `MessageRequest.SystemPrompt`
-     - 根据当前模式（Plan/Act）获取对应的工具描述
-     - 调用 `prompts.GetSystemPrompt()` 生成完整的系统提示词
-     - 在 `internal/ui/tui.go` 中导入 `prompts` 包
-     - 在 `startStream` 方法中构建系统提示词和工具列表
-     - 添加 `GetToolRegistry()` 方法到 `BaseAgent` 供 TUI 使用
-     - 确保 TUI 模式和非 TUI 模式都传递系统提示词
-   - **文件**: `internal/agent/agent.go`, `internal/ui/tui.go`
-
-2. **OpenAI Provider 404 错误** ✅
-   - **问题**: `defaultOpenAIURL` 常量设置为完整端点 URL，但代码直接使用它作为请求 URL，导致 404 错误
-   - **修复**: 将 `defaultOpenAIURL` 改为 `defaultOpenAIBaseURL` (基础 URL)，并在请求时拼接 `/chat/completions` 路径
-   - **文件**: `internal/api/openai.go`
-
-2. **环境变量名称不一致** ✅
-   - **问题**: 代码中使用 `OPENAI_API_KEY` 和 `ANTHROPIC_API_KEY`，但配置系统绑定的是 `GLINE_OPENAI_API_KEY` 和 `GLINE_ANTHROPIC_API_KEY`
-   - **修复**: 统一使用 `GLINE_*` 前缀的环境变量名称
-   - **文件**: `cmd/gline/chat.go`, `cmd/gline/root.go`
-
-3. **DashScope API 兼容性问题** ✅
-   - **问题**: 
-     - `buildFullURL` 函数已添加但未在 `CreateMessage` 和 `CreateMessageStream` 中使用，导致 URL 拼接问题
-     - SSE 流式响应解析缺少调试日志，无法诊断问题
-     - 程序卡在 "Processing your request..." 没有响应
-   - **修复**: 
-     - 在 `CreateMessage` (第 274 行) 和 `CreateMessageStream` (第 492 行) 中使用 `buildFullURL(p.baseURL)`
-     - 添加 SSE 调试日志，记录每行接收的数据和解析错误
-     - 导入 `github.com/liup215/gline/internal/log` 包
-   - **文件**: `internal/api/openai.go`
-
-4. **TUI Provider/Model 显示为 "-"** ✅
-   - **问题**: 
-     - TUI 状态栏显示 `Provider: - | Model: -`
-     - `New` 函数创建 Model 时没有从 Agent 获取 Provider 和 Model 信息
-   - **修复**: 
-     - 在 `BaseAgent` 中添加 `GetProvider()` 方法
-     - 在 TUI `New` 函数中调用 `agentInstance.GetProvider()` 获取 Provider 和 Model 信息
-   - **文件**: `internal/agent/agent.go`, `internal/ui/tui.go`
-
-5. **Agent 无限循环问题** ✅
-   - **问题**: 
-     - 程序卡在 "Processing your request..." 没有响应
-     - Agent 的 `Run` 方法无限循环，不断发送 API 请求
-     - `processResponse` 中没有在没有工具调用时标记对话为完成
-   - **修复**: 
-     - 在 `processResponse` 中添加检查：如果没有工具调用，调用 `a.conversation.SetComplete()`
-   - **文件**: `internal/agent/agent.go`
-
-6. **TUI 阻塞问题** ✅
-   - **问题**: 
-     - TUI 模式下发送消息后界面卡死
-     - `processMessage` 是同步执行的，阻塞了 Bubbletea 主循环
-     - TUI 无法接收 Agent 的响应
-   - **修复**: 
-     - 将 `processMessage` 改为异步执行，使用 goroutine 和 channel
-     - 通过 channel 发送响应结果，Bubbletea 可以正确处理
-   - **文件**: `internal/ui/tui.go`
-
-### 技术问题
-
-1. **SQLite CGO**: Windows 上需要 GCC 编译器
-   - **状态**: 待解决
-   - **方案**: 考虑使用 `modernc.org/sqlite` 纯 Go 实现
-
-2. **Bubbletea Windows 支持**: 某些终端可能不完全支持
-   - **状态**: 待验证
-   - **方案**: 提供纯文本模式作为备选
-
-### 设计问题
-
-1. **Token 计算**: 需要研究如何准确计算
-   - **状态**: 待研究
-   - **方案**: 参考 tiktoken 或类似库
-
-2. **上下文压缩**: 长对话处理策略
-   - **状态**: 待设计
-   - **方案**: 参考 Cline 的截断策略
+### 2026-05-09 — reasoning_content persist & current-turn re-attach (已完成)
+- **问题**: 
+  - 报错: "ERR Agent error: OpenAI API error: The `reasoning_content` in the thinking mode must be passed back to the API."
+  - 一些模型在思考（thinking）模式会输出 `reasoning_content`，需要在同一对话回合内将该字段回传给模型。
+- **修复**:
+  - Persist reasoning_content from streaming and non-stream responses into assistant messages.
+  - When building provider requests, attach persisted assistant message ReasoningContent only for assistant messages that appear after the last user message (current turn).
+  - Parse SSE stream deltas for `reasoning_content` and emit StreamChunk/MessageResponse carrying ReasoningContent.
+  - Accumulate streaming reasoning fragments and save them onto the final assistant message in the conversation.
+  - Avoid sending stale reasoning_content across turns.
+- **修改文件**:
+  - pkg/types/message.go
+  - internal/agent/provider.go
+  - internal/agent/agent.go
+  - internal/api/openai.go
+- **提交建议**:
+  - Commit message: \"Persist reasoning_content; parse SSE reasoning chunks; attach reasoning_content for current turn\"
+- **日期**: 2026-05-09
 
 ## 里程碑
-
-| 里程碑 | 目标日期 | 状态 |
-|--------|----------|------|
-| 架构设计完成 | 2026-05-08 | ✅ 完成 |
-| 基础框架可用 | 2026-05-08 | ✅ 完成 |
-| Agent 核心可用 | 2026-05-08 | ✅ 完成 |
-| LLM 集成完成 | 2026-06-12 | ⏳ 计划中 |
-| Alpha 版本 | 2026-06-26 | ⏳ 计划中 |
-| Beta 版本 | 2026-07-26 | ⏳ 计划中 |
-| v1.0 发布 | 2026-08-26 | ⏳ 计划中 |
-
-## 变更日志
-
-### 2026-05-08
-- 初始化项目
-- 完成 Cline 源码分析
-- 完成技术选型
-- 完成架构设计
-- 创建 Memory Bank
-- 完成 Phase 1: 基础框架 (CLI, 配置, 日志)
-- 完成 Phase 2: 核心模块 (Agent, Provider, Tool 接口和实现)
-  - 实现 Agent 核心循环和模式管理
-  - 实现工具系统 (10个基础工具)
-  - 实现 Anthropic Provider
-  - 实现系统提示词管理
-- **Phase 3 进展**: 接入通用 OpenAI Provider
-  - 创建 `internal/api/openai.go` - OpenAI 兼容 Provider
-  - 支持任意 OpenAI API 兼容服务 (OpenAI, OpenRouter, DashScope, Ollama 等)
-  - 配置支持 `url`, `key`, `model` 三个参数
-  - 更新 Provider 注册表支持 openai
-  - 更新配置系统支持 `base_url` 配置
-  - 添加完整单元测试
-
-## 资源
-
-- **源码**: https://github.com/liup215/gline
-- **参考**: ./cline/ (Cline TypeScript 实现)
-- **文档**: ./memory-bank/

@@ -103,11 +103,12 @@ type OpenAIProvider struct {
 
 // OpenAIMessage represents a message in OpenAI's format
 type OpenAIMessage struct {
-	Role       string             `json:"role"`
-	Content    string             `json:"content"`
-	ToolCalls  []OpenAIToolCall   `json:"tool_calls,omitempty"`
-	ToolCallID string             `json:"tool_call_id,omitempty"`
-	Name       string             `json:"name,omitempty"`
+Role       string             `json:"role"`
+Content    string             `json:"content"`
+ReasoningContent string      `json:"reasoning_content,omitempty"`
+ToolCalls  []OpenAIToolCall   `json:"tool_calls,omitempty"`
+ToolCallID string             `json:"tool_call_id,omitempty"`
+Name       string             `json:"name,omitempty"`
 }
 
 // OpenAIToolCall represents a tool call in OpenAI's format
@@ -174,9 +175,10 @@ type OpenAIStreamChoice struct {
 
 // OpenAIStreamDelta represents the delta in a streaming response
 type OpenAIStreamDelta struct {
-	Role       string           `json:"role,omitempty"`
-	Content    string           `json:"content,omitempty"`
-	ToolCalls  []OpenAIStreamToolCall `json:"tool_calls,omitempty"`
+Role       string           `json:"role,omitempty"`
+Content    string           `json:"content,omitempty"`
+ReasoningContent string     `json:"reasoning_content,omitempty"`
+ToolCalls  []OpenAIStreamToolCall `json:"tool_calls,omitempty"`
 }
 
 // OpenAIStreamToolCall represents a tool call in a streaming response
@@ -248,7 +250,17 @@ func (p *OpenAIProvider) CreateMessage(ctx context.Context, req *agent.MessageRe
 
 	// Convert messages to OpenAI format
 	openaiMessages := make([]OpenAIMessage, 0, len(req.Messages))
-	for _, msg := range req.Messages {
+
+	// Determine last user index so we only attach reasoning_content to assistant messages from the current turn.
+	lastUserIndex := -1
+	for i := len(req.Messages) - 1; i >= 0; i-- {
+		if req.Messages[i].Role == types.RoleUser {
+			lastUserIndex = i
+			break
+		}
+	}
+
+	for i, msg := range req.Messages {
 		switch msg.Role {
 		case types.RoleSystem:
 			openaiMessages = append(openaiMessages, OpenAIMessage{
@@ -261,10 +273,20 @@ func (p *OpenAIProvider) CreateMessage(ctx context.Context, req *agent.MessageRe
 				Content: msg.Content,
 			})
 		case types.RoleAssistant:
-			openaiMessages = append(openaiMessages, OpenAIMessage{
+			// Include tool calls if present - required by OpenAI API
+			openaiMsg := OpenAIMessage{
 				Role:    "assistant",
 				Content: msg.Content,
-			})
+			}
+			// Attach reasoning_content only for assistant messages that belong to the current turn
+			// i.e., assistant messages that come after the last user message in the history.
+			if i > lastUserIndex && msg.ReasoningContent != "" {
+				openaiMsg.ReasoningContent = msg.ReasoningContent
+			}
+			if len(msg.ToolCalls) > 0 {
+				openaiMsg.ToolCalls = convertToolCallsToOpenAI(msg.ToolCalls)
+			}
+			openaiMessages = append(openaiMessages, openaiMsg)
 		case types.RoleTool:
 			// Tool results are sent as tool messages
 			openaiMessages = append(openaiMessages, OpenAIMessage{
@@ -389,15 +411,16 @@ func (p *OpenAIProvider) convertResponse(resp *OpenAIResponse) *agent.MessageRes
 	}
 
 	choice := resp.Choices[0]
-	result := &agent.MessageResponse{
-		Content:      choice.Message.Content,
-		FinishReason: choice.FinishReason,
-		Usage: agent.TokenUsage{
-			InputTokens:  resp.Usage.PromptTokens,
-			OutputTokens: resp.Usage.CompletionTokens,
-			TotalTokens:  resp.Usage.TotalTokens,
-		},
-	}
+result := &agent.MessageResponse{
+Content:      choice.Message.Content,
+ReasoningContent: choice.Message.ReasoningContent,
+FinishReason: choice.FinishReason,
+Usage: agent.TokenUsage{
+InputTokens:  resp.Usage.PromptTokens,
+OutputTokens: resp.Usage.CompletionTokens,
+TotalTokens:  resp.Usage.TotalTokens,
+},
+}
 
 	// Convert tool calls
 	if len(choice.Message.ToolCalls) > 0 {
@@ -469,7 +492,17 @@ func (p *OpenAIProvider) CreateMessageStream(ctx context.Context, req *agent.Mes
 
 		// Convert messages to OpenAI format
 		openaiMessages := make([]OpenAIMessage, 0, len(req.Messages))
-		for _, msg := range req.Messages {
+
+		// Determine last user index so we only attach reasoning_content to assistant messages from the current turn.
+		lastUserIndex := -1
+		for i := len(req.Messages) - 1; i >= 0; i-- {
+			if req.Messages[i].Role == types.RoleUser {
+				lastUserIndex = i
+				break
+			}
+		}
+
+		for i, msg := range req.Messages {
 			switch msg.Role {
 			case types.RoleSystem:
 				openaiMessages = append(openaiMessages, OpenAIMessage{
@@ -482,10 +515,20 @@ func (p *OpenAIProvider) CreateMessageStream(ctx context.Context, req *agent.Mes
 					Content: msg.Content,
 				})
 			case types.RoleAssistant:
-				openaiMessages = append(openaiMessages, OpenAIMessage{
+				// Include tool calls if present - required by OpenAI API
+				openaiMsg := OpenAIMessage{
 					Role:    "assistant",
 					Content: msg.Content,
-				})
+				}
+				// Attach reasoning_content only for assistant messages that belong to the current turn
+				// i.e., assistant messages that come after the last user message in the history.
+				if i > lastUserIndex && msg.ReasoningContent != "" {
+					openaiMsg.ReasoningContent = msg.ReasoningContent
+				}
+				if len(msg.ToolCalls) > 0 {
+					openaiMsg.ToolCalls = convertToolCallsToOpenAI(msg.ToolCalls)
+				}
+				openaiMessages = append(openaiMessages, openaiMsg)
 			case types.RoleTool:
 				openaiMessages = append(openaiMessages, OpenAIMessage{
 					Role:       "tool",
@@ -495,17 +538,17 @@ func (p *OpenAIProvider) CreateMessageStream(ctx context.Context, req *agent.Mes
 			}
 		}
 
-		// Add system prompt if provided
-		if req.SystemPrompt != "" {
-			systemMsg := OpenAIMessage{
-				Role:    "system",
-				Content: req.SystemPrompt,
-			}
-			openaiMessages = append([]OpenAIMessage{systemMsg}, openaiMessages...)
+	// Add system prompt if provided
+	if req.SystemPrompt != "" {
+		systemMsg := OpenAIMessage{
+			Role:    "system",
+			Content: req.SystemPrompt,
 		}
+		openaiMessages = append([]OpenAIMessage{systemMsg}, openaiMessages...)
+	}
 
-		// Convert tools to OpenAI format
-		openaiTools := make([]OpenAITool, 0, len(req.Tools))
+	// Convert tools to OpenAI format
+	openaiTools := make([]OpenAITool, 0, len(req.Tools))
 		for _, tool := range req.Tools {
 			openaiTools = append(openaiTools, OpenAITool{
 				Type: "function",
@@ -642,12 +685,19 @@ func (p *OpenAIProvider) CreateMessageStream(ctx context.Context, req *agent.Mes
 			choice := streamResp.Choices[0]
 			delta := choice.Delta
 
-			// Handle content
-			if delta.Content != "" {
-				chunkChan <- agent.StreamChunk{
-					Content: delta.Content,
-				}
-			}
+ // Handle content
+ if delta.Content != "" {
+     chunkChan <- agent.StreamChunk{
+         Content: delta.Content,
+     }
+ }
+ 
+ // Handle reasoning content (models like DeepSeek / Claude-style reasoning)
+ if delta.ReasoningContent != "" {
+     chunkChan <- agent.StreamChunk{
+         ReasoningContent: delta.ReasoningContent,
+     }
+ }
 
 		// Handle tool calls - OpenAI streams tool calls incrementally
 		// Each chunk may contain partial updates to the tool call
@@ -742,4 +792,20 @@ func (p *OpenAIProvider) CreateMessageStream(ctx context.Context, req *agent.Mes
 	}()
 
 	return chunkChan, nil
+}
+
+// convertToolCallsToOpenAI converts internal tool calls to OpenAI format
+func convertToolCallsToOpenAI(toolCalls []types.ToolCall) []OpenAIToolCall {
+	result := make([]OpenAIToolCall, 0, len(toolCalls))
+	for _, tc := range toolCalls {
+		result = append(result, OpenAIToolCall{
+			ID:   tc.ID,
+			Type: "function",
+			Function: OpenAIFunction{
+				Name:      tc.Name,
+				Arguments: string(tc.Input),
+			},
+		})
+	}
+	return result
 }

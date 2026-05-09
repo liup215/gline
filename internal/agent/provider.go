@@ -31,6 +31,9 @@ type StreamChunk struct {
 	// Content is the text content delta (incremental)
 	Content string
 
+	// ReasoningContent is optional model-provided internal reasoning/thinking delivered in the stream
+	ReasoningContent string
+
 	// ToolCall contains a tool call if this chunk is a tool call
 	ToolCall *ToolCall
 
@@ -74,6 +77,9 @@ type MessageRequest struct {
 type MessageResponse struct {
 	// Content is the text content of the response
 	Content string
+
+	// ReasoningContent carries model-provided internal reasoning/thinking (if any)
+	ReasoningContent string
 
 	// ToolCalls contains any tool calls requested by the LLM
 	ToolCalls []ToolCall

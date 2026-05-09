@@ -28,6 +28,9 @@ type Message struct {
 	// Content is the message content
 	Content string
 
+	// ReasoningContent stores model-provided internal reasoning/thinking (if any)
+	ReasoningContent string
+
 	// ToolCalls contains tool calls from the assistant
 	ToolCalls []ToolCall
 

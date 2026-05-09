@@ -250,11 +250,12 @@ func (a *BaseAgent) processResponse(ctx context.Context, resp *MessageResponse) 
 		})
 	}
 
-	// Add assistant message to conversation
+	// Add assistant message to conversation, include any reasoning_content the provider returned
 	a.conversation.AddMessage(types.Message{
-		Role:      types.RoleAssistant,
-		Content:   resp.Content,
-		ToolCalls: toolCalls,
+		Role:            types.RoleAssistant,
+		Content:         resp.Content,
+		ReasoningContent: resp.ReasoningContent,
+		ToolCalls:       toolCalls,
 	})
 
 	// Handle tool calls
@@ -361,6 +362,7 @@ func (a *BaseAgent) GetToolRegistry() *tools.Registry {
 // processStream handles the streaming response from the LLM
 func (a *BaseAgent) processStream(ctx context.Context, streamChan <-chan StreamChunk, callback StreamCallback) error {
 	var content strings.Builder
+	var reasoning strings.Builder
 	var toolCalls []ToolCall
 
 	for chunk := range streamChan {
@@ -376,6 +378,13 @@ func (a *BaseAgent) processStream(ctx context.Context, streamChan <-chan StreamC
 		if chunk.Content != "" {
 			content.WriteString(chunk.Content)
 			callback.OnContent(chunk.Content)
+		}
+
+		// Handle reasoning content (internal/model thinking). Accumulate but don't mix into visible content.
+		if chunk.ReasoningContent != "" {
+			reasoning.WriteString(chunk.ReasoningContent)
+			// Do not send reasoning to OnContent by default to avoid showing internal thoughts in the main UI.
+			// If the UI wants to surface reasoning in the future, add a dedicated callback method.
 		}
 
 		// Handle tool call
@@ -414,11 +423,12 @@ func (a *BaseAgent) processStream(ctx context.Context, streamChan <-chan StreamC
 		})
 	}
 
-	// Add assistant message to conversation
+	// Add assistant message to conversation, including any accumulated reasoning content
 	a.conversation.AddMessage(types.Message{
-		Role:      types.RoleAssistant,
-		Content:   content.String(),
-		ToolCalls: typesToolCalls,
+		Role:            types.RoleAssistant,
+		Content:         content.String(),
+		ReasoningContent: reasoning.String(),
+		ToolCalls:       typesToolCalls,
 	})
 
 	// If there are no tool calls, mark conversation as complete
@@ -426,7 +436,7 @@ func (a *BaseAgent) processStream(ctx context.Context, streamChan <-chan StreamC
 	if len(typesToolCalls) == 0 {
 		a.conversation.SetComplete()
 	}
-	
+
 	return nil
 }
 
