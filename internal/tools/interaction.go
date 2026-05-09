@@ -12,6 +12,8 @@ import (
 // AskFollowupQuestionTool asks the user a question
 type AskFollowupQuestionTool struct {
 	BaseTool
+	// handler, when set, will be used to prompt the user (e.g., TUI). It should return the user's answer.
+	handler func(question string, options []string) (string, error)
 }
 
 // AskFollowupQuestionInput represents the input for ask_followup_question tool
@@ -31,6 +33,11 @@ func NewAskFollowupQuestionTool() *AskFollowupQuestionTool {
 	}
 }
 
+// SetHandler sets a custom handler for prompting the user. If nil, the tool falls back to CLI stdin.
+func (t *AskFollowupQuestionTool) SetHandler(h func(question string, options []string) (string, error)) {
+	t.handler = h
+}
+
 // Execute asks the user a question
 func (t *AskFollowupQuestionTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
 	var req AskFollowupQuestionInput
@@ -42,12 +49,41 @@ func (t *AskFollowupQuestionTool) Execute(ctx context.Context, input json.RawMes
 		return "", fmt.Errorf("question is required")
 	}
 
-	// Print question
+	// If a handler is provided (e.g., the TUI), delegate the prompt to it.
+	if t.handler != nil {
+		type resp struct {
+			ans string
+			err error
+		}
+		ch := make(chan resp, 1)
+		go func() {
+			a, e := t.handler(req.Question, req.Options)
+			ch <- resp{ans: a, err: e}
+		}()
+
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case r := <-ch:
+			if r.err != nil {
+				return "", r.err
+			}
+			answer := strings.TrimSpace(r.ans)
+			// If options provided and user answered a number, map it.
+			if len(req.Options) > 0 {
+				if num, err := parseInt(answer); err == nil && num > 0 && num <= len(req.Options) {
+					answer = req.Options[num-1]
+				}
+			}
+			return fmt.Sprintf("User answered: %s", answer), nil
+		}
+	}
+
+	// Fallback: CLI prompt using stdin
 	fmt.Println()
 	fmt.Println("❓", req.Question)
 	fmt.Println()
 
-	// Show options if provided
 	if len(req.Options) > 0 {
 		fmt.Println("Options:")
 		for i, opt := range req.Options {
@@ -56,7 +92,6 @@ func (t *AskFollowupQuestionTool) Execute(ctx context.Context, input json.RawMes
 		fmt.Println()
 	}
 
-	// Read user input
 	fmt.Print("Your answer: ")
 	reader := bufio.NewReader(os.Stdin)
 	answer, err := reader.ReadString('\n')
@@ -66,9 +101,7 @@ func (t *AskFollowupQuestionTool) Execute(ctx context.Context, input json.RawMes
 
 	answer = strings.TrimSpace(answer)
 
-	// Validate option selection
 	if len(req.Options) > 0 {
-		// Check if user entered a number
 		if num, err := parseInt(answer); err == nil && num > 0 && num <= len(req.Options) {
 			answer = req.Options[num-1]
 		}
@@ -157,16 +190,15 @@ type PlanModeRespondInput struct {
 // NewPlanModeRespondTool creates a new plan_mode_respond tool
 func NewPlanModeRespondTool() *PlanModeRespondTool {
 	schema := json.RawMessage(`{
-		"type": "object",
-		"properties": {
-			"response": {
-				"type": "string",
-				"description": "The response to present to the user in plan mode"
-			}
-		},
-		"required": ["response"]
-	}`)
-
+"type": "object",
+"properties": {
+"response": {
+"type": "string",
+"description": "The response to present to the user in plan mode"
+}
+},
+"required": ["response"]
+}`)
 	return &PlanModeRespondTool{
 		BaseTool: BaseTool{
 			name:        "plan_mode_respond",

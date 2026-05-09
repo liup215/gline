@@ -51,6 +51,38 @@
 4. ✅ **CLI 命令集成** - gline chat 默认 TUI 模式
 5. ⏳ **错误处理增强** - 基础错误处理已集成
 
+### 最新完成任务 ✅
+
+**✅ TUI 交互式问答功能（ask_followup_question）已完成** (2026-05-09)
+
+实现了 TUI 模式下的完整交互式问答流程，现在 AI 可以通过 `ask_followup_question` 工具与用户进行多轮交互。
+
+**实现功能**:
+1. **TUI 问答界面** - 美观的问题和选项显示样式
+2. **双向通信** - Agent 通过回调向 TUI 提问，TUI 通过 channel 返回答案
+3. **优雅降级** - CLI 模式下自动降级到 stdin 输入
+4. **处理器注入** - 在工具执行前动态注入 TUI handler
+5. **Esc 中断支持** - 用户可以随时按 Esc 中断正在运行的任务
+
+**修改的文件**:
+- `internal/agent/provider.go` - 扩展 `StreamCallback` 接口，添加 `AskFollowupQuestion` 方法
+- `internal/tools/interaction.go` - `AskFollowupQuestionTool` 支持处理器注入
+- `internal/agent/agent.go` - 在工具执行前注入 TUI/callback handler
+- `internal/ui/tui.go` - 实现完整的问答交互流程和 Esc 中断
+- `internal/agent/agent_test.go` - 更新测试实现新接口
+
+**技术实现**:
+- 使用 channel 实现同步问答（`pendingReply chan string`）
+- TUI 通过 `askQuestionMsg` 消息传递问题和回复通道
+- Agent 阻塞等待用户回答，保证执行顺序
+- 支持数字选项和自由文本输入
+
+**额外改进**:
+- 优化工具调用显示，展示完整的 input 参数（带 JSON 格式化）
+- 改进 markdown 渲染的字宽处理，避免文本溢出
+- 添加工具描述映射表，提供友好的工具名称展示
+- Esc 键支持任务中断，通过 `context.CancelFunc` 实现
+
 ### 当前工作
 
 **✅ TUI 和 Chat 模式响应问题已完全修复并启用工具执行**

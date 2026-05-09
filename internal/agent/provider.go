@@ -1,10 +1,15 @@
 package agent
 
 import (
-	"context"
-	"encoding/json"
+"context"
+"encoding/json"
+"fmt"
+"strings"
+"bufio"
+"os"
+"strconv"
 
-	"github.com/liup215/gline/pkg/types"
+"github.com/liup215/gline/pkg/types"
 )
 
 // Provider is the interface for LLM providers
@@ -160,36 +165,76 @@ func DefaultProviderConfig() ProviderConfig {
  // StreamCallback is the interface for receiving streaming updates
  // This allows the Agent to notify the UI of content updates, tool calls, etc.
  type StreamCallback interface {
- 	// OnContent is called when new content is received from the LLM
- 	OnContent(delta string)
+ // OnContent is called when new content is received from the LLM
+ OnContent(delta string)
  
- 	// OnStreamStart is called when a new streaming response begins
- 	// This allows the UI to prepare a new assistant message slot for streaming content.
- 	OnStreamStart()
+ // OnStreamStart is called when a new streaming response begins
+ // This allows the UI to prepare a new assistant message slot for streaming content.
+ OnStreamStart()
  
- 	// OnToolCallStart is called when a tool call starts
- 	OnToolCallStart(toolCall ToolCall)
+ // OnToolCallStart is called when a tool call starts
+ OnToolCallStart(toolCall ToolCall)
  
- 	// OnToolCallComplete is called when a tool call completes with its result
- 	OnToolCallComplete(toolCall ToolCall, result string)
+ // OnToolCallComplete is called when a tool call completes with its result
+ OnToolCallComplete(toolCall ToolCall, result string)
  
- 	// OnError is called when an error occurs
- 	OnError(err error)
+ // AskFollowupQuestion is invoked when the agent needs to prompt the user for clarification.
+ // Implementations should present the question/options to the user and return their selected answer.
+ AskFollowupQuestion(question string, options []string) (string, error)
  
- 	// OnComplete is called when the conversation is complete
- 	OnComplete()
+ // OnError is called when an error occurs
+ OnError(err error)
+ 
+ // OnComplete is called when the conversation is complete
+ OnComplete()
  }
-
- // StreamCallbackAdapter is a no-op adapter for non-streaming scenarios
+ 
+ // StreamCallbackAdapter is a no-op adapter for non-streaming scenarios.
+ // It also provides a simple CLI fallback implementation for AskFollowupQuestion.
  type StreamCallbackAdapter struct{}
  
- func (a *StreamCallbackAdapter) OnContent(delta string) {}
- func (a *StreamCallbackAdapter) OnStreamStart() {}
- func (a *StreamCallbackAdapter) OnToolCallStart(toolCall ToolCall) {}
- func (a *StreamCallbackAdapter) OnToolCallComplete(toolCall ToolCall, result string) {}
- func (a *StreamCallbackAdapter) OnError(err error) {}
- func (a *StreamCallbackAdapter) OnComplete() {}
+ func (a *StreamCallbackAdapter) OnContent(delta string)                                 {}
+ func (a *StreamCallbackAdapter) OnStreamStart()                                          {}
+ func (a *StreamCallbackAdapter) OnToolCallStart(toolCall ToolCall)                       {}
+ func (a *StreamCallbackAdapter) OnToolCallComplete(toolCall ToolCall, result string)     {}
+ func (a *StreamCallbackAdapter) OnError(err error)                                       {}
+ func (a *StreamCallbackAdapter) OnComplete()                                            {}
  
-
-// Ensure StreamCallbackAdapter implements StreamCallback
-var _ StreamCallback = (*StreamCallbackAdapter)(nil)
+ // AskFollowupQuestion provides a CLI fallback when no UI callback is available.
+ // It prints the question and options to stdout and reads from stdin.
+ func (a *StreamCallbackAdapter) AskFollowupQuestion(question string, options []string) (string, error) {
+ 	// Print question
+ 	fmt.Println()
+ 	fmt.Println("❓", question)
+ 	fmt.Println()
+ 
+ 	// Print options if provided
+ 	if len(options) > 0 {
+ 		fmt.Println("Options:")
+ 		for i, opt := range options {
+ 			fmt.Printf("  %d. %s\n", i+1, opt)
+ 		}
+ 		fmt.Println()
+ 	}
+ 
+ 	// Read user input from stdin
+ 	fmt.Print("Your answer: ")
+ 	reader := bufio.NewReader(os.Stdin)
+ 	line, err := reader.ReadString('\n')
+ 	if err != nil {
+ 		return "", err
+ 	}
+ 	answer := strings.TrimSpace(line)
+ 
+ 	// If the user provided a numeric option, map it to the option text
+ 	if len(options) > 0 {
+ 		if n, err := strconv.Atoi(answer); err == nil && n > 0 && n <= len(options) {
+ 			return options[n-1], nil
+ 		}
+ 	}
+ 
+ 	return answer, nil
+ }
+ 
+ // Ensure StreamCallbackAdapter implements StreamCallback
+ var _ StreamCallback = (*StreamCallbackAdapter)(nil)

@@ -37,38 +37,47 @@ func (p *toolOnlyProvider) GetProviderName() string {
 	return "test-provider"
 }
 
-type recordingCallback struct {
-content         strings.Builder
-toolStartCount  int
-toolFinishCount int
-completeCount   int
-streamStarts    int
-}
+ type recordingCallback struct {
+ 	content         strings.Builder
+ 	toolStartCount  int
+ 	toolFinishCount int
+ 	completeCount   int
+ 	streamStarts    int
+ }
  
-func (c *recordingCallback) OnContent(delta string) {
-c.content.WriteString(delta)
-}
+ func (c *recordingCallback) OnContent(delta string) {
+ 	c.content.WriteString(delta)
+ }
  
-func (c *recordingCallback) OnStreamStart() {
-c.streamStarts++
-}
+ func (c *recordingCallback) OnStreamStart() {
+ 	c.streamStarts++
+ }
  
-func (c *recordingCallback) OnToolCallStart(toolCall ToolCall) {
-c.toolStartCount++
-}
+ func (c *recordingCallback) OnToolCallStart(toolCall ToolCall) {
+ 	c.toolStartCount++
+ }
  
-func (c *recordingCallback) OnToolCallComplete(toolCall ToolCall, result string) {
-c.toolFinishCount++
-}
+ func (c *recordingCallback) OnToolCallComplete(toolCall ToolCall, result string) {
+ 	c.toolFinishCount++
+ }
  
-func (c *recordingCallback) OnError(err error) {
-testErr := err
-_ = testErr
-}
+ // AskFollowupQuestion is needed by the updated StreamCallback interface.
+ // For tests, provide a simple implementation that returns the first option (if any)
+ // or an empty string.
+ func (c *recordingCallback) AskFollowupQuestion(question string, options []string) (string, error) {
+ 	if len(options) > 0 {
+ 		return options[0], nil
+ 	}
+ 	return "", nil
+ }
  
-func (c *recordingCallback) OnComplete() {
-c.completeCount++
-}
+ func (c *recordingCallback) OnError(err error) {
+ 	// Tests don't assert on errors here.
+ }
+ 
+ func (c *recordingCallback) OnComplete() {
+ 	c.completeCount++
+ }
 
 func TestRunWithCallbackSurfacesToolCallsAsAssistantText(t *testing.T) {
 	agentInstance, err := New(Options{

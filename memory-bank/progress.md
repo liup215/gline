@@ -275,6 +275,32 @@ gline/
 
 ## 最近变更
 
+### 2026-05-09 — TUI 交互式问答功能（ask_followup_question）(已完成)
+- **功能**: 实现 TUI 模式下的完整交互式问答流程
+- **实现内容**:
+  1. **StreamCallback 接口扩展** - 添加 `AskFollowupQuestion(question string, options []string) (string, error)` 方法
+  2. **AskFollowupQuestionTool 处理器注入** - 支持通过 `SetHandler` 注入 TUI handler
+  3. **Agent 动态注入** - 在工具执行前检测并注入回调处理器
+  4. **TUI 问答界面** - 实现问题显示、选项样式、答案输入和回复机制
+  5. **Esc 中断支持** - 用户可以按 Esc 键中断正在运行的任务（通过 cancelFn）
+- **技术要点**:
+  - 使用 `chan string` 实现同步问答（Agent 阻塞等待用户回答）
+  - TUI 通过 `askQuestionMsg` 传递问题和回复通道
+  - `pendingReply` 字段跟踪待回复状态，Enter 键提交答案
+  - CLI 模式自动降级到 stdin 输入（`StreamCallbackAdapter`）
+- **额外改进**:
+  - 工具调用显示完整 input 参数（JSON 格式化）
+  - 优化 glamour markdown 渲染字宽（避免溢出）
+  - 添加工具描述映射表和格式化辅助函数
+  - 改进帮助文本，添加 "esc: interrupt" 提示
+- **修改文件**:
+  - `internal/agent/provider.go` - StreamCallback 接口扩展
+  - `internal/tools/interaction.go` - 处理器注入支持
+  - `internal/agent/agent.go` - 动态注入和中断支持
+  - `internal/ui/tui.go` - 问答界面和中断逻辑
+  - `internal/agent/agent_test.go` - 测试更新
+- **日期**: 2026-05-09
+
 ### 2026-05-09 — TUI 输入框右侧边框修复 (已完成)
 - **问题**: TUI 输入框右侧边框（╮│╯）在终端中不可见
 - **根本原因**: `View()` 中 `.Width(m.width-2)` 设置 lipgloss 内容宽度为 `m.width-2`，加上 border+padding+margin 后总宽度为 `m.width+7`，右侧溢出屏幕
