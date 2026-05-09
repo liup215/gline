@@ -1,11 +1,19 @@
 package ui
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+// stripANSI removes ANSI escape sequences from a string for test assertions.
+var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+
+func stripANSI(s string) string {
+	return ansiRe.ReplaceAllString(s, "")
+}
 
 func TestContentUpdateSurvivesToolStatus(t *testing.T) {
 	model := New(nil)
@@ -31,8 +39,8 @@ func TestContentUpdateSurvivesToolStatus(t *testing.T) {
 		t.Fatalf("assistant content was not updated: %q", assistant.Content)
 	}
 
-	view := updated.View()
-	if !strings.Contains(view, "AI: text from model") {
+	view := stripANSI(updated.View())
+	if !strings.Contains(view, "text from model") {
 		t.Fatalf("view missing assistant output: %q", view)
 	}
 	if !strings.Contains(view, "You: read the file") {
@@ -112,8 +120,8 @@ func TestToolHistoryDoesNotPushContent(t *testing.T) {
 
 	// View should contain both the assistant content and tool status
 	// Tool area shows only the most recent 4 entries (toolAreaHeight=5, minus 1 for border)
-	view := model.View()
-	if !strings.Contains(view, "AI: final answer") {
+	view := stripANSI(model.View())
+	if !strings.Contains(view, "final answer") {
 		t.Fatalf("view missing assistant output: %q", view)
 	}
 	if !strings.Contains(view, "tool_J") {

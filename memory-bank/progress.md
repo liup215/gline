@@ -275,6 +275,21 @@ gline/
 
 ## 最近变更
 
+### 2026-05-09 — TUI 输入框右侧边框修复 (已完成)
+- **问题**: TUI 输入框右侧边框（╮│╯）在终端中不可见
+- **根本原因**: `View()` 中 `.Width(m.width-2)` 设置 lipgloss 内容宽度为 `m.width-2`，加上 border+padding+margin 后总宽度为 `m.width+7`，右侧溢出屏幕
+- **修复**:
+  - 移除 `.Width(m.width-2)` 和多余的 `inner` 中间变量
+  - textarea 宽度已由 `SetWidth(innerWidth)` 正确控制，直接渲染即可
+  - 总宽度 = 1(margin) + 2(border) + 6(padding) + (m.width-9)(内容) = m.width
+- **额外修复**:
+  - 测试中添加 `stripANSI()` 辅助函数，解决 glamour 渲染 ANSI 转义码导致 `strings.Contains` 匹配失败的问题
+  - 修复 2 个已有的测试失败: `TestContentUpdateSurvivesToolStatus`, `TestToolHistoryDoesNotPushContent`
+- **修改文件**:
+  - `internal/ui/tui.go` — 移除 `.Width(m.width-2)` 和 `inner` 变量
+  - `internal/ui/tui_test.go` — 添加 `stripANSI()` 辅助函数，更新视图断言
+- **日期**: 2026-05-09
+
 ### 2026-05-09 — reasoning_content persist & current-turn re-attach (已完成)
 - **问题**: 
   - 报错: "ERR Agent error: OpenAI API error: The `reasoning_content` in the thinking mode must be passed back to the API."

@@ -2,19 +2,20 @@
 package ui
 
 import (
-	"context"
-	"fmt"
-	"strings"
-	"time"
+"context"
+"fmt"
+"strings"
+"time"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+"github.com/charmbracelet/bubbles/spinner"
+"github.com/charmbracelet/bubbles/textarea"
+"github.com/charmbracelet/bubbles/viewport"
+tea "github.com/charmbracelet/bubbletea"
+"github.com/charmbracelet/glamour"
+"github.com/charmbracelet/lipgloss"
 
-	"github.com/liup215/gline/internal/agent"
-	"github.com/liup215/gline/pkg/types"
+"github.com/liup215/gline/internal/agent"
+"github.com/liup215/gline/pkg/types"
 )
 
 // ToolStatus represents the status of a tool call in the UI
@@ -114,18 +115,29 @@ var (
 		Foreground(lipgloss.Color("#00FF00")).
 		Bold(true)
 
-	toolAreaBorderStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#555555"))
+toolAreaBorderStyle = lipgloss.NewStyle().
+Foreground(lipgloss.Color("#555555"))
+
+inputBoxStyle = lipgloss.NewStyle().
+Border(lipgloss.RoundedBorder()).
+BorderForeground(lipgloss.Color("#666666")).
+Padding(0, 3).
+MarginTop(0)
+
+inputTitleStyle = lipgloss.NewStyle().
+Foreground(lipgloss.Color("#AAAAAA")).
+Italic(true)
 )
 
 // New creates a new TUI model
 func New(agentInstance *agent.BaseAgent) *Model {
 	// Create textarea for input
-	ta := textarea.New()
-	ta.Placeholder = "Type your message..."
-	ta.Focus()
-	ta.SetHeight(3)
+ta := textarea.New()
+ta.Placeholder = "Type your message..."
+ta.Focus()
+ta.SetHeight(3)
 ta.ShowLineNumbers = false
+ta.Prompt = ""
 
 	// Create viewport for messages
 	vp := viewport.New(80, 20)
@@ -144,20 +156,20 @@ ta.ShowLineNumbers = false
 		}
 	}
 
-	return &Model{
-		textarea:             ta,
-		viewport:             vp,
-		spinner:              s,
-		messages:             []Message{},
-		mode:                 agent.ModeAct,
-		provider:             providerName,
-		model:                modelName,
-		inputHeight:          3,
-		toolAreaHeight:       5,
-		activeAssistantIndex: -1,
-		agentInstance:        agentInstance,
-		ctx:                  context.Background(),
-	}
+return &Model{
+textarea:             ta,
+viewport:             vp,
+spinner:              s,
+messages:             []Message{},
+mode:                 agent.ModeAct,
+provider:             providerName,
+model:                modelName,
+inputHeight:          3,
+toolAreaHeight:       3,
+activeAssistantIndex: -1,
+agentInstance:        agentInstance,
+ctx:                  context.Background(),
+}
 }
 
 // SetProgram sets the program reference for sending messages
@@ -188,7 +200,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.viewport.Height < 3 {
 			m.viewport.Height = 3
 		}
-		m.textarea.SetWidth(msg.Width)
+ // Compute inner width available for textarea content (subtract border + horizontal padding and left margin).
+ // inputBoxStyle has Padding(0, 3) which gives 3 cols on left and right, border (2 cols), plus we render with a left margin of 1.
+ innerWidth := msg.Width - 9
+ if innerWidth < 10 {
+ innerWidth = 10
+ }
+ m.textarea.SetWidth(innerWidth)
 		m.updateViewport()
 
 	case tea.KeyMsg:
@@ -284,18 +302,22 @@ case "content":
 			m.currentTool = ""
 			m.updateViewport()
 
-		case "error":
-			m.err = msg.err
-			m.isProcessing = false
-			m.isStreaming = false
-			m.addErrorMessage(fmt.Sprintf("Error: %v", msg.err))
-			m.updateViewport()
+case "error":
+m.err = msg.err
+m.isProcessing = false
+m.isStreaming = false
+m.addErrorMessage(fmt.Sprintf("Error: %v", msg.err))
+m.textarea.Focus()
+cmds = append(cmds, textarea.Blink)
+m.updateViewport()
 
-		case "complete":
-			m.isProcessing = false
-			m.isStreaming = false
-			m.currentTool = ""
-			m.updateViewport()
+case "complete":
+m.isProcessing = false
+m.isStreaming = false
+m.currentTool = ""
+m.textarea.Focus()
+cmds = append(cmds, textarea.Blink)
+m.updateViewport()
 
 		case "streamStart":
 			m.isStreaming = true
@@ -352,9 +374,24 @@ func (m *Model) View() string {
 	// Build the view
 	var sections []string
 
-	// Title
-	title := titleStyle.Render("🚀 gline - AI Programming Assistant")
-	sections = append(sections, title)
+ // Header (title + provider/model + mode badge)
+modeBadge := "UNKNOWN"
+if m.mode == agent.ModeAct {
+modeBadge = lipgloss.NewStyle().Foreground(lipgloss.Color("#00FF00")).Render("[ACT]")
+} else {
+modeBadge = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFA500")).Render("[PLAN]")
+}
+prov := m.provider
+if prov == "" {
+prov = "-"
+}
+mdl := m.model
+if mdl == "" {
+mdl = "-"
+}
+headerContent := fmt.Sprintf(" 🚀 gline   ●  %s / %s    %s ", prov, mdl, modeBadge)
+header := lipgloss.NewStyle().Margin(0,1).Bold(true).Render(headerContent)
+sections = append(sections, header)
 
 	// Messages viewport
 	sections = append(sections, m.viewport.View())
@@ -362,8 +399,12 @@ func (m *Model) View() string {
 	// Tool status area
 	sections = append(sections, m.renderToolArea())
 
-	// Input area
-	sections = append(sections, m.textarea.View())
+ // Input area — textarea wrapped with a border
+ // textarea width was already set via SetWidth(innerWidth) in the WindowSizeMsg handler,
+ // so we render it directly. inputBoxStyle adds border (2) + padding (6) + MarginLeft (1) = 9,
+ // which makes the total width exactly m.width.
+ inputBox := inputBoxStyle.BorderForeground(lipgloss.Color("#888888")).MarginLeft(1).Render(m.textarea.View())
+ sections = append(sections, inputBox)
 
 	// Status bar
 	status := m.renderStatusBar()
@@ -407,48 +448,60 @@ func (m *Model) addErrorMessage(content string) {
 	m.updateViewport()
 }
 
-// updateViewport refreshes the viewport content
+ // updateViewport refreshes the viewport content
 func (m *Model) updateViewport() {
-	var content strings.Builder
+var content strings.Builder
 
-	for _, msg := range m.messages {
-		switch msg.Role {
-		case types.RoleUser:
-			content.WriteString(userStyle.Render("You: "))
-			content.WriteString(msg.Content)
-			content.WriteString("\n\n")
+for i, msg := range m.messages {
+switch msg.Role {
+case types.RoleUser:
+content.WriteString(userStyle.Render("You: "))
+content.WriteString(msg.Content)
+content.WriteString("\n")
+content.WriteString(systemStyle.Render(msg.Timestamp.Format("15:04")))
+content.WriteString("\n\n")
 
-		case types.RoleAssistant:
-			hasContent := msg.Content != "" || len(msg.ToolCalls) > 0
+case types.RoleAssistant:
+// Render assistant content as markdown (glamour) when possible
+rendered := msg.Content
+if msg.Content != "" {
+if out, err := glamour.Render(msg.Content, "dark"); err == nil {
+rendered = out
+}
+}
 
-			if hasContent {
-				content.WriteString(assistantStyle.Render("AI: "))
-				if msg.Content != "" {
-					content.WriteString(msg.Content)
-					content.WriteString("\n")
-				}
+// Append streaming cursor if this is the active streaming assistant message
+if m.isStreaming && i == m.activeAssistantIndex {
+rendered = rendered + streamingIndicatorStyle.Render(" ▌")
+}
 
-				// Show completed tool calls (only as a subtle indicator)
-				if len(msg.ToolCalls) > 0 {
-					for _, tc := range msg.ToolCalls {
-						content.WriteString(toolStyle.Render(fmt.Sprintf("  🔧 %s\n", tc.Name)))
-					}
-				}
+// Include tool calls if present
+if len(msg.ToolCalls) > 0 {
+var tools strings.Builder
+for _, tc := range msg.ToolCalls {
+tools.WriteString(toolStyle.Render(fmt.Sprintf("\n  🔧 %s", tc.Name)))
+}
+rendered = rendered + tools.String()
+}
 
-				content.WriteString("\n")
-			}
+content.WriteString(assistantStyle.Render("AI: "))
+content.WriteString("\n")
+content.WriteString(rendered)
+content.WriteString("\n")
+content.WriteString(systemStyle.Render(msg.Timestamp.Format("15:04")))
+content.WriteString("\n\n")
 
-		case types.RoleSystem:
-			// Only render non-tool system messages (e.g., errors)
-			if strings.HasPrefix(msg.Content, "Error:") || strings.HasPrefix(msg.Content, "✗") {
-				content.WriteString(errorStyle.Render(msg.Content))
-				content.WriteString("\n\n")
-			}
-		}
-	}
+case types.RoleSystem:
+// Only render non-tool system messages (e.g., errors)
+if strings.HasPrefix(msg.Content, "Error:") || strings.HasPrefix(msg.Content, "✗") {
+content.WriteString(errorStyle.Render(msg.Content))
+content.WriteString("\n\n")
+}
+}
+}
 
-	m.viewport.SetContent(content.String())
-	m.viewport.GotoBottom()
+m.viewport.SetContent(content.String())
+m.viewport.GotoBottom()
 }
 
 // renderToolArea renders the tool status area below the viewport
@@ -458,11 +511,11 @@ func (m *Model) renderToolArea() string {
 		return toolAreaBorderStyle.Render(strings.Repeat("─", m.width))
 	}
 
-	// Determine how many tool entries to show (limited by toolAreaHeight - 1 for border)
-	maxEntries := m.toolAreaHeight - 1
-	if maxEntries < 1 {
-		maxEntries = 1
-	}
+ // Determine how many tool entries to show (limited by toolAreaHeight)
+maxEntries := m.toolAreaHeight
+if maxEntries < 1 {
+maxEntries = 1
+}
 
 	var lines []string
 

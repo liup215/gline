@@ -151,6 +151,16 @@ gline config set provider.anthropic.apikey YOUR_API_KEY
 export ANTHROPIC_API_KEY=your_key
 ```
 
+### 最近修复 (2026-05-09)
+
+**✅ TUI 输入框右侧边框不可见问题已修复**
+
+- **问题**: TUI 输入框右侧边框（╮│╯）在终端中不可见
+- **根本原因**: `View()` 方法中 `.Width(m.width-2)` 错误地将 lipgloss 内容宽度设为 `m.width-2`，加上 border(2) + padding(6) + margin(1) = 9 后，总宽度为 `m.width+7`，远超终端宽度，右侧边框溢出屏幕
+- **修复**: 移除 `.Width(m.width-2)` 和多余的 `inner` 中间变量，直接渲染 textarea（宽度已由 `SetWidth(innerWidth)` 正确控制），总宽度恰好为 `m.width`
+- **额外修复**: 测试中 glamour 渲染插入 ANSI 转义码导致 `strings.Contains` 匹配失败，添加 `stripANSI()` 辅助函数
+- **修改文件**: `internal/ui/tui.go`, `internal/ui/tui_test.go`
+
 ### 下一步计划
 
 **Phase 4: 高级功能**

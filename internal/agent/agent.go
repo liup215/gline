@@ -417,35 +417,6 @@ func (a *BaseAgent) processStream(ctx context.Context, streamChan <-chan StreamC
 	}
 
 	// Add assistant message to conversation, including any accumulated reasoning content
-	// If tool calls were returned by the model, surface them as assistant-visible text
-	// and mark the conversation complete so we do not attempt execution when tools
-	// are not registered or execution should be bypassed.
-	if len(typesToolCalls) > 0 {
-		rendered := formatToolCallText(toolCalls)
-		if rendered != "" {
-			// add a newline separator if we already have content
-			if content.Len() > 0 {
-				content.WriteString("\n")
-			}
-			content.WriteString(rendered)
-			// surface the rendered tool text to the callback so the UI sees it
-			callback.OnContent(rendered)
-		}
-
-		// Add assistant message without ToolCalls (we surfaced them as text)
-		a.conversation.AddMessage(types.Message{
-			Role:            types.RoleAssistant,
-			Content:         content.String(),
-			ReasoningContent: reasoning.String(),
-			ToolCalls:       []types.ToolCall{},
-		})
-
-		// We've surfaced tool calls as text; nothing left to execute
-		a.conversation.SetComplete()
-		return nil
-	}
-
-	// No tool calls to surface; proceed to add assistant message with tool calls (if any)
 	a.conversation.AddMessage(types.Message{
 		Role:            types.RoleAssistant,
 		Content:         content.String(),
