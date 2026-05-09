@@ -157,33 +157,39 @@ func DefaultProviderConfig() ProviderConfig {
 	}
 }
 
-// StreamCallback is the interface for receiving streaming updates
-// This allows the Agent to notify the UI of content updates, tool calls, etc.
-type StreamCallback interface {
-	// OnContent is called when new content is received from the LLM
-	OnContent(delta string)
+ // StreamCallback is the interface for receiving streaming updates
+ // This allows the Agent to notify the UI of content updates, tool calls, etc.
+ type StreamCallback interface {
+ 	// OnContent is called when new content is received from the LLM
+ 	OnContent(delta string)
+ 
+ 	// OnStreamStart is called when a new streaming response begins
+ 	// This allows the UI to prepare a new assistant message slot for streaming content.
+ 	OnStreamStart()
+ 
+ 	// OnToolCallStart is called when a tool call starts
+ 	OnToolCallStart(toolCall ToolCall)
+ 
+ 	// OnToolCallComplete is called when a tool call completes with its result
+ 	OnToolCallComplete(toolCall ToolCall, result string)
+ 
+ 	// OnError is called when an error occurs
+ 	OnError(err error)
+ 
+ 	// OnComplete is called when the conversation is complete
+ 	OnComplete()
+ }
 
-	// OnToolCallStart is called when a tool call starts
-	OnToolCallStart(toolCall ToolCall)
-
-	// OnToolCallComplete is called when a tool call completes with its result
-	OnToolCallComplete(toolCall ToolCall, result string)
-
-	// OnError is called when an error occurs
-	OnError(err error)
-
-	// OnComplete is called when the conversation is complete
-	OnComplete()
-}
-
-// StreamCallbackAdapter is a no-op adapter for non-streaming scenarios
-type StreamCallbackAdapter struct{}
-
-func (a *StreamCallbackAdapter) OnContent(delta string) {}
-func (a *StreamCallbackAdapter) OnToolCallStart(toolCall ToolCall) {}
-func (a *StreamCallbackAdapter) OnToolCallComplete(toolCall ToolCall, result string) {}
-func (a *StreamCallbackAdapter) OnError(err error) {}
-func (a *StreamCallbackAdapter) OnComplete() {}
+ // StreamCallbackAdapter is a no-op adapter for non-streaming scenarios
+ type StreamCallbackAdapter struct{}
+ 
+ func (a *StreamCallbackAdapter) OnContent(delta string) {}
+ func (a *StreamCallbackAdapter) OnStreamStart() {}
+ func (a *StreamCallbackAdapter) OnToolCallStart(toolCall ToolCall) {}
+ func (a *StreamCallbackAdapter) OnToolCallComplete(toolCall ToolCall, result string) {}
+ func (a *StreamCallbackAdapter) OnError(err error) {}
+ func (a *StreamCallbackAdapter) OnComplete() {}
+ 
 
 // Ensure StreamCallbackAdapter implements StreamCallback
 var _ StreamCallback = (*StreamCallbackAdapter)(nil)

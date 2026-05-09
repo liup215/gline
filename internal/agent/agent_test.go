@@ -38,31 +38,36 @@ func (p *toolOnlyProvider) GetProviderName() string {
 }
 
 type recordingCallback struct {
-	content         strings.Builder
-	toolStartCount  int
-	toolFinishCount int
-	completeCount   int
+content         strings.Builder
+toolStartCount  int
+toolFinishCount int
+completeCount   int
+streamStarts    int
 }
-
+ 
 func (c *recordingCallback) OnContent(delta string) {
-	c.content.WriteString(delta)
+c.content.WriteString(delta)
 }
-
+ 
+func (c *recordingCallback) OnStreamStart() {
+c.streamStarts++
+}
+ 
 func (c *recordingCallback) OnToolCallStart(toolCall ToolCall) {
-	c.toolStartCount++
+c.toolStartCount++
 }
-
+ 
 func (c *recordingCallback) OnToolCallComplete(toolCall ToolCall, result string) {
-	c.toolFinishCount++
+c.toolFinishCount++
 }
-
+ 
 func (c *recordingCallback) OnError(err error) {
-	testErr := err
-	_ = testErr
+testErr := err
+_ = testErr
 }
-
+ 
 func (c *recordingCallback) OnComplete() {
-	c.completeCount++
+c.completeCount++
 }
 
 func TestRunWithCallbackSurfacesToolCallsAsAssistantText(t *testing.T) {

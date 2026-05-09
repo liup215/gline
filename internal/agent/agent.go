@@ -169,6 +169,9 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 
 		a.consecutiveMistakes = 0
 
+		// Notify callback that a new stream is starting
+		callback.OnStreamStart()
+
 		// Process the stream
 		if err := a.processStream(ctx, streamChan, callback); err != nil {
 			callback.OnError(err)
@@ -396,19 +399,9 @@ func (a *BaseAgent) processStream(ctx context.Context, streamChan <-chan StreamC
 			} else {
 				// Complete tool call received
 				toolCalls = append(toolCalls, *chunk.ToolCall)
-
-				// IMMEDIATELY send tool call text to UI (like Cline does)
-				// This ensures both TUI and chat mode see the tool intent in real-time
-				toolText := formatToolCallText([]ToolCall{*chunk.ToolCall})
-				if toolText != "" {
-					// Add separator if there was previous content
-					if content.Len() > 0 {
-						content.WriteString("\n\n")
-						callback.OnContent("\n\n")
-					}
-					content.WriteString(toolText)
-					callback.OnContent(toolText)
-				}
+				// Tool call status is communicated via OnToolCallStart/OnToolCallComplete
+				// Do NOT mix tool call text into the content stream — this keeps
+				// LLM text and tool status visually separated in the TUI.
 			}
 		}
 	}
@@ -424,6 +417,35 @@ func (a *BaseAgent) processStream(ctx context.Context, streamChan <-chan StreamC
 	}
 
 	// Add assistant message to conversation, including any accumulated reasoning content
+	// If tool calls were returned by the model, surface them as assistant-visible text
+	// and mark the conversation complete so we do not attempt execution when tools
+	// are not registered or execution should be bypassed.
+	if len(typesToolCalls) > 0 {
+		rendered := formatToolCallText(toolCalls)
+		if rendered != "" {
+			// add a newline separator if we already have content
+			if content.Len() > 0 {
+				content.WriteString("\n")
+			}
+			content.WriteString(rendered)
+			// surface the rendered tool text to the callback so the UI sees it
+			callback.OnContent(rendered)
+		}
+
+		// Add assistant message without ToolCalls (we surfaced them as text)
+		a.conversation.AddMessage(types.Message{
+			Role:            types.RoleAssistant,
+			Content:         content.String(),
+			ReasoningContent: reasoning.String(),
+			ToolCalls:       []types.ToolCall{},
+		})
+
+		// We've surfaced tool calls as text; nothing left to execute
+		a.conversation.SetComplete()
+		return nil
+	}
+
+	// No tool calls to surface; proceed to add assistant message with tool calls (if any)
 	a.conversation.AddMessage(types.Message{
 		Role:            types.RoleAssistant,
 		Content:         content.String(),
