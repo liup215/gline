@@ -34,6 +34,11 @@ type StreamChunk struct {
 	// ToolCall contains a tool call if this chunk is a tool call
 	ToolCall *ToolCall
 
+	// IsPartial indicates if this is a partial/incomplete chunk
+	// For tool calls, this means the tool call is still being streamed
+	// For text, this is typically false as text is appended directly
+	IsPartial bool
+
 	// FinishReason indicates why the response finished (if this is the last chunk)
 	FinishReason string
 
@@ -145,3 +150,34 @@ func DefaultProviderConfig() ProviderConfig {
 		Timeout:     120,
 	}
 }
+
+// StreamCallback is the interface for receiving streaming updates
+// This allows the Agent to notify the UI of content updates, tool calls, etc.
+type StreamCallback interface {
+	// OnContent is called when new content is received from the LLM
+	OnContent(delta string)
+
+	// OnToolCallStart is called when a tool call starts
+	OnToolCallStart(toolCall ToolCall)
+
+	// OnToolCallComplete is called when a tool call completes with its result
+	OnToolCallComplete(toolCall ToolCall, result string)
+
+	// OnError is called when an error occurs
+	OnError(err error)
+
+	// OnComplete is called when the conversation is complete
+	OnComplete()
+}
+
+// StreamCallbackAdapter is a no-op adapter for non-streaming scenarios
+type StreamCallbackAdapter struct{}
+
+func (a *StreamCallbackAdapter) OnContent(delta string) {}
+func (a *StreamCallbackAdapter) OnToolCallStart(toolCall ToolCall) {}
+func (a *StreamCallbackAdapter) OnToolCallComplete(toolCall ToolCall, result string) {}
+func (a *StreamCallbackAdapter) OnError(err error) {}
+func (a *StreamCallbackAdapter) OnComplete() {}
+
+// Ensure StreamCallbackAdapter implements StreamCallback
+var _ StreamCallback = (*StreamCallbackAdapter)(nil)

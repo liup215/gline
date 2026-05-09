@@ -114,7 +114,7 @@ func startInteractiveMode() {
 		fmt.Println()
 		fmt.Println("To get started:")
 		fmt.Println("  1. Set your API key: gline config set provider.openai.apikey YOUR_API_KEY")
-		fmt.Println("  2. Or set environment variable: OPENAI_API_KEY=your_key")
+		fmt.Println("  2. Or set environment variable: GLINE_OPENAI_API_KEY=your_key")
 		os.Exit(1)
 	}
 

@@ -13,12 +13,80 @@ import (
 	"time"
 
 	"github.com/liup215/gline/internal/agent"
+	"github.com/liup215/gline/internal/log"
 	"github.com/liup215/gline/pkg/types"
 )
 
 const (
-	defaultOpenAIURL = "https://api.openai.com/v1/chat/completions"
+	defaultOpenAIBaseURL = "https://api.openai.com/v1"
+	chatCompletionsPath  = "/chat/completions"
 )
+
+// buildFullURL constructs the full API URL from base URL
+// If baseURL already ends with /chat/completions, use it as-is
+// Otherwise, append the chat completions path
+func buildFullURL(baseURL string) string {
+	if strings.HasSuffix(baseURL, chatCompletionsPath) {
+		return baseURL
+	}
+	// Remove trailing slash if present to avoid double slashes
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	return baseURL + chatCompletionsPath
+}
+
+// isValidJSON checks if a string is valid JSON
+func isValidJSON(s string) bool {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return false
+	}
+	// Try to parse as generic JSON
+	var js interface{}
+	if err := json.Unmarshal([]byte(s), &js); err != nil {
+		return false
+	}
+	return true
+}
+
+// isCompleteJSONObject checks if the string looks like a complete JSON object
+// This is a heuristic check for streaming JSON fragments
+func isCompleteJSONObject(s string) bool {
+	s = strings.TrimSpace(s)
+	if len(s) < 2 {
+		return false
+	}
+	// Check if it starts with { and ends with }
+	if s[0] != '{' || s[len(s)-1] != '}' {
+		return false
+	}
+	// Additional check: count braces
+	openCount := 0
+	closeCount := 0
+	inString := false
+	escaped := false
+	for _, r := range s {
+		if escaped {
+			escaped = false
+			continue
+		}
+		if r == '\\' {
+			escaped = true
+			continue
+		}
+		if r == '"' {
+			inString = !inString
+			continue
+		}
+		if !inString {
+			if r == '{' {
+				openCount++
+			} else if r == '}' {
+				closeCount++
+			}
+		}
+	}
+	return openCount > 0 && openCount == closeCount
+}
 
 // OpenAIProvider implements the Provider interface for OpenAI-compatible APIs
 // This provider can be used with:
@@ -159,7 +227,7 @@ func NewOpenAIProvider(apiKey, model, baseURL string) *OpenAIProvider {
 	}
 
 	if baseURL == "" {
-		baseURL = defaultOpenAIURL
+		baseURL = defaultOpenAIBaseURL
 	}
 
 	return &OpenAIProvider{
@@ -257,8 +325,12 @@ func (p *OpenAIProvider) CreateMessage(ctx context.Context, req *agent.MessageRe
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
+	// Build full URL by appending the chat completions path
+	fullURL := buildFullURL(p.baseURL)
+	log.Debugf("CreateMessage: Sending request to %s", fullURL)
+
 	// Create HTTP request
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", p.baseURL, bytes.NewBuffer(jsonBody))
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", fullURL, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -268,11 +340,13 @@ func (p *OpenAIProvider) CreateMessage(ctx context.Context, req *agent.MessageRe
 	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
 
 	// Send request
+	log.Debugf("CreateMessage: Sending HTTP request...")
 	resp, err := p.httpClient.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
+	log.Debugf("CreateMessage: Received response status: %d", resp.StatusCode)
 
 	// Read response body
 	body, err := io.ReadAll(resp.Body)
@@ -472,8 +546,11 @@ func (p *OpenAIProvider) CreateMessageStream(ctx context.Context, req *agent.Mes
 			return
 		}
 
+		// Build full URL by appending the chat completions path
+		fullURL := buildFullURL(p.baseURL)
+
 		// Create HTTP request
-		httpReq, err := http.NewRequestWithContext(ctx, "POST", p.baseURL, bytes.NewBuffer(jsonBody))
+		httpReq, err := http.NewRequestWithContext(ctx, "POST", fullURL, bytes.NewBuffer(jsonBody))
 		if err != nil {
 			chunkChan <- agent.StreamChunk{Error: fmt.Errorf("failed to create request: %w", err), Done: true}
 			return
@@ -514,23 +591,37 @@ func (p *OpenAIProvider) CreateMessageStream(ctx context.Context, req *agent.Mes
 		reader := bufio.NewReader(resp.Body)
 		toolCalls := make(map[int]*agent.ToolCall)
 
+		log.Debugf("Starting SSE stream parsing from %s", fullURL)
+
 		for {
 			line, err := reader.ReadString('\n')
 			if err != nil {
 				if err != io.EOF {
+					log.Debugf("Error reading stream: %v", err)
 					chunkChan <- agent.StreamChunk{Error: fmt.Errorf("error reading stream: %w", err), Done: true}
+				} else {
+					log.Debug("Stream ended with EOF")
 				}
 				break
 			}
 
 			line = strings.TrimSpace(line)
-			if line == "" || !strings.HasPrefix(line, "data: ") {
+			log.Debugf("SSE line received: %s", line)
+
+			if line == "" {
+				continue
+			}
+
+			// Handle SSE format: lines starting with "data: "
+			if !strings.HasPrefix(line, "data: ") {
+				log.Debugf("Skipping non-data line: %s", line)
 				continue
 			}
 
 			// Extract JSON data
 			data := strings.TrimPrefix(line, "data: ")
 			if data == "[DONE]" {
+				log.Debug("Received [DONE] signal")
 				chunkChan <- agent.StreamChunk{Done: true}
 				break
 			}
@@ -538,8 +629,11 @@ func (p *OpenAIProvider) CreateMessageStream(ctx context.Context, req *agent.Mes
 			// Parse stream response
 			var streamResp OpenAIStreamResponse
 			if err := json.Unmarshal([]byte(data), &streamResp); err != nil {
+				log.Debugf("Failed to parse SSE data: %s, error: %v", data, err)
 				continue
 			}
+
+			log.Debugf("Parsed stream response: ID=%s, Choices=%d", streamResp.ID, len(streamResp.Choices))
 
 			if len(streamResp.Choices) == 0 {
 				continue
@@ -555,36 +649,95 @@ func (p *OpenAIProvider) CreateMessageStream(ctx context.Context, req *agent.Mes
 				}
 			}
 
-			// Handle tool calls
-			for _, tc := range delta.ToolCalls {
-				if tc.Index >= 0 {
-					if toolCalls[tc.Index] == nil {
-						toolCalls[tc.Index] = &agent.ToolCall{
-							ID:   tc.ID,
-							Name: tc.Function.Name,
-						}
+		// Handle tool calls - OpenAI streams tool calls incrementally
+		// Each chunk may contain partial updates to the tool call
+		for _, tc := range delta.ToolCalls {
+			if tc.Index >= 0 {
+				isNewToolCall := false
+				if toolCalls[tc.Index] == nil {
+					toolCalls[tc.Index] = &agent.ToolCall{
+						ID:   tc.ID,
+						Name: tc.Function.Name,
 					}
-					// Accumulate arguments
+					isNewToolCall = tc.ID != "" || tc.Function.Name != ""
+					log.Debugf("New tool call started: index=%d, id=%s, name=%s", tc.Index, tc.ID, tc.Function.Name)
+				} else {
+					// Update tool call info if we receive it in later chunks
+					if tc.ID != "" {
+						toolCalls[tc.Index].ID = tc.ID
+					}
+					if tc.Function.Name != "" {
+						toolCalls[tc.Index].Name = tc.Function.Name
+						log.Debugf("Tool call name updated: index=%d, name=%s", tc.Index, tc.Function.Name)
+					}
+				}
+				
+				// Accumulate arguments
+				if tc.Function.Arguments != "" {
 					toolCalls[tc.Index].Input += tc.Function.Arguments
+					log.Debugf("Tool call arguments accumulated: index=%d, args=%s", tc.Index, toolCalls[tc.Index].Input)
 				}
-			}
 
-			// Check finish reason
-			if choice.FinishReason != "" {
-				// Send any complete tool calls
-				for i := 0; i < len(toolCalls); i++ {
-					if tc, ok := toolCalls[i]; ok && tc.ID != "" {
-						chunkChan <- agent.StreamChunk{
-							ToolCall: tc,
-						}
+				// Send partial update for real-time UI display
+				// This allows the TUI to show "⏺ Running: tool_name" with partial args
+				// Only send partial updates if we have a name (required for display)
+				// IMPORTANT: Send a COPY of the tool call, not the pointer
+				// This prevents double accumulation in processStream
+				if isNewToolCall || tc.Function.Arguments != "" {
+					toolCallCopy := *toolCalls[tc.Index]
+					chunkChan <- agent.StreamChunk{
+						ToolCall:  &toolCallCopy,
+						IsPartial: true,
 					}
 				}
-				chunkChan <- agent.StreamChunk{
-					FinishReason: choice.FinishReason,
-					Done:         true,
-				}
-				break
 			}
+		}
+
+		// Check finish reason
+		if choice.FinishReason != "" {
+			log.Debugf("Stream finished with reason: %s", choice.FinishReason)
+			
+			// Send final complete tool calls - only if they have valid JSON arguments
+			for i := 0; i < len(toolCalls); i++ {
+				if tc, ok := toolCalls[i]; ok && tc.ID != "" && tc.Name != "" {
+					// Validate that the accumulated arguments are valid JSON
+					if tc.Input == "" {
+						// Empty input is valid (will be treated as empty object)
+						tc.Input = "{}"
+						log.Debugf("Tool call has empty input, using empty object: index=%d", i)
+					} else if !isValidJSON(tc.Input) {
+						// Try to fix incomplete JSON by adding closing braces
+						fixedInput := tc.Input
+						for !isCompleteJSONObject(fixedInput) && len(fixedInput) < len(tc.Input)+10 {
+							fixedInput += "}"
+						}
+						
+						if isValidJSON(fixedInput) {
+							log.Debugf("Fixed incomplete JSON for tool call: index=%d, original=%s, fixed=%s", i, tc.Input, fixedInput)
+							tc.Input = fixedInput
+						} else {
+							// Log error and skip this tool call
+							log.Errorf("Tool call has invalid JSON arguments, skipping: index=%d, id=%s, name=%s, input=%s", 
+								i, tc.ID, tc.Name, tc.Input)
+							continue
+						}
+					}
+					
+					log.Debugf("Sending complete tool call: index=%d, id=%s, name=%s", i, tc.ID, tc.Name)
+					chunkChan <- agent.StreamChunk{
+						ToolCall:  tc,
+						IsPartial: false, // Mark as complete
+					}
+				}
+			}
+			
+			// Send completion with usage info
+			chunkChan <- agent.StreamChunk{
+				FinishReason: choice.FinishReason,
+				Done:         true,
+			}
+			break
+		}
 		}
 	}()
 

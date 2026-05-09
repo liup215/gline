@@ -102,6 +102,11 @@ func (c *Conversation) Clear() {
 	c.Complete = false
 }
 
+// MarkIncomplete marks the conversation as needing more processing.
+func (c *Conversation) MarkIncomplete() {
+	c.Complete = false
+}
+
 // SetComplete marks the conversation as complete
 func (c *Conversation) SetComplete() {
 	c.Complete = true

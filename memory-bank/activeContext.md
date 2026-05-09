@@ -33,6 +33,10 @@
      - ✅ 支持工具调用
      - ✅ 完整的错误处理
      - ✅ 单元测试覆盖
+   - 🔄 **DashScope 兼容性修复** (进行中)
+     - ✅ 修复 URL 拼接问题 - 使用 `buildFullURL` 函数
+     - ✅ 添加 SSE 调试日志
+     - ⏳ 验证 DashScope 流式响应兼容性
 
 ### 已完成任务 ✅
 
@@ -48,6 +52,67 @@
 5. ⏳ **错误处理增强** - 基础错误处理已集成
 
 ### 当前工作
+
+**✅ TUI 和 Chat 模式响应问题已完全修复并启用工具执行**
+
+**问题回顾**:
+1. TUI 模式无响应，Chat 模式有响应
+2. 工具调用参数重复累积导致JSON格式错误
+3. 工具执行被禁用
+
+**已完成的修复** (2026-05-09):
+
+1. **修复工具文本实时发送** (`internal/agent/agent.go`)
+   - 在接收到完整工具调用时立即通过callback发送
+   - 不再等到流结束后批量发送
+   
+2. **修复工具调用参数重复累积** (`internal/api/openai.go`)
+   - 发送partial chunk时创建tool call的副本
+   - `toolCallCopy := *toolCalls[tc.Index]` 避免指针共享
+   - 简化agent.go的processStream，不再二次累积
+
+3. **启用工具执行** (`internal/agent/agent.go`)
+   - 在agent loop中添加工具执行逻辑
+   - processStream后检查并执行工具调用
+   - 只有无工具调用时才SetComplete()
+   - 添加OnToolCallStart和OnToolCallComplete回调通知
+
+**测试结果**:
+- ✅ 代码编译成功
+- ✅ TUI模式有响应：显示 `[tool:list_files] {"path": "."}`
+- ✅ 工具调用参数格式正确
+- ✅ 工具执行已启用并正常工作
+
+**架构确认**:
+TUI和Chat模式始终走相同路径，问题出在实现细节上：
+```
+TUI 模式:  TUI → Agent.RunWithCallback(tuiCallback) → processStream() → 工具执行 → callback
+Chat 模式: CLI → Agent.Run() → RunWithCallback(noopCallback) → processStream() → 工具执行
+```
+
+**之前完成的工作**:
+- ✅ 添加 `PartialToolCall` 结构体跟踪流式工具调用状态
+- ✅ 创建 Mock Provider 用于测试流式工具调用
+- ✅ 支持 5 种测试场景: long_text, tool_call, tool_then_text, multi_tool, error
+
+**之前完成的工作**:
+- ✅ 添加 `spinner` 组件实现加载动画
+- ✅ 重构流式处理使用 `CreateMessageStream` 实现真正的实时流式输出
+- ✅ 添加 `streamChunkMsg` 类型处理流式消息
+- ✅ 实现 `startStream` 和 `waitForStream` 方法管理流的生命周期
+- ✅ 添加流式指示器 (▌) 在 AI 响应末尾显示打字效果
+- ✅ 状态栏显示动态 spinner 和当前状态 ("AI is responding...", "Running: <tool>")
+- ✅ 增强错误处理，错误立即显示在界面上
+- ✅ 添加工具调用反馈 ("🔧 Running: <tool>")
+
+**之前完成的工作**：
+- ✅ 创建 mock 数据版本用于测试 TUI 流程
+- ✅ 添加 `SetConsoleOutput` 函数禁用 TUI 模式下的控制台日志
+- ✅ 修复日志输出干扰 TUI 渲染的问题
+- ✅ 修复 TUI 卡死问题（Bubbletea Cmd 只能返回单个消息）
+- ✅ 修复 AI 响应不显示问题（正确处理 done=true 时的 content）
+- ✅ 已切换回真实 AI 调用
+- ✅ TUI 调试通过，功能完整
 
 **Phase 3 已完成**：
 - ✅ Provider 接口扩展 - 添加 `CreateMessageStream` 方法

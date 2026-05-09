@@ -7,7 +7,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
+	"github.com/liup215/gline/internal/prompts"
 	"github.com/liup215/gline/internal/tools"
 	"github.com/liup215/gline/pkg/types"
 )
@@ -27,6 +29,10 @@ type Agent interface {
 	// Run starts the Agent with a user prompt
 	// This will initiate the conversation loop with the LLM
 	Run(ctx context.Context, prompt string) error
+
+	// RunWithCallback starts the Agent with a user prompt and a callback for streaming updates
+	// This is used for TUI mode to receive real-time updates
+	RunWithCallback(ctx context.Context, prompt string, callback StreamCallback) error
 
 	// SetMode switches between Plan and Act modes
 	SetMode(mode Mode) error
@@ -108,6 +114,12 @@ func New(opts Options) (*BaseAgent, error) {
 
 // Run starts the Agent with a user prompt
 func (a *BaseAgent) Run(ctx context.Context, prompt string) error {
+	// Use the no-op adapter for non-streaming scenarios
+	return a.RunWithCallback(ctx, prompt, &StreamCallbackAdapter{})
+}
+
+// RunWithCallback starts the Agent with a user prompt and a callback for streaming updates
+func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback StreamCallback) error {
 	if a.running {
 		return fmt.Errorf("agent is already running")
 	}
@@ -115,6 +127,9 @@ func (a *BaseAgent) Run(ctx context.Context, prompt string) error {
 	a.running = true
 	a.abort = false
 	defer func() { a.running = false }()
+
+	// Each new user turn must reopen the conversation loop.
+	a.conversation.MarkIncomplete()
 
 	// Add user message to conversation
 	a.conversation.AddMessage(types.Message{
@@ -127,16 +142,25 @@ func (a *BaseAgent) Run(ctx context.Context, prompt string) error {
 		// Get available tools for current mode
 		availableTools := a.toolRegistry.GetForMode(string(a.mode))
 
+		// Build system prompt with tool descriptions
+		toolDescs := prompts.GetToolDescriptions()
+		if a.mode == ModePlan {
+			toolDescs = prompts.GetPlanModeToolDescriptions()
+		}
+		systemPrompt := prompts.GetSystemPrompt(string(a.mode), toolDescs)
+
 		// Create LLM request
 		req := &MessageRequest{
-			Messages: a.conversation.GetMessages(),
-			Tools:    convertTools(availableTools),
+			Messages:     a.conversation.GetMessages(),
+			Tools:        convertTools(availableTools),
+			SystemPrompt: systemPrompt,
 		}
 
-		// Send to LLM
-		resp, err := a.provider.CreateMessage(ctx, req)
+		// Use streaming API
+		streamChan, err := a.provider.CreateMessageStream(ctx, req)
 		if err != nil {
 			a.consecutiveMistakes++
+			callback.OnError(err)
 			if a.consecutiveMistakes >= a.maxConsecutiveMistakes {
 				return fmt.Errorf("max consecutive mistakes reached: %w", err)
 			}
@@ -145,9 +169,63 @@ func (a *BaseAgent) Run(ctx context.Context, prompt string) error {
 
 		a.consecutiveMistakes = 0
 
-		// Process response
-		if err := a.processResponse(ctx, resp); err != nil {
+		// Process the stream
+		if err := a.processStream(ctx, streamChan, callback); err != nil {
+			callback.OnError(err)
 			return err
+		}
+
+		// Execute any tool calls from the last assistant message
+		messages := a.conversation.GetMessages()
+		if len(messages) > 0 {
+			lastMsg := messages[len(messages)-1]
+			if lastMsg.Role == types.RoleAssistant && len(lastMsg.ToolCalls) > 0 {
+				// Execute tools
+				for _, tc := range lastMsg.ToolCalls {
+					if a.abort {
+						break
+					}
+
+					// Get the tool from registry
+					tool, err := a.toolRegistry.Get(tc.Name)
+					if err != nil {
+						errorMsg := fmt.Sprintf("Error: Tool '%s' not found: %v", tc.Name, err)
+						a.conversation.AddMessage(types.Message{
+							Role:       types.RoleTool,
+							ToolCallID: tc.ID,
+							Content:    errorMsg,
+						})
+						continue
+					}
+
+					// Notify callback that tool is starting
+					callback.OnToolCallStart(ToolCall{
+						ID:    tc.ID,
+						Name:  tc.Name,
+						Input: string(tc.Input),
+					})
+
+					// Execute the tool
+					result, err := tool.Execute(ctx, tc.Input)
+					if err != nil {
+						result = fmt.Sprintf("Error: %v", err)
+					}
+
+					// Add tool result to conversation
+					a.conversation.AddMessage(types.Message{
+						Role:       types.RoleTool,
+						ToolCallID: tc.ID,
+						Content:    result,
+					})
+
+					// Notify callback that tool is complete
+					callback.OnToolCallComplete(ToolCall{
+						ID:    tc.ID,
+						Name:  tc.Name,
+						Input: string(tc.Input),
+					}, result)
+				}
+			}
 		}
 
 		// Check if conversation is complete
@@ -156,6 +234,7 @@ func (a *BaseAgent) Run(ctx context.Context, prompt string) error {
 		}
 	}
 
+	callback.OnComplete()
 	return nil
 }
 
@@ -179,6 +258,12 @@ func (a *BaseAgent) processResponse(ctx context.Context, resp *MessageResponse) 
 	})
 
 	// Handle tool calls
+	if len(resp.ToolCalls) == 0 {
+		// No tool calls, conversation is complete
+		a.conversation.SetComplete()
+		return nil
+	}
+
 	for _, tc := range resp.ToolCalls {
 		if a.abort {
 			return nil
@@ -189,19 +274,34 @@ func (a *BaseAgent) processResponse(ctx context.Context, resp *MessageResponse) 
 			return fmt.Errorf("tool %s is not allowed in %s mode", tc.Name, a.mode)
 		}
 
-		// Execute tool
+		// Get the tool from registry
 		tool, err := a.toolRegistry.Get(tc.Name)
 		if err != nil {
-			return fmt.Errorf("tool not found: %s", tc.Name)
+			errorMsg := fmt.Sprintf("Error: Tool '%s' not found: %v", tc.Name, err)
+			a.conversation.AddMessage(types.Message{
+				Role:       types.RoleTool,
+				ToolCallID: tc.ID,
+				Content:    errorMsg,
+			})
+			continue
 		}
 
 		// Parse input
 		var input json.RawMessage
 		if err := json.Unmarshal([]byte(tc.Input), &input); err != nil {
-			return fmt.Errorf("failed to parse tool input: %w", err)
+			// Return the original input to LLM so it can retry with correct format
+			errorMsg := fmt.Sprintf("Error: Invalid JSON in tool call '%s': %v. Please retry with properly formatted JSON arguments.\n\nOriginal input: %s", tc.Name, err, tc.Input)
+			// Add tool result to conversation so LLM can see the error and retry
+			a.conversation.AddMessage(types.Message{
+				Role:       types.RoleTool,
+				ToolCallID: tc.ID,
+				Content:    errorMsg,
+			})
+			// Continue to next tool call instead of failing entirely
+			continue
 		}
 
-		// Execute
+		// Execute the tool
 		result, err := tool.Execute(ctx, input)
 		if err != nil {
 			result = fmt.Sprintf("Error: %v", err)
@@ -246,6 +346,110 @@ func (a *BaseAgent) IsRunning() bool {
 // GetConversation returns the current conversation state
 func (a *BaseAgent) GetConversation() *types.Conversation {
 	return a.conversation
+}
+
+// GetProvider returns the LLM provider
+func (a *BaseAgent) GetProvider() Provider {
+	return a.provider
+}
+
+// GetToolRegistry returns the tool registry
+func (a *BaseAgent) GetToolRegistry() *tools.Registry {
+	return a.toolRegistry
+}
+
+// processStream handles the streaming response from the LLM
+func (a *BaseAgent) processStream(ctx context.Context, streamChan <-chan StreamChunk, callback StreamCallback) error {
+	var content strings.Builder
+	var toolCalls []ToolCall
+
+	for chunk := range streamChan {
+		if chunk.Error != nil {
+			return chunk.Error
+		}
+
+		if chunk.Done {
+			break
+		}
+
+		// Handle content
+		if chunk.Content != "" {
+			content.WriteString(chunk.Content)
+			callback.OnContent(chunk.Content)
+		}
+
+		// Handle tool call
+		if chunk.ToolCall != nil {
+			if chunk.IsPartial {
+				// Partial tool calls from provider are already accumulated
+				// Provider sends copies, so we don't need to track state here
+				// Just ignore partials in processStream
+			} else {
+				// Complete tool call received
+				toolCalls = append(toolCalls, *chunk.ToolCall)
+
+				// IMMEDIATELY send tool call text to UI (like Cline does)
+				// This ensures both TUI and chat mode see the tool intent in real-time
+				toolText := formatToolCallText([]ToolCall{*chunk.ToolCall})
+				if toolText != "" {
+					// Add separator if there was previous content
+					if content.Len() > 0 {
+						content.WriteString("\n\n")
+						callback.OnContent("\n\n")
+					}
+					content.WriteString(toolText)
+					callback.OnContent(toolText)
+				}
+			}
+		}
+	}
+
+	// Convert accumulated tool calls to types.ToolCall
+	var typesToolCalls []types.ToolCall
+	for _, tc := range toolCalls {
+		typesToolCalls = append(typesToolCalls, types.ToolCall{
+			ID:    tc.ID,
+			Name:  tc.Name,
+			Input: []byte(tc.Input),
+		})
+	}
+
+	// Add assistant message to conversation
+	a.conversation.AddMessage(types.Message{
+		Role:      types.RoleAssistant,
+		Content:   content.String(),
+		ToolCalls: typesToolCalls,
+	})
+
+	// If there are no tool calls, mark conversation as complete
+	// Otherwise, the agent loop will continue to execute tools
+	if len(typesToolCalls) == 0 {
+		a.conversation.SetComplete()
+	}
+	
+	return nil
+}
+
+func formatToolCallText(toolCalls []ToolCall) string {
+	if len(toolCalls) == 0 {
+		return ""
+	}
+
+	parts := make([]string, 0, len(toolCalls))
+	for _, tc := range toolCalls {
+		if tc.Name == "" {
+			continue
+		}
+
+		input := strings.TrimSpace(tc.Input)
+		if input == "" {
+			input = "{}"
+		}
+
+		parts = append(parts, fmt.Sprintf("[tool:%s] %s", tc.Name, input))
+	}
+
+	return strings.Join(parts, "\n")
 }
 
 // convertTools converts internal tool definitions to provider format

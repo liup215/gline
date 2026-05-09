@@ -223,6 +223,160 @@ gline/
 
 ## 已知问题
 
+### 已修复问题 ✅
+
+1. **TUI 模式下工具调用卡死** ✅
+   - **问题**: 
+     - TUI 模式下发送工具调用后界面卡死
+     - 工具调用只被显示但没有被执行
+     - TUI 直接调用 Provider API，绕过了 Agent 的 `Run` 方法
+   - **修复**: 
+     - 重构架构：TUI 和 CLI 模式都通过 `Agent.RunWithCallback()` 运行
+     - 添加 `StreamCallback` 接口，Agent 通过回调通知 UI 更新
+     - 在 `processStream()` 中统一处理流式响应和工具执行
+     - TUI 大幅简化，只负责显示回调内容
+   - **文件**: `internal/agent/agent.go`, `internal/agent/provider.go`, `internal/ui/tui.go`
+
+2. **TUI 和 Chat 模式响应不一致** ✅
+   - **问题**:
+     - TUI 模式发送消息后界面无响应（工具调用被禁用debug模式）
+     - Chat 模式有正常响应，能显示工具调用信息
+     - 两种模式理论上走相同的 Agent.RunWithCallback 路径
+   - **根本原因** (对比Cline源码发现):
+     - 工具文本发送时机太晚：在流结束后才发送，LLM只返回tool_call时TUI看到空响应
+     - 工具调用信息被清空：`typesToolCalls = nil` 导致信息丢失
+     - TUI缺少实时反馈：Cline立即通过say发送，gline只在最后发送
+   - **修复**:
+     - 在 `processStream()` 接收到完整工具调用时立即发送工具文本
+     - 保留 `typesToolCalls` 信息，不再清空
+     - 统一TUI和Chat模式的体验，都能实时看到工具意图
+   - **文件**: `internal/agent/agent.go`
+   - **日期**: 2026-05-09
+
+3. **工具调用参数重复累积问题** ✅
+   - **问题**:
+     - OpenAI provider发送工具调用时使用指针引用
+     - agent.go的processStream又对同一指针累积参数
+     - 导致参数被重复累加（如`{"{"path{"{"path":...`）
+   - **修复**:
+     - 在 `openai.go` 发送partial chunk时创建tool call的副本
+     - `toolCallCopy := *toolCalls[tc.Index]` 避免指针共享
+     - 简化agent.go的processStream，不再二次累积
+   - **文件**: `internal/api/openai.go`, `internal/agent/agent.go`
+   - **日期**: 2026-05-09
+
+4. **工具执行被禁用问题** ✅
+   - **问题**:
+     - processStream直接调用SetComplete()阻止工具执行
+     - 工具调用逻辑在processResponse中但该方法未被调用
+   - **修复**:
+     - 在agent loop中添加工具执行逻辑
+     - processStream后检查并执行工具调用
+     - 只有无工具调用时才SetComplete()
+     - 添加OnToolCallStart和OnToolCallComplete回调通知
+   - **文件**: `internal/agent/agent.go`
+   - **日期**: 2026-05-09
+
+2. **TUI 流式输出优化** ✅
+   - **问题**: 
+     - TUI 模式下是非流式输出，运行长任务时没有任何提示
+     - 界面没有动效，用户体验差
+     - 错误不能尽快在 TUI 界面上返回
+   - **修复**: 
+     - 添加 `spinner` 组件实现加载动画
+     - 重构 `processMessageStream` 使用 `CreateMessageStream` 实现真正的流式输出
+     - 添加 `streamChunkMsg` 类型处理流式消息
+     - 实现 `startStream` 和 `waitForStream` 方法管理流的生命周期
+     - 添加流式指示器 (▌) 在 AI 响应末尾显示打字效果
+     - 状态栏显示动态 spinner 和当前状态 ("AI is responding...", "Running: <tool>")
+     - 增强错误处理，错误立即显示在界面上
+     - 添加工具调用反馈 ("🔧 Running: <tool>")
+   - **文件**: `internal/ui/tui.go`
+
+2. **TUI 流式工具调用显示** ✅
+   - **问题**: 
+     - 工具调用参数在流式响应中逐步构建时，TUI 无法实时显示
+     - 用户无法看到工具调用的实时进度
+     - 缺乏类似 Cline 的 ⏺ 符号和闪烁效果
+   - **修复**: 
+     - 添加 `PartialToolCall` 结构体跟踪流式工具调用状态
+     - 在 `Model` 中添加 `partialToolCall` 字段
+     - 修改 `streamChunkMsg` 处理逻辑，区分 `IsPartial` 和完整工具调用
+     - 部分工具调用时累积参数并实时更新视图
+     - 完整工具调用时添加到消息历史并显示系统消息
+     - 在 `updateViewport` 中添加部分工具调用显示逻辑
+     - 显示格式: `⏺ tool_name({"param": "value"...})` 带闪烁效果
+     - 添加 `toolPartialStyle` 和 `toolIndicatorStyle` 样式
+     - 创建 Mock Provider 用于测试流式工具调用
+     - 支持 5 种测试场景: long_text, tool_call, tool_then_text, multi_tool, error
+   - **文件**: `internal/ui/tui.go`, `internal/api/mock.go`, `cmd/gline/chat.go`
+
+3. **系统提示词未传递给 LLM** ✅
+   - **问题**: 
+     - Agent 运行时没有将系统提示词传递给 LLM
+     - TUI 模式下也没有传递系统提示词和工具
+     - LLM 不知道有哪些工具可用
+     - 用户提示 "use a tool test" 时 AI 回复 "I don't have access to any tools"
+   - **修复**: 
+     - 在 `internal/agent/agent.go` 中导入 `prompts` 包
+     - 在 `Run` 方法中构建系统提示词并设置到 `MessageRequest.SystemPrompt`
+     - 根据当前模式（Plan/Act）获取对应的工具描述
+     - 调用 `prompts.GetSystemPrompt()` 生成完整的系统提示词
+     - 在 `internal/ui/tui.go` 中导入 `prompts` 包
+     - 在 `startStream` 方法中构建系统提示词和工具列表
+     - 添加 `GetToolRegistry()` 方法到 `BaseAgent` 供 TUI 使用
+     - 确保 TUI 模式和非 TUI 模式都传递系统提示词
+   - **文件**: `internal/agent/agent.go`, `internal/ui/tui.go`
+
+2. **OpenAI Provider 404 错误** ✅
+   - **问题**: `defaultOpenAIURL` 常量设置为完整端点 URL，但代码直接使用它作为请求 URL，导致 404 错误
+   - **修复**: 将 `defaultOpenAIURL` 改为 `defaultOpenAIBaseURL` (基础 URL)，并在请求时拼接 `/chat/completions` 路径
+   - **文件**: `internal/api/openai.go`
+
+2. **环境变量名称不一致** ✅
+   - **问题**: 代码中使用 `OPENAI_API_KEY` 和 `ANTHROPIC_API_KEY`，但配置系统绑定的是 `GLINE_OPENAI_API_KEY` 和 `GLINE_ANTHROPIC_API_KEY`
+   - **修复**: 统一使用 `GLINE_*` 前缀的环境变量名称
+   - **文件**: `cmd/gline/chat.go`, `cmd/gline/root.go`
+
+3. **DashScope API 兼容性问题** ✅
+   - **问题**: 
+     - `buildFullURL` 函数已添加但未在 `CreateMessage` 和 `CreateMessageStream` 中使用，导致 URL 拼接问题
+     - SSE 流式响应解析缺少调试日志，无法诊断问题
+     - 程序卡在 "Processing your request..." 没有响应
+   - **修复**: 
+     - 在 `CreateMessage` (第 274 行) 和 `CreateMessageStream` (第 492 行) 中使用 `buildFullURL(p.baseURL)`
+     - 添加 SSE 调试日志，记录每行接收的数据和解析错误
+     - 导入 `github.com/liup215/gline/internal/log` 包
+   - **文件**: `internal/api/openai.go`
+
+4. **TUI Provider/Model 显示为 "-"** ✅
+   - **问题**: 
+     - TUI 状态栏显示 `Provider: - | Model: -`
+     - `New` 函数创建 Model 时没有从 Agent 获取 Provider 和 Model 信息
+   - **修复**: 
+     - 在 `BaseAgent` 中添加 `GetProvider()` 方法
+     - 在 TUI `New` 函数中调用 `agentInstance.GetProvider()` 获取 Provider 和 Model 信息
+   - **文件**: `internal/agent/agent.go`, `internal/ui/tui.go`
+
+5. **Agent 无限循环问题** ✅
+   - **问题**: 
+     - 程序卡在 "Processing your request..." 没有响应
+     - Agent 的 `Run` 方法无限循环，不断发送 API 请求
+     - `processResponse` 中没有在没有工具调用时标记对话为完成
+   - **修复**: 
+     - 在 `processResponse` 中添加检查：如果没有工具调用，调用 `a.conversation.SetComplete()`
+   - **文件**: `internal/agent/agent.go`
+
+6. **TUI 阻塞问题** ✅
+   - **问题**: 
+     - TUI 模式下发送消息后界面卡死
+     - `processMessage` 是同步执行的，阻塞了 Bubbletea 主循环
+     - TUI 无法接收 Agent 的响应
+   - **修复**: 
+     - 将 `processMessage` 改为异步执行，使用 goroutine 和 channel
+     - 通过 channel 发送响应结果，Bubbletea 可以正确处理
+   - **文件**: `internal/ui/tui.go`
+
 ### 技术问题
 
 1. **SQLite CGO**: Windows 上需要 GCC 编译器

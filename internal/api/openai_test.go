@@ -13,8 +13,8 @@ func TestNewOpenAIProvider(t *testing.T) {
 	if p.GetModel() != "gpt-4" {
 		t.Errorf("Expected default model 'gpt-4', got '%s'", p.GetModel())
 	}
-	if p.GetBaseURL() != defaultOpenAIURL {
-		t.Errorf("Expected default URL '%s', got '%s'", defaultOpenAIURL, p.GetBaseURL())
+	if p.GetBaseURL() != defaultOpenAIBaseURL {
+		t.Errorf("Expected default URL '%s', got '%s'", defaultOpenAIBaseURL, p.GetBaseURL())
 	}
 
 	// Test with custom values

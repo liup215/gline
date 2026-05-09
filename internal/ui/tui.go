@@ -7,13 +7,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/liup215/gline/internal/agent"
-	"github.com/liup215/gline/internal/log"
 	"github.com/liup215/gline/pkg/types"
 )
 
@@ -30,19 +30,26 @@ type Model struct {
 	// UI components
 	viewport viewport.Model
 	textarea textarea.Model
+	spinner  spinner.Model
 
 	// State
-	messages      []Message
-	mode          agent.Mode
-	provider      string
-	model         string
-	inputHeight   int
-	isProcessing  bool
-	err           error
+	messages     []Message
+	mode         agent.Mode
+	provider     string
+	model        string
+	inputHeight  int
+	isProcessing bool
+	isStreaming  bool
+	err          error
+	currentTool  string
+	activeAssistantIndex int
 
 	// Agent components
 	agentInstance *agent.BaseAgent
 	ctx           context.Context
+
+	// Program reference for sending messages
+	program *tea.Program
 
 	// Dimensions
 	width  int
@@ -68,10 +75,15 @@ var (
 		Foreground(lipgloss.Color("#888888"))
 
 	errorStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#FF0000"))
+		Foreground(lipgloss.Color("#FF0000")).
+		Bold(true)
 
 	toolStyle = lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#FFA500"))
+
+	toolRunningStyle = lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#FFD700")).
+		Bold(true)
 
 	statusBarStyle = lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#FFFFFF")).
@@ -80,6 +92,10 @@ var (
 
 	helpStyle = lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#666666"))
+
+	streamingIndicatorStyle = lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#00FF00")).
+		Bold(true)
 )
 
 // New creates a new TUI model
@@ -95,15 +111,38 @@ func New(agentInstance *agent.BaseAgent) *Model {
 	// Create viewport for messages
 	vp := viewport.New(80, 20)
 
+	// Create spinner for loading animation
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#00AAFF"))
+
+	// Get provider and model info from agent
+	var providerName, modelName string
+	if agentInstance != nil {
+		if provider := agentInstance.GetProvider(); provider != nil {
+			providerName = provider.GetProviderName()
+			modelName = provider.GetModel()
+		}
+	}
+
 	return &Model{
 		textarea:      ta,
 		viewport:      vp,
+		spinner:       s,
 		messages:      []Message{},
 		mode:          agent.ModeAct,
+		provider:      providerName,
+		model:         modelName,
 		inputHeight:   3,
+		activeAssistantIndex: -1,
 		agentInstance: agentInstance,
 		ctx:           context.Background(),
 	}
+}
+
+// SetProgram sets the program reference for sending messages
+func (m *Model) SetProgram(p *tea.Program) {
+	m.program = p
 }
 
 // Init initializes the TUI
@@ -111,6 +150,7 @@ func (m *Model) Init() tea.Cmd {
 	return tea.Batch(
 		tea.EnterAltScreen,
 		textarea.Blink,
+		m.spinner.Tick,
 	)
 }
 
@@ -155,7 +195,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.sendMessage(input)
 					m.textarea.Reset()
 					m.textarea.Blur()
-					cmds = append(cmds, m.processMessage())
+					// Start the agent with callback
+					cmds = append(cmds, m.startAgent())
 				}
 			}
 
@@ -165,37 +206,68 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.updateViewport()
 		}
 
-	case streamMsg:
-		// Handle streaming content
-		if msg.done {
-			m.isProcessing = false
-			m.textarea.Focus()
-		} else if msg.err != nil {
-			m.err = msg.err
-			m.isProcessing = false
-			m.addSystemMessage(fmt.Sprintf("Error: %v", msg.err))
-			m.textarea.Focus()
-		} else {
-			// Append content to last assistant message
-			if len(m.messages) > 0 && m.messages[len(m.messages)-1].Role == types.RoleAssistant {
-				m.messages[len(m.messages)-1].Content += msg.content
+	case spinner.TickMsg:
+		// Update spinner animation
+		if m.isProcessing {
+			newSpinner, cmd := m.spinner.Update(msg)
+			m.spinner = newSpinner
+			cmds = append(cmds, cmd)
+		}
+
+	case agentUpdateMsg:
+		// Handle agent callback updates
+		switch msg.updateType {
+		case "content":
+			// Append content to the active assistant slot even if tool/system messages
+			// were appended after streaming started.
+			if m.activeAssistantIndex >= 0 && m.activeAssistantIndex < len(m.messages) && m.messages[m.activeAssistantIndex].Role == types.RoleAssistant {
+				m.messages[m.activeAssistantIndex].Content += msg.content
 				m.updateViewport()
 			}
-		}
 
-	case toolCallMsg:
-		// Handle tool calls
-		if len(m.messages) > 0 && m.messages[len(m.messages)-1].Role == types.RoleAssistant {
-			m.messages[len(m.messages)-1].ToolCalls = append(
-				m.messages[len(m.messages)-1].ToolCalls,
-				msg.toolCall,
-			)
-			m.addSystemMessage(fmt.Sprintf("🔧 Tool: %s", msg.toolCall.Name))
-		}
+		case "toolStart":
+			m.currentTool = msg.toolName
+			m.addSystemMessage(fmt.Sprintf("🔧 Running: %s", msg.toolName))
+			m.updateViewport()
 
-	case toolResultMsg:
-		// Handle tool results
-		m.addSystemMessage(fmt.Sprintf("✓ Result: %s", msg.result))
+		case "toolComplete":
+			// Show tool completion with result
+			result := msg.toolResult
+			// Check if this is a JSON parsing error (contains "Original input:")
+			if strings.Contains(result, "Original input:") {
+				// Extract and show the original input for debugging
+				parts := strings.Split(result, "Original input:")
+				if len(parts) > 1 {
+					originalInput := strings.TrimSpace(parts[1])
+					m.addSystemMessage(fmt.Sprintf("🔧 Tool Call Failed: %s\n❌ JSON Parse Error\n📄 Original Input: %s", msg.toolName, originalInput))
+				} else {
+					m.addSystemMessage(fmt.Sprintf("🔧 Tool Call Failed: %s\n❌ %s", msg.toolName, result))
+				}
+			} else {
+				// Normal tool result
+				if len(result) > 200 {
+					result = result[:200] + "..."
+				}
+				m.addSystemMessage(fmt.Sprintf("🔧 Completed: %s\nResult: %s", msg.toolName, result))
+			}
+			m.currentTool = ""
+			m.updateViewport()
+
+		case "error":
+			m.err = msg.err
+			m.isProcessing = false
+			m.isStreaming = false
+			m.activeAssistantIndex = -1
+			m.addErrorMessage(fmt.Sprintf("Error: %v", msg.err))
+			m.textarea.Focus()
+
+		case "complete":
+			m.isProcessing = false
+			m.isStreaming = false
+			m.currentTool = ""
+			m.activeAssistantIndex = -1
+			m.textarea.Focus()
+		}
 	}
 
 	// Update textarea
@@ -256,13 +328,25 @@ func (m *Model) sendMessage(content string) {
 		Content:   "",
 		Timestamp: time.Now(),
 	})
+	m.activeAssistantIndex = len(m.messages) - 1
 
 	m.isProcessing = true
+	m.isStreaming = true
 	m.updateViewport()
 }
 
 // addSystemMessage adds a system message
 func (m *Model) addSystemMessage(content string) {
+	m.messages = append(m.messages, Message{
+		Role:      types.RoleSystem,
+		Content:   content,
+		Timestamp: time.Now(),
+	})
+	m.updateViewport()
+}
+
+// addErrorMessage adds an error message
+func (m *Model) addErrorMessage(content string) {
 	m.messages = append(m.messages, Message{
 		Role:      types.RoleSystem,
 		Content:   content,
@@ -283,20 +367,34 @@ func (m *Model) updateViewport() {
 			content.WriteString("\n\n")
 
 		case types.RoleAssistant:
-			if msg.Content != "" {
+			hasContent := msg.Content != "" || len(msg.ToolCalls) > 0
+
+			if hasContent {
 				content.WriteString(assistantStyle.Render("AI: "))
-				content.WriteString(msg.Content)
+				if msg.Content != "" {
+					content.WriteString(msg.Content)
+					content.WriteString("\n")
+				}
+
+				// Show completed tool calls
+				if len(msg.ToolCalls) > 0 {
+					for _, tc := range msg.ToolCalls {
+						content.WriteString(toolStyle.Render(fmt.Sprintf("  🔧 %s\n", tc.Name)))
+					}
+				}
+
 				content.WriteString("\n")
 			}
-			if len(msg.ToolCalls) > 0 {
-				for _, tc := range msg.ToolCalls {
-					content.WriteString(toolStyle.Render(fmt.Sprintf("  🔧 %s\n", tc.Name)))
-				}
-			}
-			content.WriteString("\n")
 
 		case types.RoleSystem:
-			content.WriteString(systemStyle.Render(msg.Content))
+			// Check if it's an error message
+			if strings.HasPrefix(msg.Content, "Error:") || strings.HasPrefix(msg.Content, "✗") {
+				content.WriteString(errorStyle.Render(msg.Content))
+			} else if strings.HasPrefix(msg.Content, "🔧") {
+				content.WriteString(toolRunningStyle.Render(msg.Content))
+			} else {
+				content.WriteString(systemStyle.Render(msg.Content))
+			}
 			content.WriteString("\n\n")
 		}
 	}
@@ -324,64 +422,102 @@ func (m *Model) renderStatusBar() string {
 	}
 
 	status := fmt.Sprintf("[%s] Provider: %s | Model: %s", modeStr, provider, model)
+
 	if m.isProcessing {
-		status += " | ⏳ Processing..."
+		if m.isStreaming {
+			status += fmt.Sprintf(" | %s AI is responding...", m.spinner.View())
+		} else if m.currentTool != "" {
+			status += fmt.Sprintf(" | %s Running: %s", m.spinner.View(), m.currentTool)
+		} else {
+			status += fmt.Sprintf(" | %s Processing...", m.spinner.View())
+		}
 	}
 
 	return statusBarStyle.Width(m.width).Render(status)
 }
 
-// processMessage handles the message processing with the agent
-func (m *Model) processMessage() tea.Cmd {
+// agentUpdateMsg represents an update from the agent callback
+type agentUpdateMsg struct {
+	updateType string
+	content    string
+	toolName   string
+	toolResult string
+	err        error
+}
+
+// tuiCallback implements the agent.StreamCallback interface
+type tuiCallback struct {
+	program *tea.Program
+}
+
+func (c *tuiCallback) OnContent(delta string) {
+	if c.program != nil {
+		c.program.Send(agentUpdateMsg{updateType: "content", content: delta})
+	}
+}
+
+func (c *tuiCallback) OnToolCallStart(toolCall agent.ToolCall) {
+	if c.program != nil {
+		c.program.Send(agentUpdateMsg{updateType: "toolStart", toolName: toolCall.Name})
+	}
+}
+
+func (c *tuiCallback) OnToolCallComplete(toolCall agent.ToolCall, result string) {
+	if c.program != nil {
+		c.program.Send(agentUpdateMsg{updateType: "toolComplete", toolName: toolCall.Name, toolResult: result})
+	}
+}
+
+func (c *tuiCallback) OnError(err error) {
+	if c.program != nil {
+		c.program.Send(agentUpdateMsg{updateType: "error", err: err})
+	}
+}
+
+func (c *tuiCallback) OnComplete() {
+	if c.program != nil {
+		c.program.Send(agentUpdateMsg{updateType: "complete"})
+	}
+}
+
+// startAgent starts the agent with the TUI callback
+func (m *Model) startAgent() tea.Cmd {
 	return func() tea.Msg {
 		if m.agentInstance == nil {
-			return streamMsg{err: fmt.Errorf("agent not initialized"), done: true}
+			return agentUpdateMsg{updateType: "error", err: fmt.Errorf("agent not initialized")}
 		}
 
 		// Get the last user message
-		var lastUserMsg string
+		var lastUserMessage string
 		for i := len(m.messages) - 1; i >= 0; i-- {
 			if m.messages[i].Role == types.RoleUser {
-				lastUserMsg = m.messages[i].Content
+				lastUserMessage = m.messages[i].Content
 				break
 			}
 		}
 
-		if lastUserMsg == "" {
-			return streamMsg{err: fmt.Errorf("no user message found"), done: true}
+		if lastUserMessage == "" {
+			return agentUpdateMsg{updateType: "error", err: fmt.Errorf("no user message found")}
 		}
 
-		// Run the agent
-		err := m.agentInstance.Run(m.ctx, lastUserMsg)
+		// Create callback with program reference
+		callback := &tuiCallback{program: m.program}
+
+		// Run the agent with callback
+		err := m.agentInstance.RunWithCallback(m.ctx, lastUserMessage, callback)
 		if err != nil {
-			log.Errorf("Agent error: %v", err)
-			return streamMsg{err: err, done: true}
+			return agentUpdateMsg{updateType: "error", err: err}
 		}
 
-		return streamMsg{done: true}
+		return agentUpdateMsg{updateType: "complete"}
 	}
-}
-
-// streamMsg represents a streaming message update
-type streamMsg struct {
-	content string
-	err     error
-	done    bool
-}
-
-// toolCallMsg represents a tool call
-type toolCallMsg struct {
-	toolCall types.ToolCall
-}
-
-// toolResultMsg represents a tool result
-type toolResultMsg struct {
-	result string
 }
 
 // Run starts the TUI
 func Run(agentInstance *agent.BaseAgent) error {
-	p := tea.NewProgram(New(agentInstance), tea.WithAltScreen())
+	model := New(agentInstance)
+	p := tea.NewProgram(model, tea.WithAltScreen())
+	model.SetProgram(p)
 	_, err := p.Run()
 	return err
 }

@@ -28,10 +28,10 @@ func initializeAgent() (*agent.BaseAgent, error) {
 	case "anthropic":
 		apiKey := cfg.Provider.Anthropic.APIKey
 		if apiKey == "" {
-			apiKey = os.Getenv("ANTHROPIC_API_KEY")
+			apiKey = os.Getenv("GLINE_ANTHROPIC_API_KEY")
 		}
 		if apiKey == "" {
-			return nil, fmt.Errorf("Anthropic API key not configured. Set it in config or ANTHROPIC_API_KEY environment variable")
+			return nil, fmt.Errorf("Anthropic API key not configured. Set it in config or GLINE_ANTHROPIC_API_KEY environment variable")
 		}
 		model := cfg.Provider.Anthropic.Model
 		if model == "" {
@@ -43,10 +43,10 @@ func initializeAgent() (*agent.BaseAgent, error) {
 	case "openai":
 		apiKey := cfg.Provider.OpenAI.APIKey
 		if apiKey == "" {
-			apiKey = os.Getenv("OPENAI_API_KEY")
+			apiKey = os.Getenv("GLINE_OPENAI_API_KEY")
 		}
 		if apiKey == "" {
-			return nil, fmt.Errorf("OpenAI API key not configured. Set it in config or OPENAI_API_KEY environment variable")
+			return nil, fmt.Errorf("OpenAI API key not configured. Set it in config or GLINE_OPENAI_API_KEY environment variable")
 		}
 		model := cfg.Provider.OpenAI.Model
 		if model == "" {
@@ -55,6 +55,15 @@ func initializeAgent() (*agent.BaseAgent, error) {
 		baseURL := cfg.Provider.OpenAI.BaseURL
 		provider = api.NewOpenAIProvider(apiKey, model, baseURL)
 		log.Infof("Using OpenAI provider with model: %s", model)
+
+	case "mock":
+		// Mock provider for testing streaming and tool calls
+		scenario := os.Getenv("GLINE_MOCK_SCENARIO")
+		if scenario == "" {
+			scenario = "tool_call"
+		}
+		provider = api.NewMockProvider(api.MockScenario(scenario), 0, 0)
+		log.Infof("Using Mock provider with scenario: %s", scenario)
 
 	default:
 		return nil, fmt.Errorf("unknown provider: %s", providerName)
@@ -116,7 +125,9 @@ func runSingleMessage(agentInstance *agent.BaseAgent, message string) {
 
 // runTUIChat starts the interactive TUI chat mode
 func runTUIChat(agentInstance *agent.BaseAgent) {
-	log.Info("Starting TUI chat mode")
+	// Disable console logging in TUI mode to prevent interference with TUI rendering
+	// Logs will still be written to file if configured
+	log.SetConsoleOutput(false)
 
 	if err := ui.Run(agentInstance); err != nil {
 		log.Errorf("TUI error: %v", err)

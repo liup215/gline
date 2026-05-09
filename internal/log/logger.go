@@ -17,6 +17,9 @@ import (
 // Logger is the global logger instance
 var Logger zerolog.Logger
 
+// consoleOutputEnabled controls whether logs are written to console
+var consoleOutputEnabled = true
+
 // Level represents log levels
 type Level int8
 
@@ -228,4 +231,21 @@ func GetLevel() string {
 // IsDebug returns true if debug logging is enabled
 func IsDebug() bool {
 	return Logger.GetLevel() <= zerolog.DebugLevel
+}
+
+// SetConsoleOutput enables or disables console output
+// When disabled, logs will only be written to file if configured
+func SetConsoleOutput(enabled bool) {
+	consoleOutputEnabled = enabled
+	if enabled {
+		// Re-initialize with console output
+		Init(DefaultConfig())
+	} else {
+		// Disable console output by redirecting to Discard
+		Logger = zerolog.New(io.Discard).
+			Level(Logger.GetLevel()).
+			With().
+			Timestamp().
+			Logger()
+	}
 }
