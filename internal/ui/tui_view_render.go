@@ -1,15 +1,12 @@
 package ui
 
 import (
-	"bytes"
-	"encoding/json"
-	"fmt"
-	"strings"
+"fmt"
+"strings"
 
-	"github.com/charmbracelet/glamour"
-	"github.com/charmbracelet/lipgloss"
+"github.com/charmbracelet/lipgloss"
 
-	"github.com/liup215/gline/pkg/types"
+"github.com/liup215/gline/pkg/types"
 )
 
 // renderMessageHeader returns the formatted header line (author + timestamp) for message at index i.
@@ -45,58 +42,36 @@ func renderAssistantContent(m *Model, i int) string {
 	wrapWidth := m.viewport.Width
 	rendered := ""
 
-	// use cache when possible
-	if msg.Rendered != "" && msg.RenderedSource == msg.Content && msg.RenderedWrapWidth == wrapWidth {
-		rendered = msg.Rendered
-	} else {
-		switch msg.Role {
-		case types.RoleAssistant:
-			// render with glamour
-			r, _ := glamour.NewTermRenderer(glamour.WithWordWrap(wrapWidth))
-			if r != nil {
-				if out, err := r.Render(msg.Content); err == nil {
-					rendered = out
-				} else {
-					rendered = msg.Content
-				}
-			} else {
-				// fallback: raw content
-				rendered = msg.Content
-			}
-		default:
-			rendered = msg.Content
-		}
-
-		// cache rendered output
-		msg.Rendered = rendered
-		msg.RenderedWrapWidth = wrapWidth
-		msg.RenderedSource = msg.Content
-		m.messages[i] = msg
+ 
+// use cache when possible
+if msg.Rendered != "" && msg.RenderedSource == msg.Content && msg.RenderedWrapWidth == wrapWidth {
+	rendered = msg.Rendered
+} else {
+	switch msg.Role {
+	case types.RoleAssistant:
+		// delegate markdown rendering to centralized helper
+		rendered = renderMarkdown(m, msg.Content, wrapWidth)
+	default:
+		rendered = msg.Content
 	}
+
+	// cache rendered output
+	msg.Rendered = rendered
+	msg.RenderedWrapWidth = wrapWidth
+	msg.RenderedSource = msg.Content
+	m.messages[i] = msg
+}
 
 	// streaming indicator for active assistant message
 	if m.isStreaming && i == m.activeAssistantIndex && msg.Role == types.RoleAssistant {
 		rendered = strings.TrimRight(rendered, "\n") + "\n" + streamingIndicatorStyle.Render("▌")
 	}
 
-	// If tool calls are attached to the message, pretty-print them after content
-	if len(msg.ToolCalls) > 0 {
-		var tb strings.Builder
-		for _, tc := range msg.ToolCalls {
-			tb.WriteString(fmt.Sprintf("\n  🔧 %s", tc.Name))
-			if len(tc.Input) > 0 {
-				var buf bytes.Buffer
-				if err := json.Indent(&buf, tc.Input, "    ", "  "); err == nil {
-					tb.WriteString("\n    Input:\n")
-					tb.WriteString(buf.String())
-				} else {
-					tb.WriteString("\n    Input: ")
-					tb.WriteString(string(tc.Input))
-				}
-			}
-		}
-		rendered = strings.TrimRight(rendered, "\n") + "\n" + lipgloss.NewStyle().Padding(0, 0).Render(tb.String())
-	}
+ 
+// If tool calls are attached to the message, pretty-print them after content
+if len(msg.ToolCalls) > 0 {
+	rendered = strings.TrimRight(rendered, "\n") + "\n" + formatToolCallsInline(msg.ToolCalls)
+}
 
 	// ensure trailing newline
 	if !strings.HasSuffix(rendered, "\n") {
