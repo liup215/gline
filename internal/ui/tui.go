@@ -35,6 +35,11 @@ type Message struct {
 	ToolCalls []types.ToolCall
 	Options   []string // Options for ask_followup_question display (nil for non-question messages)
 	Timestamp time.Time
+
+	// Cached rendered markdown to avoid repeated glamour rendering.
+	Rendered           string
+	RenderedWrapWidth  int
+	RenderedSource     string // original Content used to produce Rendered
 }
 
 // Model represents the TUI state
@@ -70,6 +75,10 @@ type Model struct {
 
 	// Pending reply channel when the UI is answering an AskFollowupQuestion
 	pendingReply chan string
+
+	// Glamour renderer cache for current wrap width (avoid recreating renderer every redraw)
+	renderer          *glamour.TermRenderer
+	rendererWrapWidth int
 
 	// Dimensions
 	width  int
@@ -768,32 +777,60 @@ content.WriteString(systemStyle.Render(msg.Timestamp.Format("15:04")))
 content.WriteString("\n\n")
 
 case types.RoleAssistant:
-    // Render assistant content as markdown (glamour) with word-wrap matching viewport width
-    rendered := msg.Content
-    if msg.Content != "" {
-        // compute available wrap width for Glamour (subtract left/right padding)
-        wrapWidth := m.viewport.Width - pad*2
-        if wrapWidth < 20 {
-            wrapWidth = 20
-        }
-        // Prefer a renderer configured with the correct word wrap
-        if r, err := glamour.NewTermRenderer(glamour.WithWordWrap(wrapWidth)); err == nil {
-            if out, err2 := r.Render(msg.Content); err2 == nil {
-                rendered = out
-            } else {
-                // fallback to default renderer
-                if out2, err3 := glamour.Render(msg.Content, "dark"); err3 == nil {
-                    rendered = out2
-                }
-            }
-        } else {
-            if out, err := glamour.Render(msg.Content, "dark"); err == nil {
-                rendered = out
-            }
-        }
-        // Add horizontal padding to the rendered block
-        rendered = lipgloss.NewStyle().Padding(0, pad).Render(rendered)
-    }
+		// Render assistant content as markdown (glamour) with word-wrap matching viewport width
+		rendered := msg.Content
+		if msg.Content != "" {
+			// compute available wrap width for Glamour (subtract left/right padding)
+			wrapWidth := m.viewport.Width - pad*2
+			if wrapWidth < 20 {
+				wrapWidth = 20
+			}
+
+			// Reuse cached rendered output when possible
+			if msg.Rendered != "" && msg.RenderedSource == msg.Content && msg.RenderedWrapWidth == wrapWidth {
+				rendered = msg.Rendered
+			} else {
+				// Ensure we have a renderer for this wrapWidth cached on the model.
+				var r *glamour.TermRenderer
+				var err error
+				if m.renderer != nil && m.rendererWrapWidth == wrapWidth {
+					r = m.renderer
+				} else {
+					if r, err = glamour.NewTermRenderer(glamour.WithWordWrap(wrapWidth)); err == nil {
+						m.renderer = r
+						m.rendererWrapWidth = wrapWidth
+					} else {
+						// failed to construct; fall back to default renderer later
+						m.renderer = nil
+						m.rendererWrapWidth = 0
+					}
+				}
+
+				if r != nil {
+					if out, err2 := r.Render(msg.Content); err2 == nil {
+						rendered = out
+					} else {
+						// fallback to default renderer
+						if out2, err3 := glamour.Render(msg.Content, "dark"); err3 == nil {
+							rendered = out2
+						}
+					}
+				} else {
+					if out, err := glamour.Render(msg.Content, "dark"); err == nil {
+						rendered = out
+					}
+				}
+
+				// Update message cache
+				msg.Rendered = rendered
+				msg.RenderedWrapWidth = wrapWidth
+				msg.RenderedSource = msg.Content
+				m.messages[i] = msg
+			}
+
+			// Add horizontal padding to the rendered block
+			rendered = lipgloss.NewStyle().Padding(0, pad).Render(rendered)
+		}
 
 // Append streaming cursor if this is the active streaming assistant message
 if m.isStreaming && i == m.activeAssistantIndex {
