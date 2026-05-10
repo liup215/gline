@@ -58,27 +58,43 @@ func InitDefaultRegistry() *Registry {
 	})
 
 	// User interaction - allowed in both modes
+	// ask_followup_question: skip both start & complete system messages;
+	// the askQuestionMsg handler displays the question with styled options instead.
 	registry.Register(&ToolInfo{
 		Tool:                 NewAskFollowupQuestionTool(),
 		Category:             CategoryInteraction,
 		AllowedModes:         []string{"plan", "act"},
 		RequiresConfirmation: false,
+		Behavior: ToolBehavior{
+			StartDisplayMode:   DisplaySkip,
+			CompleteDisplayMode: DisplaySkip,
+		},
 	})
 
 	// Plan mode response - plan mode only
+	// plan_mode_respond: skip start; render the completed result as a full assistant message (markdown)
 	registry.Register(&ToolInfo{
 		Tool:                 NewPlanModeRespondTool(),
 		Category:             CategoryInteraction,
 		AllowedModes:         []string{"plan"},
 		RequiresConfirmation: false,
+		Behavior: ToolBehavior{
+			StartDisplayMode:   DisplaySkip,
+			CompleteDisplayMode: DisplayAssistant,
+		},
 	})
 
 	// Completion - allowed in both modes
+	// attempt_completion: show result as assistant message (markdown); skip duplicate complete message
 	registry.Register(&ToolInfo{
 		Tool:                 NewAttemptCompletionTool(),
 		Category:             CategoryCompletion,
 		AllowedModes:         []string{"plan", "act"},
 		RequiresConfirmation: false,
+		Behavior: ToolBehavior{
+			StartDisplayMode:   DisplayAssistant,
+			CompleteDisplayMode: DisplaySkip,
+		},
 	})
 
 	return registry

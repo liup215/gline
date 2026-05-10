@@ -171,6 +171,7 @@ var toolDescriptions = map[string]string{
 	"search_files":       "searched files",
 	"attempt_completion":    "completed the task",
 	"ask_followup_question": "asked a question",
+	"plan_mode_respond":     "provided a plan response",
 	"use_mcp_tool":          "used an MCP tool",
 	"access_mcp_resource":"accessed an MCP resource",
 }
@@ -519,6 +520,9 @@ if normalizeToolName(msg.toolName) == "attempt_completion" {
 } else if normalizeToolName(msg.toolName) == "ask_followup_question" {
     // Skip adding a system message here; the askQuestionMsg handler (triggered by
     // the AskFollowupQuestion callback) will display the question with styled options.
+} else if normalizeToolName(msg.toolName) == "plan_mode_respond" {
+    // Skip: the completed result will be rendered as a full assistant message (markdown)
+    // in the toolComplete handler, so no need to show the Input here.
 } else {
     m.messages = append(m.messages, Message{
         Role:      types.RoleSystem,
@@ -545,9 +549,23 @@ m.currentTool = ""
 // was already added on toolStart for clearer presentation.
 // For ask_followup_question we also skip — the question+options are already displayed by
 // the askQuestionMsg handler, and the answer is visible from user input.
+// For plan_mode_respond we render the result as a full assistant message with markdown.
 if normalizeToolName(msg.toolName) == "attempt_completion" || normalizeToolName(msg.toolName) == "ask_followup_question" {
 m.updateViewport()
 break
+}
+
+if normalizeToolName(msg.toolName) == "plan_mode_respond" {
+    // Render the plan response as an assistant message (full markdown, no truncation)
+    if result != "" {
+        m.messages = append(m.messages, Message{
+            Role:      types.RoleAssistant,
+            Content:   result,
+            Timestamp: time.Now(),
+        })
+    }
+    m.updateViewport()
+    break
 }
 
 // Append system message for conversation visibility with a short result summary
