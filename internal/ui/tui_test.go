@@ -63,6 +63,7 @@ func TestToolStatusArea(t *testing.T) {
 	m.height = 30
 
 	// No tools active — should show just a border
+	m.updateViewport()
 	view := m.View()
 	if !strings.Contains(view, "──") {
 		t.Fatalf("expected border line when no tools active, got: %q", view)
@@ -73,6 +74,7 @@ func TestToolStatusArea(t *testing.T) {
 		Name:   "read_file",
 		Status: "running",
 	})
+	m.updateViewport()
 	view = m.View()
 	if !strings.Contains(view, "read_file") || !strings.Contains(view, "⏳") {
 		t.Fatalf("expected running tool indicator, got: %q", view)
@@ -80,6 +82,7 @@ func TestToolStatusArea(t *testing.T) {
 
 	// Mark tool as completed
 	m.conversation.ToolHistory[0].Status = "completed"
+	m.updateViewport()
 	view = m.View()
 	if !strings.Contains(view, "read_file") || !strings.Contains(view, "✓") {
 		t.Fatalf("expected completed tool indicator, got: %q", view)
@@ -87,6 +90,7 @@ func TestToolStatusArea(t *testing.T) {
 
 	// Mark tool as failed
 	m.conversation.ToolHistory[0].Status = "failed"
+	m.updateViewport()
 	view = m.View()
 	if !strings.Contains(view, "read_file") || !strings.Contains(view, "✗") {
 		t.Fatalf("expected failed tool indicator, got: %q", view)

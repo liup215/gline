@@ -28,9 +28,10 @@ internal/ui/
 **5 阶段渐进方案**:
 - ✅ Phase 1: 类型安全的消息系统（消除魔法字符串）— **已完成 2026-05-11**
 - ✅ Phase 2: 抽离纯数据 Model — **已完成 2026-05-11**
-- Phase 3: 引入 ViewModel 层
+- ✅ Phase 3: 引入 ViewModel 层 — **已完成 2026-05-11**
 - Phase 4: Bridge 层重构（解耦 Agent 和 TUI）
 - Phase 5: View 纯函数化 + Bubbletea 薄壳
+```
 
 **Phase 1 完成记录**:
 1. 创建 `internal/ui/bridge/messages.go` — 定义 `AgentEvent` 接口 + 8 个具体事件类型
@@ -58,7 +59,30 @@ internal/ui/
 9. 创建 `internal/ui/model/conversation_test.go` — 23 个单元测试全部通过
 10. `go build ./...` 成功，现有测试 + 新测试全部通过
 
+**Phase 3 完成记录**:
+1. 创建 `internal/ui/viewmodel/conversation_vm.go` — `ConversationViewModel` 结构体
+   - 持有 Glamour renderer（从 Model 移入）
+   - `Refresh()` 从 `model.Conversation` 重建完整 viewport 内容和工具区域
+   - `Content()` / `ToolAreaContent()` 提供渲染后的字符串
+   - 脏标记机制：`MarkDirty()` / `IsDirty()`（为后续增量渲染预留）
+2. 迁移渲染逻辑到 ViewModel
+   - `renderMarkdown` → ViewModel 私有方法
+   - `renderAssistantContent` → ViewModel 私有方法
+   - `renderMessageHeader` → ViewModel 私有方法
+   - `formatToolCallsInline` → ViewModel 私有方法
+   - `renderToolCalls` → ViewModel 私有方法
+   - `updateViewport()` 的全量渲染循环 → `Refresh()`
+3. 重构 `ui.Model` — 移除 `renderer` / `rendererWrapWidth` 字段，添加 `convVM *viewmodel.ConversationViewModel`
+4. 重写 `updateViewport()` — 委托给 `convVM.Refresh()`，然后设置 viewport 内容
+5. 重写 `renderToolArea()` — 委托给 `convVM.ToolAreaContent()`
+6. 删除 `internal/ui/tui_view_render.go` — 所有函数已迁移到 ViewModel
+7. 删除 `internal/ui/tui_helpers.go` — `renderMarkdown` / `formatToolCallsInline` 已迁移
+8. 更新 `tui_test.go` — `TestToolStatusArea` 在直接修改数据后调用 `updateViewport()`
+9. 创建 `internal/ui/viewmodel/conversation_vm_test.go` — 18 个单元测试全部通过
+10. `go build ./...` 成功，`go test ./internal/ui/...` 全部通过
+
 ### 已完成任务 ✅
+```
 
 1. **Phase 0: 项目初始化** ✅
    - ✅ 创建最小可运行项目结构

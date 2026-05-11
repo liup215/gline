@@ -2,20 +2,20 @@
 package ui
 
 import (
-"context"
-"fmt"
-"time"
+	"context"
+	"fmt"
+	"time"
 
-"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/liup215/gline/internal/agent"
 	"github.com/liup215/gline/internal/ui/bridge"
 	"github.com/liup215/gline/internal/ui/model"
+	"github.com/liup215/gline/internal/ui/viewmodel"
 	"github.com/liup215/gline/pkg/types"
 )
 
@@ -52,15 +52,13 @@ type Model struct {
 	// Pending reply channel when the UI is answering an AskFollowupQuestion
 	pendingReply chan string
 
-	// Glamour renderer cache for current wrap width (avoid recreating renderer every redraw)
-	renderer          *glamour.TermRenderer
-	rendererWrapWidth int
+	// ViewModel derives rendered display state from the conversation.
+	convVM *viewmodel.ConversationViewModel
 
 	// Dimensions
 	width  int
 	height int
 }
-
 
 // New creates a new TUI model
 func New(agentInstance *agent.BaseAgent) *Model {
@@ -98,6 +96,7 @@ func New(agentInstance *agent.BaseAgent) *Model {
 		viewport:             vp,
 		spinner:              s,
 		conversation:         conv,
+		convVM:               viewmodel.NewConversationViewModel(),
 		inputHeight:          3,
 		toolAreaHeight:       3,
 		activeAssistantIndex: -1,
@@ -125,11 +124,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
-case tea.WindowSizeMsg:
-	cmds = append(cmds, handleWindowSize(m, msg)...)
+	case tea.WindowSizeMsg:
+		cmds = append(cmds, handleWindowSize(m, msg)...)
 
-case tea.KeyMsg:
-	cmds = append(cmds, handleKeyMsg(m, msg)...)
+	case tea.KeyMsg:
+		cmds = append(cmds, handleKeyMsg(m, msg)...)
 
 	case spinner.TickMsg:
 		// Update spinner animation
@@ -214,7 +213,7 @@ func (m *Model) View() string {
 		mdl = "-"
 	}
 	headerContent := fmt.Sprintf(" 🚀 gline   ●  %s / %s    %s ", prov, mdl, modeBadge)
-	header := lipgloss.NewStyle().Margin(0,1).Bold(true).Render(headerContent)
+	header := lipgloss.NewStyle().Margin(0, 1).Bold(true).Render(headerContent)
 	sections = append(sections, header)
 
 	// Messages viewport
@@ -271,11 +270,6 @@ func (m *Model) addErrorMessage(content string) {
 	})
 	m.updateViewport()
 }
-
-
-
-
-
 
 // Run starts the TUI
 func Run(agentInstance *agent.BaseAgent) error {
