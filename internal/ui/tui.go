@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/liup215/gline/internal/agent"
+	"github.com/liup215/gline/internal/ui/bridge"
 	"github.com/liup215/gline/pkg/types"
 )
 
@@ -158,7 +159,7 @@ case tea.KeyMsg:
 			cmds = append(cmds, cmd)
 		}
 
-	case askQuestionMsg:
+	case bridge.AskQuestionEvent:
 		// Display the follow-up question and options, set pending reply channel
 		m.messages = append(m.messages, Message{
 			Role:      types.RoleSystem,
@@ -174,7 +175,7 @@ case tea.KeyMsg:
 		cmds = append(cmds, textarea.Blink)
 		m.updateViewport()
 
-	case agentUpdateMsg:
+	case bridge.AgentEvent:
 		// Delegate to extracted handler
 		cmds = append(cmds, handleAgentUpdate(m, msg)...)
 
@@ -294,21 +295,6 @@ func (m *Model) addErrorMessage(content string) {
 
 
 
-type askQuestionMsg struct {
-	Question string
-	Options  []string
-	Reply    chan string
-}
-
-// agentUpdateMsg represents an update from the agent callback
-type agentUpdateMsg struct {
-	updateType string
-	content    string
-	toolName   string
-	toolInput  string
-	toolResult string
-	err        error
-}
 
 
 // Run starts the TUI

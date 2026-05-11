@@ -1,12 +1,14 @@
 package ui
 
 import (
-"context"
-"fmt"
+	"context"
+	"fmt"
 
-tea "github.com/charmbracelet/bubbletea"
-"github.com/liup215/gline/internal/agent"
-"github.com/liup215/gline/pkg/types"
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/liup215/gline/internal/agent"
+	"github.com/liup215/gline/internal/ui/bridge"
+	"github.com/liup215/gline/pkg/types"
 )
 
 // tuiCallback implements the agent.StreamCallback interface
@@ -16,41 +18,40 @@ type tuiCallback struct {
 
 func (c *tuiCallback) OnStreamStart() {
 	if c.program != nil {
-		c.program.Send(agentUpdateMsg{updateType: "streamStart"})
+		c.program.Send(bridge.StreamStartEvent{})
 	}
 }
 
 func (c *tuiCallback) OnContent(delta string) {
 	if c.program != nil {
-		c.program.Send(agentUpdateMsg{updateType: "content", content: delta})
+		c.program.Send(bridge.ContentEvent{Delta: delta})
 	}
 }
 
 func (c *tuiCallback) OnToolCallStart(toolCall agent.ToolCall) {
 	if c.program != nil {
-		c.program.Send(agentUpdateMsg{
-			updateType: "toolStart",
-			toolName:   toolCall.Name,
-			toolInput:  toolCall.Input,
+		c.program.Send(bridge.ToolStartEvent{
+			Name:  toolCall.Name,
+			Input: toolCall.Input,
 		})
 	}
 }
 
 func (c *tuiCallback) OnToolCallComplete(toolCall agent.ToolCall, result string) {
 	if c.program != nil {
-		c.program.Send(agentUpdateMsg{updateType: "toolComplete", toolName: toolCall.Name, toolResult: result})
+		c.program.Send(bridge.ToolCompleteEvent{Name: toolCall.Name, Result: result})
 	}
 }
 
 func (c *tuiCallback) OnError(err error) {
 	if c.program != nil {
-		c.program.Send(agentUpdateMsg{updateType: "error", err: err})
+		c.program.Send(bridge.ErrorEvent{Err: err})
 	}
 }
 
 func (c *tuiCallback) OnComplete() {
 	if c.program != nil {
-		c.program.Send(agentUpdateMsg{updateType: "complete"})
+		c.program.Send(bridge.CompleteEvent{})
 	}
 }
 
@@ -59,8 +60,8 @@ func (c *tuiCallback) AskFollowupQuestion(question string, options []string) (st
 		return "", fmt.Errorf("no program")
 	}
 	reply := make(chan string, 1)
-	// Send ask question message with reply channel
-	c.program.Send(askQuestionMsg{Question: question, Options: options, Reply: reply})
+	// Send ask question event with reply channel
+	c.program.Send(bridge.AskQuestionEvent{Question: question, Options: options, Reply: reply})
 	// Wait for the UI to provide the answer
 	answer := <-reply
 	return answer, nil
@@ -70,7 +71,7 @@ func (c *tuiCallback) AskFollowupQuestion(question string, options []string) (st
 func (m *Model) startAgent() tea.Cmd {
 	return func() tea.Msg {
 		if m.agentInstance == nil {
-			return agentUpdateMsg{updateType: "error", err: fmt.Errorf("agent not initialized")}
+			return bridge.ErrorEvent{Err: fmt.Errorf("agent not initialized")}
 		}
 
 		// Get the last user message
@@ -83,7 +84,7 @@ func (m *Model) startAgent() tea.Cmd {
 		}
 
 		if lastUserMessage == "" {
-			return agentUpdateMsg{updateType: "error", err: fmt.Errorf("no user message found")}
+			return bridge.ErrorEvent{Err: fmt.Errorf("no user message found")}
 		}
 
 		// Create callback with program reference
@@ -100,7 +101,7 @@ func (m *Model) startAgent() tea.Cmd {
 		m.cancelFn = nil
 
 		if err != nil {
-			return agentUpdateMsg{updateType: "error", err: err}
+			return bridge.ErrorEvent{Err: err}
 		}
 
 		// RunWithCallback will invoke OnComplete via the callback; avoid sending a duplicate complete message.

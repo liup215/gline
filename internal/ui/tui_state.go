@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/bubbles/textarea"
 
+	"github.com/liup215/gline/internal/ui/bridge"
 	"github.com/liup215/gline/pkg/types"
 )
 
@@ -17,7 +18,7 @@ import (
 // Each function mirrors one branch from the previous switch in internal/ui/tui_update.go.
 
 // handleAgentContent appends streaming content to the active assistant message.
-func handleAgentContent(m *Model, msg agentUpdateMsg) []tea.Cmd {
+func handleAgentContent(m *Model, msg bridge.ContentEvent) []tea.Cmd {
 	// Ensure an assistant slot exists; create one if not present (e.g., tool status arrived first).
 	if m.activeAssistantIndex < 0 || m.activeAssistantIndex >= len(m.messages) || m.messages[m.activeAssistantIndex].Role != types.RoleAssistant {
 		// Create a new assistant message slot and set it active.
@@ -28,38 +29,38 @@ func handleAgentContent(m *Model, msg agentUpdateMsg) []tea.Cmd {
 		})
 		m.activeAssistantIndex = len(m.messages) - 1
 	}
-	m.messages[m.activeAssistantIndex].Content += msg.content
+	m.messages[m.activeAssistantIndex].Content += msg.Delta
 	m.updateViewport()
 	return nil
 }
 
 // handleAgentToolStart handles a tool start update: record history and surface a short system message.
-func handleAgentToolStart(m *Model, msg agentUpdateMsg) []tea.Cmd {
-	m.currentTool = msg.toolName
+func handleAgentToolStart(m *Model, msg bridge.ToolStartEvent) []tea.Cmd {
+	m.currentTool = msg.Name
 	// Add to tool history
 	m.toolHistory = append(m.toolHistory, ToolStatus{
-		Name:      msg.toolName,
+		Name:      msg.Name,
 		Status:    "running",
 		StartTime: time.Now(),
 	})
 
 	// Prepare a compact human-friendly display for the tool start.
-	desc := getToolDescription(msg.toolName)
+	desc := getToolDescription(msg.Name)
 	display := ""
-	if msg.toolInput != "" {
+	if msg.Input != "" {
 		// attempt_completion often carries the final summary/result; keep it intact
-		if normalizeToolName(msg.toolName) == "attempt_completion" {
-			display = fmt.Sprintf("🔧 %s\n\n%s", desc, msg.toolInput)
+		if normalizeToolName(msg.Name) == "attempt_completion" {
+			display = fmt.Sprintf("🔧 %s\n\n%s", desc, msg.Input)
 		} else {
 			// Try to show the single most relevant argument (path, command, url, etc.)
-			if main := getToolMainArg(msg.toolName, msg.toolInput); main != "" {
+			if main := getToolMainArg(msg.Name, msg.Input); main != "" {
 				display = fmt.Sprintf("🔧 %s: %s", desc, main)
 			} else {
 				var buf bytes.Buffer
-				if err := json.Indent(&buf, []byte(msg.toolInput), "  ", "  "); err == nil {
+				if err := json.Indent(&buf, []byte(msg.Input), "  ", "  "); err == nil {
 					display = fmt.Sprintf("🔧 %s\n  Input:\n%s", desc, buf.String())
 				} else {
-					display = fmt.Sprintf("🔧 %s\n  Input: %s", desc, msg.toolInput)
+					display = fmt.Sprintf("🔧 %s\n  Input: %s", desc, msg.Input)
 				}
 			}
 		}
@@ -68,10 +69,10 @@ func handleAgentToolStart(m *Model, msg agentUpdateMsg) []tea.Cmd {
 	}
 
 	var assistantContent string
-	if normalizeToolName(msg.toolName) == "attempt_completion" {
-		// Parse JSON toolInput and extract a human-friendly result when possible.
+	if normalizeToolName(msg.Name) == "attempt_completion" {
+		// Parse JSON Input and extract a human-friendly result when possible.
 		var parsed map[string]interface{}
-		if err := json.Unmarshal([]byte(msg.toolInput), &parsed); err == nil {
+		if err := json.Unmarshal([]byte(msg.Input), &parsed); err == nil {
 			// Prefer result as non-empty string
 			if r, ok := parsed["result"].(string); ok && strings.TrimSpace(r) != "" {
 				assistantContent = r
@@ -82,18 +83,18 @@ func handleAgentToolStart(m *Model, msg agentUpdateMsg) []tea.Cmd {
 				if pretty, err2 := json.MarshalIndent(mres, "", "  "); err2 == nil {
 					assistantContent = "```json\n" + string(pretty) + "\n```"
 				} else {
-					assistantContent = msg.toolInput
+					assistantContent = msg.Input
 				}
 			} else {
 				// Fallback: pretty-print the whole parsed JSON as a JSON code block
 				if pretty, err2 := json.MarshalIndent(parsed, "", "  "); err2 == nil {
 					assistantContent = "```json\n" + string(pretty) + "\n```"
 				} else {
-					assistantContent = msg.toolInput
+					assistantContent = msg.Input
 				}
 			}
 		} else {
-			assistantContent = msg.toolInput
+			assistantContent = msg.Input
 		}
 
 		m.messages = append(m.messages, Message{
@@ -101,9 +102,9 @@ func handleAgentToolStart(m *Model, msg agentUpdateMsg) []tea.Cmd {
 			Content:   assistantContent,
 			Timestamp: time.Now(),
 		})
-	} else if normalizeToolName(msg.toolName) == "ask_followup_question" {
+	} else if normalizeToolName(msg.Name) == "ask_followup_question" {
 		// Skip adding a system message here; askQuestionMsg will display the question.
-	} else if normalizeToolName(msg.toolName) == "plan_mode_respond" {
+	} else if normalizeToolName(msg.Name) == "plan_mode_respond" {
 		// Skip: the completed result will be rendered as a full assistant message in toolComplete.
 	} else {
 		m.messages = append(m.messages, Message{
@@ -117,12 +118,12 @@ func handleAgentToolStart(m *Model, msg agentUpdateMsg) []tea.Cmd {
 }
 
 // handleAgentToolComplete updates tool history and optionally appends a summary/system message or assistant message.
-func handleAgentToolComplete(m *Model, msg agentUpdateMsg) []tea.Cmd {
-	result := msg.toolResult
+func handleAgentToolComplete(m *Model, msg bridge.ToolCompleteEvent) []tea.Cmd {
+	result := msg.Result
 	newStatus := "completed"
 	// Find the last entry for this tool name that is still "running"
 	for i := len(m.toolHistory) - 1; i >= 0; i-- {
-		if m.toolHistory[i].Name == msg.toolName && m.toolHistory[i].Status == "running" {
+		if m.toolHistory[i].Name == msg.Name && m.toolHistory[i].Status == "running" {
 			m.toolHistory[i].Status = newStatus
 			break
 		}
@@ -130,12 +131,12 @@ func handleAgentToolComplete(m *Model, msg agentUpdateMsg) []tea.Cmd {
 	m.currentTool = ""
 
 	// Short-circuit cases handled elsewhere
-	if normalizeToolName(msg.toolName) == "attempt_completion" || normalizeToolName(msg.toolName) == "ask_followup_question" {
+	if normalizeToolName(msg.Name) == "attempt_completion" || normalizeToolName(msg.Name) == "ask_followup_question" {
 		m.updateViewport()
 		return nil
 	}
 
-	if normalizeToolName(msg.toolName) == "plan_mode_respond" {
+	if normalizeToolName(msg.Name) == "plan_mode_respond" {
 		// Render the plan response as an assistant message (full markdown, no truncation)
 		if result != "" {
 			m.messages = append(m.messages, Message{
@@ -153,7 +154,7 @@ func handleAgentToolComplete(m *Model, msg agentUpdateMsg) []tea.Cmd {
 	if newStatus == "failed" {
 		statusText = "Failed"
 	}
-	content := fmt.Sprintf("🔧 %s: %s", statusText, msg.toolName)
+	content := fmt.Sprintf("🔧 %s: %s", statusText, msg.Name)
 	if result != "" {
 		lines := formatToolResultLines(result, 5)
 		content += "\n"
@@ -171,9 +172,9 @@ func handleAgentToolComplete(m *Model, msg agentUpdateMsg) []tea.Cmd {
 }
 
 // handleAgentError marks running tools as failed, surfaces an error message, and focuses the textarea.
-func handleAgentError(m *Model, msg agentUpdateMsg) []tea.Cmd {
+func handleAgentError(m *Model, msg bridge.ErrorEvent) []tea.Cmd {
 	var cmds []tea.Cmd
-	m.err = msg.err
+	m.err = msg.Err
 	m.isProcessing = false
 	m.isStreaming = false
 	// If an error occurred during a tool run, mark the most recent running tool as failed for visibility.
@@ -192,7 +193,7 @@ func handleAgentError(m *Model, msg agentUpdateMsg) []tea.Cmd {
 	if m.cancelFn != nil {
 		m.cancelFn = nil
 	}
-	m.addErrorMessage(fmt.Sprintf("Error: %v", msg.err))
+	m.addErrorMessage(fmt.Sprintf("Error: %v", msg.Err))
 	m.textarea.Focus()
 	cmds = append(cmds, textarea.Blink)
 	m.updateViewport()
@@ -200,7 +201,7 @@ func handleAgentError(m *Model, msg agentUpdateMsg) []tea.Cmd {
 }
 
 // handleAgentComplete finalizes streaming/processing state and focuses textarea.
-func handleAgentComplete(m *Model, msg agentUpdateMsg) []tea.Cmd {
+func handleAgentComplete(m *Model, msg bridge.CompleteEvent) []tea.Cmd {
 	var cmds []tea.Cmd
 	m.isProcessing = false
 	m.isStreaming = false
@@ -215,7 +216,7 @@ func handleAgentComplete(m *Model, msg agentUpdateMsg) []tea.Cmd {
 }
 
 // handleAgentStreamStart creates a new assistant message slot for streaming.
-func handleAgentStreamStart(m *Model, msg agentUpdateMsg) []tea.Cmd {
+func handleAgentStreamStart(m *Model, msg bridge.StreamStartEvent) []tea.Cmd {
 	m.isStreaming = true
 	// Create a new assistant message slot for the new stream round
 	m.messages = append(m.messages, Message{
@@ -229,7 +230,7 @@ func handleAgentStreamStart(m *Model, msg agentUpdateMsg) []tea.Cmd {
 }
 
 // handleAgentStreamEnd ends streaming.
-func handleAgentStreamEnd(m *Model, msg agentUpdateMsg) []tea.Cmd {
+func handleAgentStreamEnd(m *Model, msg bridge.StreamEndEvent) []tea.Cmd {
 	m.isStreaming = false
 	m.updateViewport()
 	return nil

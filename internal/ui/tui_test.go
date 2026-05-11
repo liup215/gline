@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/liup215/gline/internal/ui/bridge"
 )
 
 // stripANSI removes ANSI escape sequences from a string for test assertions.
@@ -22,11 +24,11 @@ func TestContentUpdateSurvivesToolStatus(t *testing.T) {
 
 	model.sendMessage("read the file")
 
-	// Simulate tool start via agentUpdateMsg (tool status goes to toolHistory, not messages)
-	model.Update(agentUpdateMsg{updateType: "toolStart", toolName: "read_file"})
+	// Simulate tool start via bridge event (tool status goes to toolHistory, not messages)
+	model.Update(bridge.ToolStartEvent{Name: "read_file"})
 
 	// Simulate content arriving from the LLM
-	updatedModel, _ := model.Update(agentUpdateMsg{updateType: "content", content: "text from model"})
+	updatedModel, _ := model.Update(bridge.ContentEvent{Delta: "text from model"})
 	updated := updatedModel.(*Model)
 
 	// Without system messages, the assistant is the last message
@@ -105,7 +107,7 @@ func TestToolHistoryDoesNotPushContent(t *testing.T) {
 	}
 
 	// Add content to assistant
-	model.Update(agentUpdateMsg{updateType: "content", content: "final answer"})
+	model.Update(bridge.ContentEvent{Delta: "final answer"})
 
 	// Only 2 messages: user + assistant (no system messages for tools)
 	msgCount := len(model.messages)

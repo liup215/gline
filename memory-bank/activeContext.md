@@ -2,6 +2,46 @@
 
 ## 当前焦点
 
+### TUI MVVM 架构重构（进行中）🔧
+
+**目标**: 将当前 `internal/ui/` 下的单体 Bubbletea Model 重构为 MVVM 架构，解决当前 TUI 层的架构问题。
+
+**已识别的问题**:
+1. Model 结构体是上帝对象，混合了 UI 状态、业务状态和 Agent 胶水代码
+2. `agentUpdateMsg.updateType` 使用魔法字符串，无编译时类型检查
+3. View 和 State 紧耦合，每次状态变更后立即调用 `updateViewport()`
+4. Agent 回调直接耦合 TUI，无法独立测试
+5. View 渲染效率低，每次全量重建消息列表
+6. 拆成 10 个文件但分割依据是人工而非架构边界
+7. 无可测试的 ViewModel 层
+
+**目标架构**:
+```
+internal/ui/
+├── model/         # Domain Model（纯数据，零依赖）
+├── viewmodel/     # ViewModel（派生状态 + 命令）
+├── view/          # View（纯渲染函数）
+├── bridge/        # Agent-TUI 桥接层（类型安全消息）
+└── tui.go         # Bubbletea 薄壳
+```
+
+**5 阶段渐进方案**:
+- ✅ Phase 1: 类型安全的消息系统（消除魔法字符串）— **已完成 2026-05-11**
+- Phase 2: 抽离纯数据 Model
+- Phase 3: 引入 ViewModel 层
+- Phase 4: Bridge 层重构（解耦 Agent 和 TUI）
+- Phase 5: View 纯函数化 + Bubbletea 薄壳
+
+**Phase 1 完成记录**:
+1. 创建 `internal/ui/bridge/messages.go` — 定义 `AgentEvent` 接口 + 8 个具体事件类型
+2. 创建 `internal/ui/bridge/messages_test.go` — 8 个单元测试全部通过
+3. `tuiCallback` 和 `startAgent()` 改为发送 `bridge.XXXEvent`
+4. `Update()` 改为处理 `bridge.AgentEvent` / `bridge.AskQuestionEvent`
+5. `handleAgentUpdate` 改为类型 switch（编译时检查）
+6. 7 个状态 handler 签名改为接收类型化事件（如 `bridge.ContentEvent`）
+7. 删除 `agentUpdateMsg` 和 `askQuestionMsg` 旧类型
+8. 所有现有测试更新并通过，`go build` 成功
+
 ### 已完成任务 ✅
 
 1. **Phase 0: 项目初始化** ✅
@@ -26,17 +66,17 @@
    - ✅ Provider 注册表
    - ✅ 系统提示词管理
 
-4. **Phase 3: LLM 集成** 🔄 (进行中)
+4. **Phase 3: LLM 集成** ✅
    - ✅ **OpenAI Provider** - 通用 OpenAI 兼容 Provider
      - ✅ 支持 OpenAI 官方 API
      - ✅ 支持自定义 base_url (OpenRouter, DashScope, Ollama 等)
      - ✅ 支持工具调用
      - ✅ 完整的错误处理
      - ✅ 单元测试覆盖
-   - 🔄 **DashScope 兼容性修复** (进行中)
+   - ✅ **DashScope 兼容性修复**
      - ✅ 修复 URL 拼接问题 - 使用 `buildFullURL` 函数
      - ✅ 添加 SSE 调试日志
-     - ⏳ 验证 DashScope 流式响应兼容性
+     - ✅ 验证 DashScope 流式响应兼容性
 
 ### 已完成任务 ✅
 

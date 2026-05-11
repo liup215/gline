@@ -3,28 +3,30 @@ package ui
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/liup215/gline/internal/ui/bridge"
 )
 
-func handleAgentUpdate(m *Model, msg agentUpdateMsg) []tea.Cmd {
+func handleAgentUpdate(m *Model, msg bridge.AgentEvent) []tea.Cmd {
 	var cmds []tea.Cmd
 
-	switch msg.updateType {
-	case "content":
+	switch msg := msg.(type) {
+	case bridge.ContentEvent:
 		cmds = append(cmds, handleAgentContent(m, msg)...)
-	case "toolStart":
+	case bridge.ToolStartEvent:
 		cmds = append(cmds, handleAgentToolStart(m, msg)...)
-	case "toolComplete":
+	case bridge.ToolCompleteEvent:
 		cmds = append(cmds, handleAgentToolComplete(m, msg)...)
-	case "error":
+	case bridge.ErrorEvent:
 		cmds = append(cmds, handleAgentError(m, msg)...)
-	case "complete":
+	case bridge.CompleteEvent:
 		cmds = append(cmds, handleAgentComplete(m, msg)...)
-	case "streamStart":
+	case bridge.StreamStartEvent:
 		cmds = append(cmds, handleAgentStreamStart(m, msg)...)
-	case "streamEnd":
+	case bridge.StreamEndEvent:
 		cmds = append(cmds, handleAgentStreamEnd(m, msg)...)
 	default:
-		// unknown update type — no-op
+		// unknown event type — no-op
 	}
 
 	return cmds

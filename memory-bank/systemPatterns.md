@@ -239,3 +239,65 @@ gline/
 ### 添加新的 UI 模式
 1. 实现 UI 接口
 2. 在 `ui/` 下创建新包
+
+## TUI MVVM 架构模式（规划中）
+
+### 背景
+
+当前 TUI 层（`internal/ui/`）采用传统 Bubbletea 架构，所有状态、视图渲染和 Agent 交互集中在单一的 `Model` 结构体中。随着功能增加，出现了以下问题：
+- 上帝对象：Model 混合 UI 状态、业务状态、Agent 胶水代码
+- 类型不安全：`agentUpdateMsg.updateType` 使用魔法字符串
+- 渲染效率低：每次状态变更后全量重建消息列表
+- 测试困难：无法脱离 Bubbletea 框架进行单元测试
+
+### 目标架构：MVVM + Bridge
+
+```
+internal/ui/
+├── model/         # Domain Model（纯数据，零外部依赖）
+│   ├── conversation.go   # 对话：messages、toolHistory、mode
+│   └── message.go        # 消息：Role、Content、ToolCalls、渲染缓存
+│
+├── viewmodel/     # ViewModel（派生展示状态）
+│   ├── conversation_vm.go  # 格式化消息列表、滚动状态
+│   ├── status_vm.go        # 状态栏信息
+│   └── input_vm.go         # 输入框状态
+│
+├── view/          # View（纯渲染函数）
+│   ├── messages.go      # 消息列表渲染
+│   ├── header.go        # 标题栏
+│   ├── input.go         # 输入框
+│   ├── status_bar.go    # 状态栏
+│   ├── tool_area.go     # 工具状态区域
+│   └── styles.go        # Lipgloss 样式定义
+│
+├── bridge/        # Agent-TUI 桥接层
+│   ├── callback.go      # 类型安全的事件发送
+│   └── messages.go      # AgentEvent 接口 + 具体事件类型
+│
+└── tui.go         # Bubbletea 薄壳
+    # 仅组合以上各层，处理 tea.Msg 分发
+```
+
+### 核心分层原则
+
+| 层级 | 职责 | 依赖 | 测试方式 |
+|------|------|------|----------|
+| Model | 纯数据、业务规则 | 无外部依赖 | 纯 Go 单元测试 |
+| ViewModel | 派生状态、格式化 | Model | 纯 Go 单元测试 |
+| View | 纯函数：输入 ViewModel → 输出 string | ViewModel, lipgloss | 纯 Go 单元测试 |
+| Bridge | Agent 回调 → TUI 事件转换 | Agent 接口 | 纯 Go 单元测试（mock Agent） |
+| TUI Shell | Bubbletea 生命周期 | 以上全部 | 集成测试 |
+
+### 当前状态
+
+- **空目录已预留**: `internal/ui/model/`, `internal/ui/viewmodel/`, `internal/ui/view/`, `internal/ui/agent/`, `internal/ui/core/`（后两者废弃，将改为 `bridge/`）
+- **当前代码**: 10 个文件分散在 `internal/ui/` 根目录
+- **重构计划**: 5 阶段渐进方案（详见 `memory-bank/tui-mvvm-refactor.md`）
+
+### 与现有架构的关系
+
+MVVM 架构是 UI 层内部的细化，不影响系统整体架构：
+- Agent、Provider、Tools 层保持不变
+- 仅 UI 层内部重新组织
+- `Agent.StreamCallback` 接口不变，Bridge 层提供新的实现
