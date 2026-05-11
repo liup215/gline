@@ -27,7 +27,7 @@ internal/ui/
 
 **5 阶段渐进方案**:
 - ✅ Phase 1: 类型安全的消息系统（消除魔法字符串）— **已完成 2026-05-11**
-- Phase 2: 抽离纯数据 Model
+- ✅ Phase 2: 抽离纯数据 Model — **已完成 2026-05-11**
 - Phase 3: 引入 ViewModel 层
 - Phase 4: Bridge 层重构（解耦 Agent 和 TUI）
 - Phase 5: View 纯函数化 + Bubbletea 薄壳
@@ -41,6 +41,22 @@ internal/ui/
 6. 7 个状态 handler 签名改为接收类型化事件（如 `bridge.ContentEvent`）
 7. 删除 `agentUpdateMsg` 和 `askQuestionMsg` 旧类型
 8. 所有现有测试更新并通过，`go build` 成功
+
+**Phase 2 完成记录**:
+1. 创建 `internal/ui/model/message.go` — 纯数据 `Message` 结构体（零外部依赖）
+2. 创建 `internal/ui/model/conversation.go` — `Conversation` 结构体 + 业务方法
+   - 消息操作：`AppendMessage`, `UpdateMessageContent`, `SetMessageContent`, `LastUserMessage`, `Clear`
+   - 工具历史：`AddToolStart`, `MarkToolComplete`, `MarkToolFailed`, `ClearToolHistory`, `LastRunningToolName`
+3. 重构 `ui.Model` 结构体 — 删除 `messages`, `toolHistory`, `mode`, `provider`, `model` 字段
+   - 替换为 `conversation *model.Conversation`
+   - 保留 UI 状态：`activeAssistantIndex`, `isProcessing`, `isStreaming`, `currentTool`, `err`
+4. 更新 `tui_state.go` — 7 个 handler 全部委托给 `conversation` 方法
+5. 更新 `tui_agent.go` — `startAgent()` 使用 `conversation.LastUserMessage()`
+6. 更新 `tui_view.go`, `tui_view_render.go` — 遍历 `conversation.Messages`
+7. 更新 `tui_input.go` — `Ctrl+L` 用 `conversation.Clear()`，`Tab` 切换 `conversation.Mode`
+8. 更新 `tui_test.go` — 测试适配新字段（使用 `uimodel` 别名避免包名冲突）
+9. 创建 `internal/ui/model/conversation_test.go` — 23 个单元测试全部通过
+10. `go build ./...` 成功，现有测试 + 新测试全部通过
 
 ### 已完成任务 ✅
 

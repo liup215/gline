@@ -62,13 +62,13 @@ func handleKeyMsg(m *Model, msg tea.KeyMsg) []tea.Cmd {
 
 	case tea.KeyTab:
 		// Toggle between Plan and Act mode
-		if m.mode == agent.ModePlan {
-			m.mode = agent.ModeAct
+		if m.conversation.Mode == agent.ModePlan {
+			m.conversation.Mode = agent.ModeAct
 		} else {
-			m.mode = agent.ModePlan
+			m.conversation.Mode = agent.ModePlan
 		}
 		if m.agentInstance != nil {
-			m.agentInstance.SetMode(m.mode)
+			m.agentInstance.SetMode(m.conversation.Mode)
 		}
 		m.updateViewport()
 
@@ -88,8 +88,7 @@ func handleKeyMsg(m *Model, msg tea.KeyMsg) []tea.Cmd {
 
 	case tea.KeyCtrlL:
 		// Clear screen
-		m.messages = []Message{}
-		m.toolHistory = nil
+		m.conversation.Clear()
 		m.updateViewport()
 	}
 

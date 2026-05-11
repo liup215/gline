@@ -8,7 +8,6 @@ import (
 
 	"github.com/liup215/gline/internal/agent"
 	"github.com/liup215/gline/internal/ui/bridge"
-	"github.com/liup215/gline/pkg/types"
 )
 
 // tuiCallback implements the agent.StreamCallback interface
@@ -75,13 +74,7 @@ func (m *Model) startAgent() tea.Cmd {
 		}
 
 		// Get the last user message
-		var lastUserMessage string
-		for i := len(m.messages) - 1; i >= 0; i-- {
-			if m.messages[i].Role == types.RoleUser {
-				lastUserMessage = m.messages[i].Content
-				break
-			}
-		}
+		lastUserMessage, _ := m.conversation.LastUserMessage()
 
 		if lastUserMessage == "" {
 			return bridge.ErrorEvent{Err: fmt.Errorf("no user message found")}

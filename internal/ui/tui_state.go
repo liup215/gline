@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 
 	"github.com/liup215/gline/internal/ui/bridge"
+	"github.com/liup215/gline/internal/ui/model"
 	"github.com/liup215/gline/pkg/types"
 )
 
@@ -19,17 +20,17 @@ import (
 
 // handleAgentContent appends streaming content to the active assistant message.
 func handleAgentContent(m *Model, msg bridge.ContentEvent) []tea.Cmd {
+	msgs := m.conversation.Messages
 	// Ensure an assistant slot exists; create one if not present (e.g., tool status arrived first).
-	if m.activeAssistantIndex < 0 || m.activeAssistantIndex >= len(m.messages) || m.messages[m.activeAssistantIndex].Role != types.RoleAssistant {
+	if m.activeAssistantIndex < 0 || m.activeAssistantIndex >= len(msgs) || msgs[m.activeAssistantIndex].Role != types.RoleAssistant {
 		// Create a new assistant message slot and set it active.
-		m.messages = append(m.messages, Message{
+		m.activeAssistantIndex = m.conversation.AppendMessage(model.Message{
 			Role:      types.RoleAssistant,
 			Content:   "",
 			Timestamp: time.Now(),
 		})
-		m.activeAssistantIndex = len(m.messages) - 1
 	}
-	m.messages[m.activeAssistantIndex].Content += msg.Delta
+	m.conversation.UpdateMessageContent(m.activeAssistantIndex, msg.Delta)
 	m.updateViewport()
 	return nil
 }
@@ -38,11 +39,7 @@ func handleAgentContent(m *Model, msg bridge.ContentEvent) []tea.Cmd {
 func handleAgentToolStart(m *Model, msg bridge.ToolStartEvent) []tea.Cmd {
 	m.currentTool = msg.Name
 	// Add to tool history
-	m.toolHistory = append(m.toolHistory, ToolStatus{
-		Name:      msg.Name,
-		Status:    "running",
-		StartTime: time.Now(),
-	})
+	m.conversation.AddToolStart(msg.Name)
 
 	// Prepare a compact human-friendly display for the tool start.
 	desc := getToolDescription(msg.Name)
@@ -97,7 +94,7 @@ func handleAgentToolStart(m *Model, msg bridge.ToolStartEvent) []tea.Cmd {
 			assistantContent = msg.Input
 		}
 
-		m.messages = append(m.messages, Message{
+		m.conversation.AppendMessage(model.Message{
 			Role:      types.RoleAssistant,
 			Content:   assistantContent,
 			Timestamp: time.Now(),
@@ -107,7 +104,7 @@ func handleAgentToolStart(m *Model, msg bridge.ToolStartEvent) []tea.Cmd {
 	} else if normalizeToolName(msg.Name) == "plan_mode_respond" {
 		// Skip: the completed result will be rendered as a full assistant message in toolComplete.
 	} else {
-		m.messages = append(m.messages, Message{
+		m.conversation.AppendMessage(model.Message{
 			Role:      types.RoleSystem,
 			Content:   display,
 			Timestamp: time.Now(),
@@ -121,13 +118,7 @@ func handleAgentToolStart(m *Model, msg bridge.ToolStartEvent) []tea.Cmd {
 func handleAgentToolComplete(m *Model, msg bridge.ToolCompleteEvent) []tea.Cmd {
 	result := msg.Result
 	newStatus := "completed"
-	// Find the last entry for this tool name that is still "running"
-	for i := len(m.toolHistory) - 1; i >= 0; i-- {
-		if m.toolHistory[i].Name == msg.Name && m.toolHistory[i].Status == "running" {
-			m.toolHistory[i].Status = newStatus
-			break
-		}
-	}
+	m.conversation.MarkToolComplete(msg.Name)
 	m.currentTool = ""
 
 	// Short-circuit cases handled elsewhere
@@ -139,7 +130,7 @@ func handleAgentToolComplete(m *Model, msg bridge.ToolCompleteEvent) []tea.Cmd {
 	if normalizeToolName(msg.Name) == "plan_mode_respond" {
 		// Render the plan response as an assistant message (full markdown, no truncation)
 		if result != "" {
-			m.messages = append(m.messages, Message{
+			m.conversation.AppendMessage(model.Message{
 				Role:      types.RoleAssistant,
 				Content:   result,
 				Timestamp: time.Now(),
@@ -162,7 +153,7 @@ func handleAgentToolComplete(m *Model, msg bridge.ToolCompleteEvent) []tea.Cmd {
 			content += l + "\n"
 		}
 	}
-	m.messages = append(m.messages, Message{
+	m.conversation.AppendMessage(model.Message{
 		Role:      types.RoleSystem,
 		Content:   content,
 		Timestamp: time.Now(),
@@ -178,13 +169,13 @@ func handleAgentError(m *Model, msg bridge.ErrorEvent) []tea.Cmd {
 	m.isProcessing = false
 	m.isStreaming = false
 	// If an error occurred during a tool run, mark the most recent running tool as failed for visibility.
-	for i := len(m.toolHistory) - 1; i >= 0; i-- {
-		if m.toolHistory[i].Status == "running" {
-			m.toolHistory[i].Status = "failed"
+	for i := len(m.conversation.ToolHistory) - 1; i >= 0; i-- {
+		if m.conversation.ToolHistory[i].Status == "running" {
+			m.conversation.ToolHistory[i].Status = "failed"
 			// Append a short system message to make the failure obvious in the conversation
-			m.messages = append(m.messages, Message{
+			m.conversation.AppendMessage(model.Message{
 				Role:      types.RoleSystem,
-				Content:   fmt.Sprintf("🔧 Failed: %s", m.toolHistory[i].Name),
+				Content:   fmt.Sprintf("🔧 Failed: %s", m.conversation.ToolHistory[i].Name),
 				Timestamp: time.Now(),
 			})
 			break
@@ -219,12 +210,11 @@ func handleAgentComplete(m *Model, msg bridge.CompleteEvent) []tea.Cmd {
 func handleAgentStreamStart(m *Model, msg bridge.StreamStartEvent) []tea.Cmd {
 	m.isStreaming = true
 	// Create a new assistant message slot for the new stream round
-	m.messages = append(m.messages, Message{
+	m.activeAssistantIndex = m.conversation.AppendMessage(model.Message{
 		Role:      types.RoleAssistant,
 		Content:   "",
 		Timestamp: time.Now(),
 	})
-	m.activeAssistantIndex = len(m.messages) - 1
 	m.updateViewport()
 	return nil
 }

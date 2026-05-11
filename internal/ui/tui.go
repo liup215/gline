@@ -15,52 +15,31 @@ import (
 
 	"github.com/liup215/gline/internal/agent"
 	"github.com/liup215/gline/internal/ui/bridge"
+	"github.com/liup215/gline/internal/ui/model"
 	"github.com/liup215/gline/pkg/types"
 )
 
-// ToolStatus represents the status of a tool call in the UI
-type ToolStatus struct {
-	Name      string
-	Status    string // "running", "completed", "failed"
-	StartTime time.Time
-}
-
-// Message represents a single message in the conversation
-type Message struct {
-	Role      types.Role
-	Content   string
-	ToolCalls []types.ToolCall
-	Options   []string // Options for ask_followup_question display (nil for non-question messages)
-	Timestamp time.Time
-
-	// Cached rendered markdown to avoid repeated glamour rendering.
-	Rendered           string
-	RenderedWrapWidth  int
-	RenderedSource     string // original Content used to produce Rendered
-}
-
-// Model represents the TUI state
+// Model represents the TUI state.
+// Business data (messages, tool history, mode, provider, model name) lives in
+// *model.Conversation; UI-specific state (activeAssistantIndex, isProcessing,
+// etc.) stays here.
 type Model struct {
+	// Domain model (extracted from the former god-object)
+	conversation *model.Conversation
+
 	// UI components
 	viewport viewport.Model
 	textarea textarea.Model
 	spinner  spinner.Model
 
-	// State
-	messages            []Message
-	mode                agent.Mode
-	provider            string
-	model               string
-	inputHeight         int
-	toolAreaHeight      int
-	isProcessing        bool
-	isStreaming         bool
-	err                 error
-	currentTool         string
+	// UI-only state
+	inputHeight          int
+	toolAreaHeight       int
+	isProcessing         bool
+	isStreaming          bool
+	err                  error
+	currentTool          string
 	activeAssistantIndex int
-
-	// Tool status history (displayed in a fixed area below the viewport)
-	toolHistory []ToolStatus
 
 	// Agent components
 	agentInstance *agent.BaseAgent
@@ -110,14 +89,15 @@ func New(agentInstance *agent.BaseAgent) *Model {
 		}
 	}
 
+	conv := model.NewConversation()
+	conv.Provider = providerName
+	conv.ModelName = modelName
+
 	return &Model{
 		textarea:             ta,
 		viewport:             vp,
 		spinner:              s,
-		messages:             []Message{},
-		mode:                 agent.ModeAct,
-		provider:             providerName,
-		model:                modelName,
+		conversation:         conv,
 		inputHeight:          3,
 		toolAreaHeight:       3,
 		activeAssistantIndex: -1,
@@ -161,7 +141,7 @@ case tea.KeyMsg:
 
 	case bridge.AskQuestionEvent:
 		// Display the follow-up question and options, set pending reply channel
-		m.messages = append(m.messages, Message{
+		m.conversation.AppendMessage(model.Message{
 			Role:      types.RoleSystem,
 			Content:   "❓ " + msg.Question,
 			Options:   msg.Options,
@@ -220,16 +200,16 @@ func (m *Model) View() string {
 
 	// Header (title + provider/model + mode badge)
 	modeBadge := "UNKNOWN"
-	if m.mode == agent.ModeAct {
+	if m.conversation.Mode == agent.ModeAct {
 		modeBadge = lipgloss.NewStyle().Foreground(lipgloss.Color("#00FF00")).Render("[ACT]")
 	} else {
 		modeBadge = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFA500")).Render("[PLAN]")
 	}
-	prov := m.provider
+	prov := m.conversation.Provider
 	if prov == "" {
 		prov = "-"
 	}
-	mdl := m.model
+	mdl := m.conversation.ModelName
 	if mdl == "" {
 		mdl = "-"
 	}
@@ -264,10 +244,10 @@ func (m *Model) View() string {
 // sendMessage adds a user message and prepares for response
 func (m *Model) sendMessage(content string) {
 	// Clear tool history for new conversation turn
-	m.toolHistory = nil
+	m.conversation.ClearToolHistory()
 
 	// Add user message
-	m.messages = append(m.messages, Message{
+	m.conversation.AppendMessage(model.Message{
 		Role:      types.RoleUser,
 		Content:   content,
 		Timestamp: time.Now(),
@@ -284,7 +264,7 @@ func (m *Model) sendMessage(content string) {
 
 // addErrorMessage adds an error message
 func (m *Model) addErrorMessage(content string) {
-	m.messages = append(m.messages, Message{
+	m.conversation.AppendMessage(model.Message{
 		Role:      types.RoleSystem,
 		Content:   content,
 		Timestamp: time.Now(),

@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/liup215/gline/internal/ui/bridge"
+	uimodel "github.com/liup215/gline/internal/ui/model"
 )
 
 // stripANSI removes ANSI escape sequences from a string for test assertions.
@@ -18,25 +19,26 @@ func stripANSI(s string) string {
 }
 
 func TestContentUpdateSurvivesToolStatus(t *testing.T) {
-	model := New(nil)
-	model.width = 100
-	model.height = 30
+	m := New(nil)
+	m.width = 100
+	m.height = 30
 
-	model.sendMessage("read the file")
+	m.sendMessage("read the file")
 
 	// Simulate tool start via bridge event (tool status goes to toolHistory, not messages)
-	model.Update(bridge.ToolStartEvent{Name: "read_file"})
+	m.Update(bridge.ToolStartEvent{Name: "read_file"})
 
 	// Simulate content arriving from the LLM
-	updatedModel, _ := model.Update(bridge.ContentEvent{Delta: "text from model"})
+	updatedModel, _ := m.Update(bridge.ContentEvent{Delta: "text from model"})
 	updated := updatedModel.(*Model)
 
 	// Without system messages, the assistant is the last message
-	if updated.activeAssistantIndex != len(updated.messages)-1 {
-		t.Fatalf("expected assistant slot to be last message, got index %d with %d messages", updated.activeAssistantIndex, len(updated.messages))
+	msgs := updated.conversation.Messages
+	if updated.activeAssistantIndex != len(msgs)-1 {
+		t.Fatalf("expected assistant slot to be last message, got index %d with %d messages", updated.activeAssistantIndex, len(msgs))
 	}
 
-	assistant := updated.messages[updated.activeAssistantIndex]
+	assistant := msgs[updated.activeAssistantIndex]
 	if !strings.Contains(assistant.Content, "text from model") {
 		t.Fatalf("assistant content was not updated: %q", assistant.Content)
 	}
@@ -56,73 +58,73 @@ func TestContentUpdateSurvivesToolStatus(t *testing.T) {
 }
 
 func TestToolStatusArea(t *testing.T) {
-	model := New(nil)
-	model.width = 100
-	model.height = 30
+	m := New(nil)
+	m.width = 100
+	m.height = 30
 
 	// No tools active — should show just a border
-	view := model.View()
+	view := m.View()
 	if !strings.Contains(view, "──") {
 		t.Fatalf("expected border line when no tools active, got: %q", view)
 	}
 
 	// Add a running tool
-	model.toolHistory = append(model.toolHistory, ToolStatus{
+	m.conversation.ToolHistory = append(m.conversation.ToolHistory, uimodel.ToolStatus{
 		Name:   "read_file",
 		Status: "running",
 	})
-	view = model.View()
+	view = m.View()
 	if !strings.Contains(view, "read_file") || !strings.Contains(view, "⏳") {
 		t.Fatalf("expected running tool indicator, got: %q", view)
 	}
 
 	// Mark tool as completed
-	model.toolHistory[0].Status = "completed"
-	view = model.View()
+	m.conversation.ToolHistory[0].Status = "completed"
+	view = m.View()
 	if !strings.Contains(view, "read_file") || !strings.Contains(view, "✓") {
 		t.Fatalf("expected completed tool indicator, got: %q", view)
 	}
 
 	// Mark tool as failed
-	model.toolHistory[0].Status = "failed"
-	view = model.View()
+	m.conversation.ToolHistory[0].Status = "failed"
+	view = m.View()
 	if !strings.Contains(view, "read_file") || !strings.Contains(view, "✗") {
 		t.Fatalf("expected failed tool indicator, got: %q", view)
 	}
 }
 
 func TestToolHistoryDoesNotPushContent(t *testing.T) {
-	model := New(nil)
-	model.width = 100
-	model.height = 30
+	m := New(nil)
+	m.width = 100
+	m.height = 30
 
-	model.sendMessage("do multiple things")
+	m.sendMessage("do multiple things")
 
 	// Add many tool statuses — these should NOT create system messages
 	for i := 0; i < 10; i++ {
-		model.toolHistory = append(model.toolHistory, ToolStatus{
+		m.conversation.ToolHistory = append(m.conversation.ToolHistory, uimodel.ToolStatus{
 			Name:   "tool_" + string(rune('A'+i)),
 			Status: "completed",
 		})
 	}
 
 	// Add content to assistant
-	model.Update(bridge.ContentEvent{Delta: "final answer"})
+	m.Update(bridge.ContentEvent{Delta: "final answer"})
 
 	// Only 2 messages: user + assistant (no system messages for tools)
-	msgCount := len(model.messages)
+	msgCount := len(m.conversation.Messages)
 	if msgCount != 2 {
 		t.Fatalf("expected 2 messages (user + assistant), got %d", msgCount)
 	}
 
 	// Tool history should have 10 entries
-	if len(model.toolHistory) != 10 {
-		t.Fatalf("expected 10 tool history entries, got %d", len(model.toolHistory))
+	if len(m.conversation.ToolHistory) != 10 {
+		t.Fatalf("expected 10 tool history entries, got %d", len(m.conversation.ToolHistory))
 	}
 
 	// View should contain both the assistant content and tool status
 	// Tool area shows only the most recent 4 entries (toolAreaHeight=5, minus 1 for border)
-	view := stripANSI(model.View())
+	view := stripANSI(m.View())
 	if !strings.Contains(view, "final answer") {
 		t.Fatalf("view missing assistant output: %q", view)
 	}
@@ -132,8 +134,8 @@ func TestToolHistoryDoesNotPushContent(t *testing.T) {
 }
 
 func TestWindowSizeUpdateKeepsModelUsable(t *testing.T) {
-	model := New(nil)
-	updatedModel, _ := model.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m := New(nil)
+	updatedModel, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	updated := updatedModel.(*Model)
 
 	if updated.width != 120 || updated.height != 40 {

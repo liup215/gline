@@ -15,9 +15,10 @@ import (
 // updateViewport refreshes the viewport content
 func (m *Model) updateViewport() {
 	var content strings.Builder
+	msgs := m.conversation.Messages
 
-	for i := range m.messages {
-		msg := m.messages[i]
+	for i := range msgs {
+		msg := msgs[i]
 		switch msg.Role {
 		case types.RoleUser:
 			content.WriteString(userStyle.Render("You: "))
@@ -79,23 +80,23 @@ func (m *Model) renderToolArea() string {
 
 // renderStatusBar renders the status bar
 func (m *Model) renderStatusBar() string {
-	modeStr := string(m.mode)
-	if m.mode == agent.ModeAct {
+	modeStr := string(m.conversation.Mode)
+	if m.conversation.Mode == agent.ModeAct {
 		modeStr = lipgloss.NewStyle().Foreground(lipgloss.Color("#00FF00")).Render("ACT")
 	} else {
 		modeStr = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFA500")).Render("PLAN")
 	}
 
-	provider := m.provider
+	provider := m.conversation.Provider
 	if provider == "" {
 		provider = "-"
 	}
-	model := m.model
-	if model == "" {
-		model = "-"
+	mdl := m.conversation.ModelName
+	if mdl == "" {
+		mdl = "-"
 	}
 
-	status := fmt.Sprintf("[%s] Provider: %s | Model: %s", modeStr, provider, model)
+	status := fmt.Sprintf("[%s] Provider: %s | Model: %s", modeStr, provider, mdl)
 
 	if m.isProcessing {
 		if m.isStreaming {

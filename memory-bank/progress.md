@@ -223,14 +223,14 @@ gline/
 - **影响**: 可测试性差（仅 ~10% 可独立测试）、View 渲染性能差（全量重建）、添加新功能需改动 4-5 个文件
 - **解决方案**: 5 阶段渐进 MVVM 重构（见 `memory-bank/tui-mvvm-refactor.md`）
 - **优先级**: 高（阻塞 TUI 功能扩展）
-- **当前进度**: Phase 1 已完成 ✅
+- **当前进度**: Phase 2 已完成 ✅
 
 ### MVVM 重构进度
 
 | Phase | 内容 | 状态 | 日期 |
 |-------|------|------|------|
 | Phase 1 | 类型安全的消息系统（消除魔法字符串） | ✅ 完成 | 2026-05-11 |
-| Phase 2 | 抽离纯数据 Model (`model/` 包) | ⏳ 待开始 | — |
+| Phase 2 | 抽离纯数据 Model (`model/` 包) | ✅ 完成 | 2026-05-11 |
 | Phase 3 | 引入 ViewModel 层（脏标记 + 增量渲染） | ⏳ 待开始 | — |
 | Phase 4 | Bridge 层重构（Agent 回调脱离 `tea.Program`） | ⏳ 待开始 | — |
 | Phase 5 | View 纯函数化 + Bubbletea 薄壳 | ⏳ 待开始 | — |

@@ -11,10 +11,11 @@ import (
 
 // renderMessageHeader returns the formatted header line (author + timestamp) for message at index i.
 func (m *Model) renderMessageHeader(i int) string {
-	if i < 0 || i >= len(m.messages) {
+	msgs := m.conversation.Messages
+	if i < 0 || i >= len(msgs) {
 		return ""
 	}
-	msg := m.messages[i]
+	msg := msgs[i]
 	author := ""
 	style := userStyle
 	switch msg.Role {
@@ -35,32 +36,31 @@ func (m *Model) renderMessageHeader(i int) string {
 // It handles caching of Glamour-rendered markdown per message and width, streaming indicator,
 // and pretty-printing JSON for tool outputs.
 func renderAssistantContent(m *Model, i int) string {
-	if i < 0 || i >= len(m.messages) {
+	msgs := m.conversation.Messages
+	if i < 0 || i >= len(msgs) {
 		return ""
 	}
-	msg := m.messages[i]
+	msg := msgs[i]
 	wrapWidth := m.viewport.Width
 	rendered := ""
 
- 
-// use cache when possible
-if msg.Rendered != "" && msg.RenderedSource == msg.Content && msg.RenderedWrapWidth == wrapWidth {
-	rendered = msg.Rendered
-} else {
-	switch msg.Role {
-	case types.RoleAssistant:
-		// delegate markdown rendering to centralized helper
-		rendered = renderMarkdown(m, msg.Content, wrapWidth)
-	default:
-		rendered = msg.Content
-	}
+	// use cache when possible
+	if msg.Rendered != "" && msg.RenderedSource == msg.Content && msg.RenderedWrapWidth == wrapWidth {
+		rendered = msg.Rendered
+	} else {
+		switch msg.Role {
+		case types.RoleAssistant:
+			// delegate markdown rendering to centralized helper
+			rendered = renderMarkdown(m, msg.Content, wrapWidth)
+		default:
+			rendered = msg.Content
+		}
 
-	// cache rendered output
-	msg.Rendered = rendered
-	msg.RenderedWrapWidth = wrapWidth
-	msg.RenderedSource = msg.Content
-	m.messages[i] = msg
-}
+		// cache rendered output
+		msgs[i].Rendered = rendered
+		msgs[i].RenderedWrapWidth = wrapWidth
+		msgs[i].RenderedSource = msg.Content
+	}
 
 	// streaming indicator for active assistant message
 	if m.isStreaming && i == m.activeAssistantIndex && msg.Role == types.RoleAssistant {
@@ -82,8 +82,9 @@ if len(msg.ToolCalls) > 0 {
 
 // renderToolCalls returns the rendered tool area (similar to previous renderToolArea but callable).
 func renderToolCalls(m *Model) string {
+	history := m.conversation.ToolHistory
 	// If no history, return bordered empty line like original behaviour
-	if len(m.toolHistory) == 0 {
+	if len(history) == 0 {
 		return toolAreaBorderStyle.Render(strings.Repeat("─", m.width))
 	}
 
@@ -93,13 +94,13 @@ func renderToolCalls(m *Model) string {
 		maxEntries = 1
 	}
 	start := 0
-	if len(m.toolHistory) > maxEntries {
-		start = len(m.toolHistory) - maxEntries
+	if len(history) > maxEntries {
+		start = len(history) - maxEntries
 	}
 
 	var lines []string
-	for i := start; i < len(m.toolHistory); i++ {
-		ts := m.toolHistory[i]
+	for i := start; i < len(history); i++ {
+		ts := history[i]
 		switch ts.Status {
 		case "running":
 			lines = append(lines, toolRunningStyle.Render(fmt.Sprintf("  🔧 %s ⏳", ts.Name)))
