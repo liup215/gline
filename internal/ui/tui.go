@@ -46,8 +46,10 @@ type Model struct {
 	ctx           context.Context
 	cancelFn      context.CancelFunc
 
-	// Program reference for sending messages
-	program *tea.Program
+	// Bridge channel: TUIBridge sends events here; a forwarding goroutine
+	// relays them to tea.Program.Send so that Bridge stays decoupled from Bubbletea.
+	eventCh chan bridge.AgentEvent
+	done    chan struct{} // signals the forwarding goroutine to stop
 
 	// Pending reply channel when the UI is answering an AskFollowupQuestion
 	pendingReply chan string
@@ -103,11 +105,6 @@ func New(agentInstance *agent.BaseAgent) *Model {
 		agentInstance:        agentInstance,
 		ctx:                  context.Background(),
 	}
-}
-
-// SetProgram sets the program reference for sending messages
-func (m *Model) SetProgram(p *tea.Program) {
-	m.program = p
 }
 
 // Init initializes the TUI
@@ -271,11 +268,34 @@ func (m *Model) addErrorMessage(content string) {
 	m.updateViewport()
 }
 
-// Run starts the TUI
+// Run starts the TUI with a Bridge-based event forwarding architecture.
+// A buffered channel carries events from TUIBridge (Agent side) to the
+// Bubbletea Program; a goroutine relays them via program.Send.
 func Run(agentInstance *agent.BaseAgent) error {
-	model := New(agentInstance)
-	p := tea.NewProgram(model, tea.WithAltScreen())
-	model.SetProgram(p)
+	m := New(agentInstance)
+	p := tea.NewProgram(m, tea.WithAltScreen())
+
+	// Create the event channel and wire it into the Model
+	eventCh := make(chan bridge.AgentEvent, 64)
+	m.eventCh = eventCh
+	done := make(chan struct{})
+	m.done = done
+
+	// Forward goroutine: reads events from the bridge channel and sends
+	// them into the Bubbletea event loop. This keeps TUIBridge decoupled
+	// from tea.Program while preserving ordered delivery.
+	go func() {
+		for {
+			select {
+			case evt := <-eventCh:
+				p.Send(evt)
+			case <-done:
+				return
+			}
+		}
+	}()
+
 	_, err := p.Run()
+	close(done) // signal the forwarding goroutine to stop
 	return err
 }

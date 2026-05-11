@@ -29,7 +29,7 @@ internal/ui/
 - ✅ Phase 1: 类型安全的消息系统（消除魔法字符串）— **已完成 2026-05-11**
 - ✅ Phase 2: 抽离纯数据 Model — **已完成 2026-05-11**
 - ✅ Phase 3: 引入 ViewModel 层 — **已完成 2026-05-11**
-- Phase 4: Bridge 层重构（解耦 Agent 和 TUI）
+- ✅ Phase 4: Bridge 层重构（解耦 Agent 和 TUI）— **已完成 2026-05-11**
 - Phase 5: View 纯函数化 + Bubbletea 薄壳
 ```
 
@@ -58,6 +58,25 @@ internal/ui/
 8. 更新 `tui_test.go` — 测试适配新字段（使用 `uimodel` 别名避免包名冲突）
 9. 创建 `internal/ui/model/conversation_test.go` — 23 个单元测试全部通过
 10. `go build ./...` 成功，现有测试 + 新测试全部通过
+
+**Phase 4 完成记录**:
+1. 创建 `internal/ui/bridge/callback.go` — `TUIBridge` 结构体
+   - 实现 `agent.StreamCallback` 接口，通过 `eventCh chan<- AgentEvent` 发送事件
+   - 替代原来的 `tuiCallback`（依赖 `*tea.Program`），Bridge 层可独立测试
+   - 编译时断言 `var _ agent.StreamCallback = (*TUIBridge)(nil)`
+2. 创建 `internal/ui/bridge/callback_test.go` — 8 个单元测试全部通过
+   - 测试每个回调方法发送正确的事件类型
+   - 测试 `AskFollowupQuestion` 的同步阻塞行为
+   - 测试多事件顺序发送
+3. 修改 `internal/ui/tui.go` — 集成 eventCh + 转发 goroutine
+   - Model 新增 `eventCh chan bridge.AgentEvent` 和 `done chan struct{}`
+   - 删除 `program *tea.Program` 字段和 `SetProgram()` 方法
+   - `Run()` 函数：创建 buffered channel (64)，启动转发 goroutine 将事件中转到 `p.Send()`
+   - `p.Run()` 返回后 `close(done)` 通知 goroutine 退出
+4. 修改 `internal/ui/tui_agent.go` — 用 `bridge.NewTUIBridge(m.eventCh)` 替代 `tuiCallback`
+   - 删除 `tuiCallback` 结构体及其全部 7 个方法
+   - `startAgent()` 改为创建 `TUIBridge` 实例
+5. `go build ./...` 成功，`go test ./internal/ui/...` 全部 49 个测试通过
 
 **Phase 3 完成记录**:
 1. 创建 `internal/ui/viewmodel/conversation_vm.go` — `ConversationViewModel` 结构体

@@ -2,9 +2,9 @@
 
 ## 项目状态概览
 
-**当前阶段**: MVVM 重构 Phase 3 已完成
+**当前阶段**: MVVM 重构 Phase 4 已完成
 
-**总体进度**: 55% - 完成 TUI MVVM 架构重构 Phase 1-3（类型安全消息系统 + 纯数据 Model + ViewModel 层）
+**总体进度**: 65% - 完成 TUI MVVM 架构重构 Phase 1-4（类型安全消息系统 + 纯数据 Model + ViewModel 层 + Bridge 解耦）
 ```
 
 ## 已完成工作
@@ -224,7 +224,7 @@ gline/
 - **影响**: 可测试性差（仅 ~10% 可独立测试）、View 渲染性能差（全量重建）、添加新功能需改动 4-5 个文件
 - **解决方案**: 5 阶段渐进 MVVM 重构（见 `memory-bank/tui-mvvm-refactor.md`）
 - **优先级**: 高（阻塞 TUI 功能扩展）
-- **当前进度**: Phase 3 已完成 ✅
+- **当前进度**: Phase 4 已完成 ✅
 ```
 
 ### MVVM 重构进度
@@ -234,7 +234,7 @@ gline/
 | Phase 1 | 类型安全的消息系统（消除魔法字符串） | ✅ 完成 | 2026-05-11 |
 | Phase 2 | 抽离纯数据 Model (`model/` 包) | ✅ 完成 | 2026-05-11 |
 | Phase 3 | 引入 ViewModel 层（渲染逻辑迁移） | ✅ 完成 | 2026-05-11 |
-| Phase 4 | Bridge 层重构（Agent 回调脱离 `tea.Program`） | ⏳ 待开始 | — |
+| Phase 4 | Bridge 层重构（Agent 回调脱离 `tea.Program`） | ✅ 完成 | 2026-05-11 |
 | Phase 5 | View 纯函数化 + Bubbletea 薄壳 | ⏳ 待开始 | — |
 ```
 

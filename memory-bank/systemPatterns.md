@@ -291,12 +291,14 @@ internal/ui/
 
 ### 当前状态
 
-- **`bridge/` 已完成** ✅: `internal/ui/bridge/messages.go` + `messages_test.go`
+- **`bridge/` 已完成** ✅: `internal/ui/bridge/messages.go` + `callback.go` + `messages_test.go` + `callback_test.go`
+  - `TUIBridge` 实现 `agent.StreamCallback` 接口，通过 channel 发送事件（不依赖 `tea.Program`）
 - **`model/` 已完成** ✅: `internal/ui/model/message.go` + `conversation.go` + `conversation_test.go`
-- **空目录预留**: `internal/ui/viewmodel/`（Phase 3）、`internal/ui/view/`（Phase 5）
+- **`viewmodel/` 已完成** ✅: `internal/ui/viewmodel/conversation_vm.go` + `conversation_vm_test.go`
+- **空目录预留**: `internal/ui/view/`（Phase 5）
 - **废弃目录**: `internal/ui/agent/`, `internal/ui/core/`（功能已并入 `bridge/` 和 `model/`）
-- **当前代码**: 10 个文件在 `internal/ui/` 根目录，逐步向 `model/` / `viewmodel/` / `view/` / `bridge/` 迁移
-- **重构计划**: 5 阶段渐进方案（详见 `memory-bank/tui-mvvm-refactor.md`）
+- **当前代码**: `internal/ui/` 根目录仍有 `tui.go`, `tui_agent.go`, `tui_state.go`, `tui_update.go`, `tui_view.go`, `tui_input.go`, `tui_styles.go`, `tui_test.go`
+- **重构进度**: Phase 1-4 已完成，Phase 5 待开始（详见 `memory-bank/tui-mvvm-refactor.md`）
 
 ### 与现有架构的关系
 
