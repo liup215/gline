@@ -181,19 +181,6 @@ func TestLastRunningToolName(t *testing.T) {
 	}
 }
 
-func TestMessageResetRenderCache(t *testing.T) {
-	m := Message{
-		Content:           "hello",
-		Rendered:          "rendered",
-		RenderedWrapWidth: 80,
-		RenderedSource:    "hello",
-	}
-	m.ResetRenderCache()
-	if m.Rendered != "" || m.RenderedWrapWidth != 0 || m.RenderedSource != "" {
-		t.Fatal("ResetRenderCache did not clear all fields")
-	}
-}
-
 func TestConversationComplexScenario(t *testing.T) {
 	c := NewConversation()
 	c.Provider = "openai"

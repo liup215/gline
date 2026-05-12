@@ -21,9 +21,12 @@ import (
 // ConversationViewModel
 // ---------------------------------------------------------------------------
 
-// cachedMessage holds the pre-rendered string for a single message index.
+// cachedMessage holds the pre-rendered content and cache validation fields for a single message.
+// This replaces the cache fields that were previously on model.Message.
 type cachedMessage struct {
-	rendered string
+	content   string // original content used to produce rendered
+	wrapWidth int    // width used for rendering
+	rendered  string // the rendered output
 }
 
 // ConversationViewModel derives rendered display state from a model.Conversation.
@@ -97,7 +100,12 @@ func (vm *ConversationViewModel) Refresh(conv *model.Conversation, width int, to
 		for i := range msgs {
 			rendered := vm.renderMessage(msgs, i, width, isStreaming && i == activeAssistantIndex)
 			content.WriteString(rendered)
-			vm.messageCache[i] = cachedMessage{rendered: rendered}
+			// Cache with content and wrapWidth for proper cache validation
+			vm.messageCache[i] = cachedMessage{
+				content:   msgs[i].Content,
+				wrapWidth: width,
+				rendered:  rendered,
+			}
 		}
 		vm.content = content.String()
 	} else {
@@ -107,7 +115,12 @@ func (vm *ConversationViewModel) Refresh(conv *model.Conversation, width int, to
 			if vm.dirtyMessages[i] {
 				rendered := vm.renderMessage(msgs, i, width, isStreaming && i == activeAssistantIndex)
 				content.WriteString(rendered)
-				vm.messageCache[i] = cachedMessage{rendered: rendered}
+				// Cache with content and wrapWidth for proper cache validation
+				vm.messageCache[i] = cachedMessage{
+					content:   msgs[i].Content,
+					wrapWidth: width,
+					rendered:  rendered,
+				}
 			} else {
 				content.WriteString(vm.messageCache[i].rendered)
 			}
@@ -228,9 +241,10 @@ func (vm *ConversationViewModel) renderAssistantContent(msgs []model.Message, i 
 	msg := msgs[i]
 	rendered := ""
 
-	// Use cache when possible.
-	if msg.Rendered != "" && msg.RenderedSource == msg.Content && msg.RenderedWrapWidth == wrapWidth {
-		rendered = msg.Rendered
+	// Use ViewModel's messageCache when possible.
+	// Check if we have a cached entry for this message index with matching content and width.
+	if cache, ok := vm.messageCache[i]; ok && cache.content == msg.Content && cache.wrapWidth == wrapWidth {
+		rendered = cache.rendered
 	} else {
 		switch msg.Role {
 		case types.RoleAssistant:
@@ -239,10 +253,14 @@ func (vm *ConversationViewModel) renderAssistantContent(msgs []model.Message, i 
 			rendered = msg.Content
 		}
 
-		// Cache rendered output on the message.
-		msgs[i].Rendered = rendered
-		msgs[i].RenderedWrapWidth = wrapWidth
-		msgs[i].RenderedSource = msg.Content
+		// Cache rendered output in ViewModel's messageCache.
+		// Note: This cache is updated in Refresh(), but we also update here
+		// for consistency when renderAssistantContent is called directly.
+		vm.messageCache[i] = cachedMessage{
+			content:   msg.Content,
+			wrapWidth: wrapWidth,
+			rendered:  rendered,
+		}
 	}
 
 	// Streaming indicator for active assistant message.

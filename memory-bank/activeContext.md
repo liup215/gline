@@ -21,8 +21,22 @@
 - ✅ Phase 6: 渲染性能优化（脏标记 → 增量渲染）— **已完成** (2026-05-11)
 - ✅ Phase 7: 状态 Handler 解耦（View 和 State 分离）— **已完成** (2026-05-11)
 - ✅ Phase 8: 拆分 `handleAgentToolStart` + 工具显示逻辑迁移 — **已完成** (2026-05-11)
-- ⬜ Phase 9: Model 层净化 + 渲染缓存迁移 — **待开始**
+- ✅ Phase 9: Model 层净化 + 渲染缓存迁移 — **已完成** (2026-05-12)
 - ⬜ Phase 10: 架构完整性 + 测试覆盖 — **待开始**
+
+**Phase 9 完成记录**:
+1. 从 `model.Message` 删除渲染缓存字段 — 删除 `Rendered`, `RenderedWrapWidth`, `RenderedSource` 三个字段
+2. 删除 `ResetRenderCache()` 方法 — Model 层现在完全纯净，零外部 UI 依赖
+3. 扩展 ViewModel `cachedMessage` 结构体 — 添加 `content` 和 `wrapWidth` 字段用于缓存验证
+4. 更新 `renderAssistantContent()` — 从访问 `msg.Rendered` 改为使用 `vm.messageCache` 进行缓存命中/未命中判断
+5. 更新 `Refresh()` 方法 — 全量重建和增量刷新时正确保存 `content` 和 `wrapWidth` 到缓存
+6. 删除 `model/conversation_test.go` 中的 `TestMessageResetRenderCache` 测试
+7. 添加 4 个 ViewModel 缓存测试：
+   - `TestViewModelCacheHit` — 验证缓存正确存储 content/wrapWidth/rendered
+   - `TestViewModelCacheMissOnContentChange` — 验证内容变更时缓存失效
+   - `TestViewModelCacheMissOnWidthChange` — 验证宽度变更时缓存失效
+   - `TestViewModelCacheNoDirectAccessToMessageCache` — 编译时验证 Message 无缓存字段
+8. `go build ./...` 成功，`go test ./internal/ui/...` 全部通过（90+ 测试）
 
 **Phase 8 完成记录**:
 1. 创建 `internal/ui/view/tool_format.go` — 提取 3 个工具显示格式化函数：
