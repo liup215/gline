@@ -51,7 +51,7 @@ return
 }
 
 func TestEscInterruptAskFollowupQuestion(t *testing.T) {
-	m := New(nil)
+m := New(nil)
 // ensure event channel and forwarding goroutine for tests to avoid blocking
 m.eventCh = make(chan bridge.AgentEvent, 64)
 m.done = make(chan struct{})
@@ -66,25 +66,37 @@ return
 }
 }()
 
-	// prepare pendingReply and simulate AskFollowupQuestion path
-	reply := make(chan string, 1)
-	m.pendingReply = reply
-	m.isProcessing = true
+// prepare pendingReply and simulate AskFollowupQuestion path
+reply := make(chan string, 1)
+m.pendingReply = reply
+m.isProcessing = true
 
-	// simulate user pressing Esc: directly call handler
-	cmds := handleKeyMsg(m, teaKeyEsc())
-	// ensure pendingReply closed and cleared
-	if m.pendingReply != nil {
-		t.Fatalf("pendingReply should be nil after Esc, got non-nil")
-	}
+// Start a goroutine to simulate the agent blocking on the reply channel.
+// The agent will unblock when the reply channel is closed by Esc handling.
+agentUnblocked := make(chan bool, 1)
+go func() {
+_, ok := <-reply
+agentUnblocked <- ok // ok == false means channel was closed
+}()
 
-	// sending on closed channel should panic if not handled; reading should be closed
-	_, ok := <-reply
-	if ok {
-		t.Fatalf("reply channel should be closed")
-	}
+// simulate user pressing Esc: directly call handler
+cmds := handleKeyMsg(m, teaKeyEsc())
+_ = cmds
 
-	_ = cmds
+// ensure the agent goroutine was unblocked and saw a closed channel
+select {
+case ok := <-agentUnblocked:
+if ok {
+t.Fatalf("agent should have seen reply channel closed (ok=false), got ok=true")
+}
+case <-time.After(1 * time.Second):
+t.Fatalf("agent goroutine did not unblock after Esc")
+}
+
+// ensure pendingReply cleared
+if m.pendingReply != nil {
+t.Fatalf("pendingReply should be nil after Esc, got non-nil")
+}
 }
 
 func TestNoCancelFnDataRace(t *testing.T) {

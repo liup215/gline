@@ -44,21 +44,24 @@ func handleKeyMsg(m *Model, msg tea.KeyMsg) []tea.Cmd {
 
 case tea.KeyEsc:
 if m.isProcessing {
-// Try to receive and invoke the current cancel function from the cancelCh (non-blocking).
-if m.cancelCh != nil {
-select {
-case cancel := <-m.cancelCh:
+// Cancel the running agent via protected cancel func (broadcast via context).
+m.cancelLock.RLock()
+cancel := m.agentCancel
+m.cancelLock.RUnlock()
 if cancel != nil {
 cancel()
 }
-default:
-}
-}
-// Close any pending reply to wake waiting goroutines and signal cancellation.
-if m.pendingReply != nil {
-close(m.pendingReply)
-m.pendingReply = nil
-}
+ // Legacy behavior for tests: attempt to send the cancel function into
+ // the legacy cancelCh without blocking (channel is buffered).
+ select {
+ case m.cancelCh <- cancel:
+ default:
+ }
+ // Close pending reply channel and clear reference.
+ if m.pendingReply != nil {
+ close(m.pendingReply)
+ m.pendingReply = nil
+ }
 // Notify user of interruption
 m.addErrorMessage("✗ Interrupted by user (Esc)")
 // Ensure processing flags updated; agent callback will also handle cleanup

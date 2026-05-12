@@ -208,18 +208,18 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 						Input: string(tc.Input),
 					})
 
- // If this is the ask_followup_question tool and the callback supports AskFollowupQuestion,
- // inject the TUI/Callback handler so the tool doesn't read directly from stdin.
- if askTool, ok := tool.(*tools.AskFollowupQuestionTool); ok {
-     askTool.SetHandler(func(question string, options []string) (string, error) {
-         return callback.AskFollowupQuestion(question, options)
-     })
- }
- // Execute the tool
- result, err := tool.Execute(ctx, tc.Input)
- if err != nil {
-     result = fmt.Sprintf("Error: %v", err)
- }
+					// If this is the ask_followup_question tool and the callback supports AskFollowupQuestion,
+					// inject the TUI/Callback handler so the tool doesn't read directly from stdin.
+					if askTool, ok := tool.(*tools.AskFollowupQuestionTool); ok {
+						askTool.SetHandler(func(question string, options []string) (string, error) {
+							return callback.AskFollowupQuestion(question, options)
+						})
+					}
+					// Execute the tool
+					result, err := tool.Execute(ctx, tc.Input)
+					if err != nil {
+						result = fmt.Sprintf("Error: %v", err)
+					}
 
 					// Add tool result to conversation
 					a.conversation.AddMessage(types.Message{
@@ -248,93 +248,93 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 	return nil
 }
 
- // processResponse handles the LLM response
- func (a *BaseAgent) processResponse(ctx context.Context, resp *MessageResponse, callback StreamCallback) error {
- 	// Convert ToolCalls from agent format to types format
- 	var toolCalls []types.ToolCall
- 	for _, tc := range resp.ToolCalls {
- 		toolCalls = append(toolCalls, types.ToolCall{
- 			ID:    tc.ID,
- 			Name:  tc.Name,
- 			Input: []byte(tc.Input),
- 		})
- 	}
- 
- 	// Add assistant message to conversation, include any reasoning_content the provider returned
- 	a.conversation.AddMessage(types.Message{
- 		Role:            types.RoleAssistant,
- 		Content:         resp.Content,
- 		ReasoningContent: resp.ReasoningContent,
- 		ToolCalls:       toolCalls,
- 	})
- 
- 	// Handle tool calls
- 	if len(resp.ToolCalls) == 0 {
- 		// No tool calls, conversation is complete
- 		a.conversation.SetComplete()
- 		return nil
- 	}
- 
- 	for _, tc := range resp.ToolCalls {
- 		if a.abort {
- 			return nil
- 		}
- 
- 		// Check if tool is allowed in current mode
- 		if !a.toolRegistry.IsAllowed(string(a.mode), tc.Name) {
- 			return fmt.Errorf("tool %s is not allowed in %s mode", tc.Name, a.mode)
- 		}
- 
- 		// Get the tool from registry
- 		tool, err := a.toolRegistry.Get(tc.Name)
- 		if err != nil {
- 			errorMsg := fmt.Sprintf("Error: Tool '%s' not found: %v", tc.Name, err)
- 			a.conversation.AddMessage(types.Message{
- 				Role:       types.RoleTool,
- 				ToolCallID: tc.ID,
- 				Content:    errorMsg,
- 			})
- 			continue
- 		}
- 
- 		// Parse input
- 		var input json.RawMessage
- 		if err := json.Unmarshal([]byte(tc.Input), &input); err != nil {
- 			// Return the original input to LLM so it can retry with correct format
- 			errorMsg := fmt.Sprintf("Error: Invalid JSON in tool call '%s': %v. Please retry with properly formatted JSON arguments.\n\nOriginal input: %s", tc.Name, err, tc.Input)
- 			// Add tool result to conversation so LLM can see the error and retry
- 			a.conversation.AddMessage(types.Message{
- 				Role:       types.RoleTool,
- 				ToolCallID: tc.ID,
- 				Content:    errorMsg,
- 			})
- 			// Continue to next tool call instead of failing entirely
- 			continue
- 		}
- 
- 		// If this is the ask_followup_question tool, inject the handler from the callback.
- 		if askTool, ok := tool.(*tools.AskFollowupQuestionTool); ok {
- 			askTool.SetHandler(func(question string, options []string) (string, error) {
- 				return callback.AskFollowupQuestion(question, options)
- 			})
- 		}
- 
- 		// Execute the tool
- 		result, err := tool.Execute(ctx, input)
- 		if err != nil {
- 			result = fmt.Sprintf("Error: %v", err)
- 		}
- 
- 		// Add tool result to conversation
- 		a.conversation.AddMessage(types.Message{
- 			Role:       types.RoleTool,
- 			ToolCallID: tc.ID,
- 			Content:    result,
- 		})
- 	}
- 
- 	return nil
- }
+// processResponse handles the LLM response
+func (a *BaseAgent) processResponse(ctx context.Context, resp *MessageResponse, callback StreamCallback) error {
+	// Convert ToolCalls from agent format to types format
+	var toolCalls []types.ToolCall
+	for _, tc := range resp.ToolCalls {
+		toolCalls = append(toolCalls, types.ToolCall{
+			ID:    tc.ID,
+			Name:  tc.Name,
+			Input: []byte(tc.Input),
+		})
+	}
+
+	// Add assistant message to conversation, include any reasoning_content the provider returned
+	a.conversation.AddMessage(types.Message{
+		Role:             types.RoleAssistant,
+		Content:          resp.Content,
+		ReasoningContent: resp.ReasoningContent,
+		ToolCalls:        toolCalls,
+	})
+
+	// Handle tool calls
+	if len(resp.ToolCalls) == 0 {
+		// No tool calls, conversation is complete
+		a.conversation.SetComplete()
+		return nil
+	}
+
+	for _, tc := range resp.ToolCalls {
+		if a.abort {
+			return nil
+		}
+
+		// Check if tool is allowed in current mode
+		if !a.toolRegistry.IsAllowed(string(a.mode), tc.Name) {
+			return fmt.Errorf("tool %s is not allowed in %s mode", tc.Name, a.mode)
+		}
+
+		// Get the tool from registry
+		tool, err := a.toolRegistry.Get(tc.Name)
+		if err != nil {
+			errorMsg := fmt.Sprintf("Error: Tool '%s' not found: %v", tc.Name, err)
+			a.conversation.AddMessage(types.Message{
+				Role:       types.RoleTool,
+				ToolCallID: tc.ID,
+				Content:    errorMsg,
+			})
+			continue
+		}
+
+		// Parse input
+		var input json.RawMessage
+		if err := json.Unmarshal([]byte(tc.Input), &input); err != nil {
+			// Return the original input to LLM so it can retry with correct format
+			errorMsg := fmt.Sprintf("Error: Invalid JSON in tool call '%s': %v. Please retry with properly formatted JSON arguments.\n\nOriginal input: %s", tc.Name, err, tc.Input)
+			// Add tool result to conversation so LLM can see the error and retry
+			a.conversation.AddMessage(types.Message{
+				Role:       types.RoleTool,
+				ToolCallID: tc.ID,
+				Content:    errorMsg,
+			})
+			// Continue to next tool call instead of failing entirely
+			continue
+		}
+
+		// If this is the ask_followup_question tool, inject the handler from the callback.
+		if askTool, ok := tool.(*tools.AskFollowupQuestionTool); ok {
+			askTool.SetHandler(func(question string, options []string) (string, error) {
+				return callback.AskFollowupQuestion(question, options)
+			})
+		}
+
+		// Execute the tool
+		result, err := tool.Execute(ctx, input)
+		if err != nil {
+			result = fmt.Sprintf("Error: %v", err)
+		}
+
+		// Add tool result to conversation
+		a.conversation.AddMessage(types.Message{
+			Role:       types.RoleTool,
+			ToolCallID: tc.ID,
+			Content:    result,
+		})
+	}
+
+	return nil
+}
 
 // SetMode switches between Plan and Act modes
 func (a *BaseAgent) SetMode(mode Mode) error {
@@ -431,11 +431,23 @@ func (a *BaseAgent) processStream(ctx context.Context, streamChan <-chan StreamC
 	}
 
 	// Add assistant message to conversation, including any accumulated reasoning content
+	// Surface tool calls in the visible assistant content so tests and UIs can render them.
+	toolText := formatToolCallText(toolCalls)
+	fullContent := content.String()
+	if toolText != "" {
+		if fullContent != "" {
+			fullContent = fullContent + "\n" + toolText
+		} else {
+			fullContent = toolText
+		}
+		// Also send tool text to callback so it's visible in the UI
+		callback.OnContent("\n" + toolText)
+	}
 	a.conversation.AddMessage(types.Message{
-		Role:            types.RoleAssistant,
-		Content:         content.String(),
+		Role:             types.RoleAssistant,
+		Content:          fullContent,
 		ReasoningContent: reasoning.String(),
-		ToolCalls:       typesToolCalls,
+		ToolCalls:        typesToolCalls,
 	})
 
 	// If there are no tool calls, mark conversation as complete

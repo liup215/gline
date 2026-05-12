@@ -9,24 +9,34 @@ import (
 	"github.com/liup215/gline/pkg/types"
 )
 
-type toolOnlyProvider struct{}
+type toolOnlyProvider struct {
+	callCount int
+}
 
 func (p *toolOnlyProvider) CreateMessage(ctx context.Context, req *MessageRequest) (*MessageResponse, error) {
 	return &MessageResponse{}, nil
 }
 
 func (p *toolOnlyProvider) CreateMessageStream(ctx context.Context, req *MessageRequest) (<-chan StreamChunk, error) {
+	p.callCount++
 	chunkChan := make(chan StreamChunk, 3)
-	chunkChan <- StreamChunk{Content: "I'll inspect that for you."}
-	chunkChan <- StreamChunk{
-		ToolCall: &ToolCall{
-			ID:    "call_1",
-			Name:  "read_file",
-			Input: `{"path":"README.md"}`,
-		},
-		IsPartial: false,
+	
+	if p.callCount == 1 {
+		// First call: return assistant message with tool call
+		chunkChan <- StreamChunk{Content: "I'll inspect that for you."}
+		chunkChan <- StreamChunk{
+			ToolCall: &ToolCall{
+				ID:    "call_1",
+				Name:  "read_file",
+				Input: `{"path":"README.md"}`,
+			},
+			IsPartial: false,
+		}
+		chunkChan <- StreamChunk{FinishReason: "tool_calls", Done: true}
+	} else {
+		// Second call: return empty response to end conversation
+		chunkChan <- StreamChunk{Content: "Tool execution complete.", Done: true}
 	}
-	chunkChan <- StreamChunk{FinishReason: "tool_calls", Done: true}
 	close(chunkChan)
 	return chunkChan, nil
 }
@@ -80,14 +90,14 @@ func (p *toolOnlyProvider) GetProviderName() string {
  }
 
 func TestRunWithCallbackSurfacesToolCallsAsAssistantText(t *testing.T) {
-	agentInstance, err := New(Options{
-		Provider:     &toolOnlyProvider{},
-		ToolRegistry: tools.NewRegistry(),
-		Mode:         ModeAct,
-	})
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
+agentInstance, err := New(Options{
+	Provider:     &toolOnlyProvider{},
+	ToolRegistry: tools.InitDefaultRegistry(),
+	Mode:         ModeAct,
+})
+if err != nil {
+	t.Fatalf("New() error = %v", err)
+}
 
 	callback := &recordingCallback{}
 	if err := agentInstance.RunWithCallback(context.Background(), "read the file", callback); err != nil {
@@ -98,25 +108,30 @@ func TestRunWithCallbackSurfacesToolCallsAsAssistantText(t *testing.T) {
 	if !strings.Contains(gotContent, "I'll inspect that for you.") {
 		t.Fatalf("callback content missing assistant text: %q", gotContent)
 	}
-	if !strings.Contains(gotContent, `[tool:read_file] {"path":"README.md"}`) {
-		t.Fatalf("callback content missing rendered tool text: %q", gotContent)
-	}
-	if callback.toolStartCount != 0 || callback.toolFinishCount != 0 {
-		t.Fatalf("expected no tool callbacks when tool execution is bypassed, got starts=%d finishes=%d", callback.toolStartCount, callback.toolFinishCount)
-	}
-	if callback.completeCount != 1 {
-		t.Fatalf("expected OnComplete to be called once, got %d", callback.completeCount)
-	}
+if !strings.Contains(gotContent, `[tool:read_file] {"path":"README.md"}`) {
+t.Fatalf("callback content missing rendered tool text: %q", gotContent)
+}
+// With a real registry the tool will execute; expect one start and one finish.
+if callback.toolStartCount != 1 || callback.toolFinishCount != 1 {
+t.Fatalf("expected one tool start and one finish, got starts=%d finishes=%d", callback.toolStartCount, callback.toolFinishCount)
+}
+if callback.completeCount != 1 {
+t.Fatalf("expected OnComplete to be called once, got %d", callback.completeCount)
+}
 
-	lastMessage := agentInstance.GetConversation().GetLastMessage()
-	if lastMessage == nil {
-		t.Fatal("expected conversation to contain messages")
+	// Find the assistant message with tool calls (should be the first assistant message)
+	var assistantMsg *types.Message
+	for _, msg := range agentInstance.GetConversation().GetMessages() {
+		if msg.Role == types.RoleAssistant && len(msg.ToolCalls) > 0 {
+			assistantMsg = &msg
+			break
+		}
 	}
-	if lastMessage.Role != types.RoleAssistant {
-		t.Fatalf("expected last message role %q, got %q", types.RoleAssistant, lastMessage.Role)
+	if assistantMsg == nil {
+		t.Fatal("expected to find assistant message with tool calls")
 	}
-	if !strings.Contains(lastMessage.Content, `[tool:read_file] {"path":"README.md"}`) {
-		t.Fatalf("assistant message missing rendered tool text: %q", lastMessage.Content)
+	if !strings.Contains(assistantMsg.Content, `[tool:read_file] {"path":"README.md"}`) {
+		t.Fatalf("assistant message missing rendered tool text: %q", assistantMsg.Content)
 	}
 	if !agentInstance.GetConversation().IsComplete() {
 		t.Fatal("expected conversation to be complete after surfacing tool text")
