@@ -1,9 +1,10 @@
 // Package bridge provides type-safe Agent-TUI communication.
-// TUIBridge implements agent.StreamCallback using a channel instead of tea.Program,
-// making the bridge layer testable without Bubbletea.
+// TUIBridge implements agent.StreamCallback by sending typed events over a channel.
 package bridge
 
 import (
+	"context"
+
 	"github.com/liup215/gline/internal/agent"
 )
 
@@ -67,7 +68,11 @@ func (b *TUIBridge) AskFollowupQuestion(question string, options []string) (stri
 		Reply:    reply,
 	}
 	// Block until the TUI sends back the user's answer
-	answer := <-reply
+	answer, ok := <-reply
+	if !ok {
+		// UI closed the reply channel (e.g., user cancelled) — treat as canceled.
+		return "", context.Canceled
+	}
 	return answer, nil
 }
 

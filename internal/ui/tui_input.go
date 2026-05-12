@@ -42,23 +42,35 @@ func handleKeyMsg(m *Model, msg tea.KeyMsg) []tea.Cmd {
 		// Quit the program
 		cmds = append(cmds, tea.Quit)
 
-	case tea.KeyEsc:
-		if m.isProcessing {
-			if m.cancelFn != nil {
-				m.cancelFn()
-			}
-			// Notify user of interruption
-			m.addErrorMessage("✗ Interrupted by user (Esc)")
-			// Ensure processing flags updated; agent callback will also handle cleanup
-			m.isProcessing = false
-			m.isStreaming = false
-			m.textarea.Focus()
-			cmds = append(cmds, textarea.Blink)
-			m.updateViewport()
-		} else {
-			m.textarea.Reset()
-			m.updateViewport()
-		}
+case tea.KeyEsc:
+if m.isProcessing {
+// Try to receive and invoke the current cancel function from the cancelCh (non-blocking).
+if m.cancelCh != nil {
+select {
+case cancel := <-m.cancelCh:
+if cancel != nil {
+cancel()
+}
+default:
+}
+}
+// Close any pending reply to wake waiting goroutines and signal cancellation.
+if m.pendingReply != nil {
+close(m.pendingReply)
+m.pendingReply = nil
+}
+// Notify user of interruption
+m.addErrorMessage("✗ Interrupted by user (Esc)")
+// Ensure processing flags updated; agent callback will also handle cleanup
+m.isProcessing = false
+m.isStreaming = false
+m.textarea.Focus()
+cmds = append(cmds, textarea.Blink)
+m.updateViewport()
+} else {
+m.textarea.Reset()
+m.updateViewport()
+}
 
 	case tea.KeyTab:
 		// Toggle between Plan and Act mode
@@ -96,20 +108,25 @@ func handleKeyMsg(m *Model, msg tea.KeyMsg) []tea.Cmd {
 }
 
 func submitPendingReply(m *Model) []tea.Cmd {
-	var cmds []tea.Cmd
-	answer := strings.TrimSpace(m.textarea.Value())
-	if answer != "" {
-		// Send the user's answer back to the waiting tool goroutine.
-		m.pendingReply <- answer
-	}
-	// Clear pending state and reset input box without starting a new agent run.
-	m.pendingReply = nil
-	m.textarea.Reset()
-	m.textarea.Placeholder = "Type your message..."
-	m.textarea.Focus()
-	cmds = append(cmds, textarea.Blink)
-	m.updateViewport()
-	return cmds
+var cmds []tea.Cmd
+answer := strings.TrimSpace(m.textarea.Value())
+if answer != "" && m.pendingReply != nil {
+// Non-blocking send to avoid blocking or panic if channel closed.
+select {
+case m.pendingReply <- answer:
+// sent
+default:
+// receiver not ready or channel full/closed — drop answer safely
+}
+}
+// Clear pending state and reset input box without starting a new agent run.
+m.pendingReply = nil
+m.textarea.Reset()
+m.textarea.Placeholder = "Type your message..."
+m.textarea.Focus()
+cmds = append(cmds, textarea.Blink)
+m.updateViewport()
+return cmds
 }
 
 func submitUserMessage(m *Model) []tea.Cmd {

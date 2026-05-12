@@ -29,14 +29,31 @@ func (m *Model) startAgent() tea.Cmd {
 		callback := bridge.NewTUIBridge(m.eventCh)
 
 		// Create cancellable context for this run
-		ctx, cancel := context.WithCancel(m.ctx)
-		m.cancelFn = cancel
+ctx, cancel := context.WithCancel(m.ctx)
+// send cancel via buffered channel to avoid data races; replace any stale cancel
+select {
+case m.cancelCh <- cancel:
+	// sent successfully
+default:
+	// channel full: consume old cancel and replace
+	select {
+	case old := <-m.cancelCh:
+		if old != nil {
+			old()
+		}
+	default:
+	}
+	m.cancelCh <- cancel
+}
 
 		// Run the agent with callback using cancellable context
 		err := m.agentInstance.RunWithCallback(ctx, lastUserMessage, callback)
 
-		// Clear cancelFn after run returns
-		m.cancelFn = nil
+		// Clear any stale cancel after run returns (drain channel)
+		select {
+		case <-m.cancelCh:
+		default:
+		}
 
 		if err != nil {
 			return bridge.ErrorEvent{Err: err}

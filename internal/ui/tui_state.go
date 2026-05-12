@@ -120,8 +120,12 @@ func handleAgentError(m *Model, msg bridge.ErrorEvent) (bool, []tea.Cmd) {
 			break
 		}
 	}
-	if m.cancelFn != nil {
-		m.cancelFn = nil
+	// Drain cancelCh to remove any stale cancel function without blocking.
+	if m.cancelCh != nil {
+		select {
+		case <-m.cancelCh:
+		default:
+		}
 	}
 	m.addErrorMessage(fmt.Sprintf("Error: %v", msg.Err))
 	m.textarea.Focus()
@@ -135,8 +139,12 @@ func handleAgentComplete(m *Model, msg bridge.CompleteEvent) (bool, []tea.Cmd) {
 	m.isProcessing = false
 	m.isStreaming = false
 	m.currentTool = ""
-	if m.cancelFn != nil {
-		m.cancelFn = nil
+	// Drain cancelCh to remove any stale cancel function without blocking.
+	if m.cancelCh != nil {
+		select {
+		case <-m.cancelCh:
+		default:
+		}
 	}
 	m.textarea.Focus()
 	cmds = append(cmds, textarea.Blink)

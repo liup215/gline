@@ -44,7 +44,9 @@ type Model struct {
 	// Agent components
 	agentInstance *agent.BaseAgent
 	ctx           context.Context
-	cancelFn      context.CancelFunc
+	// cancelCh replaces direct cancel function access to avoid data races.
+	// Buffered size 1 since only one agent run is active at a time.
+	cancelCh chan context.CancelFunc
 
 	// Bridge channel: TUIBridge sends events here; a forwarding goroutine
 	// relays them to tea.Program.Send so that Bridge stays decoupled from Bubbletea.
@@ -104,6 +106,9 @@ func New(agentInstance *agent.BaseAgent) *Model {
 		activeAssistantIndex: -1,
 		agentInstance:        agentInstance,
 		ctx:                  context.Background(),
+		// initialize buffered channel for cancel functions
+		cancelCh:     make(chan context.CancelFunc, 1),
+		pendingReply: nil,
 	}
 }
 
@@ -224,7 +229,7 @@ func (m *Model) View() string {
 			Provider:     m.conversation.Provider,
 			ModelName:    m.conversation.ModelName,
 			IsProcessing: m.isProcessing,
-			IsStreaming:   m.isStreaming,
+			IsStreaming:  m.isStreaming,
 			CurrentTool:  m.currentTool,
 			SpinnerView:  m.spinner.View(),
 			Width:        m.width,
