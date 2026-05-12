@@ -250,6 +250,48 @@ gline/
 | Phase 3 | 引入 ViewModel 层（渲染逻辑迁移） | ✅ 完成 | 2026-05-11 |
 | Phase 4 | Bridge 层重构（Agent 回调脱离 `tea.Program`） | ✅ 完成 | 2026-05-11 |
 | Phase 5 | View 纯函数化 + Bubbletea 薄壳 | ✅ 完成 | 2026-05-11 |
+
+### TUI 优化进度
+
+| Phase | 内容 | 状态 | 日期 |
+|-------|------|------|------|
+| Phase 6 | 渲染性能优化（脏标记 → 增量渲染） | ✅ 完成 | 2026-05-11 |
+| Phase 7 | 状态 Handler 解耦（View 和 State 分离） | ✅ 完成 | 2026-05-11 |
+| Phase 8 | 拆分 handleAgentToolStart + 工具显示逻辑迁移 | ✅ 完成 | 2026-05-11 |
+| Phase 9 | Model 层净化 + 渲染缓存迁移 | ✅ 完成 | 2026-05-12 |
+| Phase 10a | [P0] 并发安全修复（cancelFn race + pendingReply 泄漏） | ⬜ 待开始 | — |
+| Phase 10b | [P1] 用户体验修复（错误双重显示 + 滚动阻止） | ⬜ 待开始 | — |
+| Phase 10c | [P2] 性能与布局优化（tickMsg + Header/StatusBar + 灵活配比） | ⬜ 待开始 | — |
+| Phase 10d | [P3] 架构完整性（Tool Area迁移 + StatusVM + cache驱逐 + 测试） | ⬜ 待开始 | — |
+
+### TUI 已知问题（2026-05-12 审查发现）
+
+| # | 问题 | 优先级 | 状态 | 对应 Phase |
+|---|------|--------|------|-----------|
+| 1 | `cancelFn` 并发 data race（跨 goroutine 无同步） | P0 | ⬜ | 10a |
+| 2 | `pendingReply` 通道泄漏（Esc 中断时 goroutine 永久阻塞） | P0 | ⬜ | 10a |
+| 3 | 错误双重显示（handleAgentError 添加两条系统消息） | P1 | ⬜ | 10b |
+| 4 | GotoBottom 阻止用户向上滚动 | P1 | ⬜ | 10b |
+| 5 | tickMsg 每 100ms 无差别刷新 | P2 | ⬜ | 10c |
+| 6 | Header/StatusBar 信息重复浪费屏幕空间 | P2 | ⬜ | 10c |
+| 7 | 固定高度配比不灵活（小窗口体验差） | P2 | ⬜ | 10c |
+| 8 | Tool Area 渲染逻辑位置错误（view/tool_area.go 空壳） | P3 | ⬜ | 10d |
+| 9 | 缺少 StatusViewModel | P3 | ⬜ | 10d |
+| 10 | messageCache 无驱逐机制 | P3 | ⬜ | 10d |
+| 11 | 系统消息静默丢弃 | P3 | ⬜ | 10d |
+| 12 | handleKeyMsg / startAgent 测试缺失 | P3 | ⬜ | 10d |
+
+### 延后项（Phase 11+）
+
+| # | 问题 | 优先级 |
+|---|------|--------|
+| 1 | 用户消息无 Markdown 渲染 | P4 |
+| 2 | 无输入历史（上下箭头翻阅） | P4 |
+| 3 | 无代码语法高亮（需 chroma） | P4 |
+| 4 | 工具区条目数计算有误（border 占一行未计入） | P4 |
+| 5 | 硬编码颜色无主题支持 | P4 |
+| 6 | 无视觉层次（缩进/边框/分隔线） | P4 |
+| 7 | reasoning_content 不显示 | P4 |
 ```
 
 ### 已修复问题 ✅

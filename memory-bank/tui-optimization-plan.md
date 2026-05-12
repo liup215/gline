@@ -2,7 +2,7 @@
 
 ## 概述
 
-在 MVVM 重构（Phase 1-5）完成后，TUI 架构已从单体 Model 演化为清晰的四层架构（Model/ViewModel/View/Bridge）。本计划针对审查中发现的 10 个优化点，按渐进式方式分 5 个 Phase 实施。
+在 MVVM 重构（Phase 1-5）完成后，TUI 架构已从单体 Model 演化为清晰的四层架构（Model/ViewModel/View/Bridge）。Phase 6-9 已完成增量渲染、handler 解耦、工具格式化提取和 Model 层净化。Phase 10 基于 2026-05-12 全面审查（发现 18 个优化点）修订为 4 个子阶段，优先修复并发安全 bug，逐步推进用户体验、性能布局和架构完整性。
 
 ---
 
@@ -214,83 +214,330 @@ type ConversationViewModel struct {
 
 ---
 
-## Phase 10: 架构完整性 + 测试覆盖
+## Phase 10: 并发安全 + 用户体验 + 性能布局 + 架构完整性
 
-**目标**: 补齐缺失的 ViewModel（status_vm, input_vm），修复 `tool_area.go` 透传问题，补充测试覆盖。
+> **修订记录** (2026-05-12): 基于 TUI 全面审查（发现 18 个优化点），将原 Phase 10 从 3 项扩展为 4 个子阶段。
+> 原 Phase 10 仅覆盖 3/18 项，遗漏了 2 个 P0 级并发安全 bug。handler 测试已在 Phase 7 补齐。
 
-**风险**: ⭐（低风险，增量添加）
+**目标**: 修复并发安全 bug、改善用户体验、优化渲染性能与布局、补齐架构完整性。
 
-### 10a. 创建 StatusViewModel
-
-```go
-// viewmodel/status_vm.go
-type StatusBarData struct {
-    Mode         agent.Mode
-    Provider     string
-    ModelName    string
-    IsProcessing bool
-    IsStreaming  bool
-    CurrentTool  string
-    SpinnerView  string
-    Width        int
-}
-
-type StatusViewModel struct {
-    // 从 Model 派生状态栏数据
-}
-
-func (vm *StatusViewModel) Refresh(m *Model) StatusBarData {
-    // 从 Model 提取状态栏所需数据
-}
-```
-
-### 10b. 修复 `view/tool_area.go`
-
-将 ViewModel 中的 `renderToolArea()` 移到 `view/tool_area.go`，使其成为真正的纯函数。
-
-### 10c. 补充测试
-
-| 文件 | 需要补充的测试 |
-|------|---------------|
-| `tui_state.go` | 7 个 handler 的独立单元测试（mock viewport） |
-| `tui_input.go` | `handleWindowSize`, `handleKeyMsg` 各分支 |
-| `tui_agent.go` | `startAgent()` 错误路径 |
-| `view/tool_area.go` | 工具区域渲染测试（迁移后） |
-
-**步骤**:
-1. 创建 `viewmodel/status_vm.go`
-2. 迁移 `renderToolArea` 到 `view/tool_area.go`
-3. 为每个缺失的测试点编写测试
-
-**验证**: 测试总数从 69 提升到 90+，覆盖率提升
+**当前测试基线**: 90 个（ui:27 + bridge:16 + model:17 + view:18 + viewmodel:26[含子测试]）
 
 ---
 
-## 迁移风险控制
+### Phase 10a: 并发安全修复 [P0 — 必须立即做]
+
+**风险**: ⭐⭐⭐（高 — 潜在 crash 和 goroutine 泄漏）
+
+#### 问题 1: `cancelFn` 并发 data race
+
+三个位置跨 goroutine 访问 `cancelFn`，无同步保护：
+```go
+m.cancelFn = cancel   // startAgent (后台 goroutine) 写
+m.cancelFn()          // handleKeyMsg (主 goroutine) 读+调用
+m.cancelFn = nil      // handleAgentComplete/Error (主 goroutine) 清除
+```
+
+**修复方案**: 添加 `sync.Mutex` 保护 `cancelFn` 的读写：
+```go
+type Model struct {
+    // ...
+    cancelMu sync.Mutex
+    cancelFn context.CancelFunc
+}
+
+func (m *Model) setCancelFn(fn context.CancelFunc) {
+    m.cancelMu.Lock()
+    defer m.cancelMu.Unlock()
+    m.cancelFn = fn
+}
+
+func (m *Model) getAndClearCancelFn() context.CancelFunc {
+    m.cancelMu.Lock()
+    defer m.cancelMu.Unlock()
+    fn := m.cancelFn
+    m.cancelFn = nil
+    return fn
+}
+```
+
+**涉及文件**: `tui.go`, `tui_agent.go`, `tui_input.go`, `tui_state.go`
+
+#### 问题 2: `pendingReply` 通道泄漏
+
+用户按 Esc/Ctrl+C 中断时，`pendingReply` channel 未关闭，Agent goroutine 永久阻塞：
+```go
+// tui_input.go — Esc handler 只调用 cancelFn，不处理 pendingReply
+case tea.KeyEsc:
+    if m.isProcessing {
+        if m.cancelFn != nil {
+            m.cancelFn()   // ← 取消了 context，但 pendingReply channel 仍打开
+        }
+    }
+```
+
+**修复方案**: Esc/Ctrl+C 中断时关闭 pendingReply 通道，让 Agent 收到空值并退出：
+```go
+case tea.KeyEsc:
+    if m.isProcessing {
+        if m.pendingReply != nil {
+            close(m.pendingReply)  // 通知 Agent 中断
+            m.pendingReply = nil
+        }
+        if m.cancelFn != nil {
+            m.cancelFn()
+        }
+        // ... 其余清理 ...
+    }
+```
+同时在 `AskFollowupQuestion` 的 Agent 侧处理 channel 关闭：
+```go
+func (b *TUIBridge) AskFollowupQuestion(question string, options []string) (string, error) {
+    reply := make(chan string, 1)
+    b.eventCh <- AskQuestionEvent{...}
+    answer, ok := <-reply  // ok=false 表示 channel 被关闭
+    if !ok {
+        return "", context.Canceled  // 优雅退出
+    }
+    return answer, nil
+}
+```
+
+**涉及文件**: `tui_input.go`, `bridge/callback.go`
+
+#### 步骤
+
+1. 在 `Model` 中添加 `cancelMu sync.Mutex` 字段
+2. 创建 `setCancelFn()` / `getAndClearCancelFn()` 方法
+3. 替换所有直接访问 `m.cancelFn` 的代码
+4. 修改 Esc/Ctrl+C handler 关闭 `pendingReply`
+5. 修改 `AskFollowupQuestion` 处理 channel 关闭
+6. 新增并发安全测试（`-race` 检测）
+
+#### 验证
+
+- `go test -race ./internal/ui/...` 无 data race 报告
+- Esc 中断 AskFollowupQuestion 时 Agent goroutine 正常退出
+- 新增 2-3 个测试
+
+---
+
+### Phase 10b: 用户体验修复 [P1]
+
+**风险**: ⭐（低风险）
+
+#### 问题 3: 错误双重显示
+
+`handleAgentError` 同时添加两条系统消息：
+```go
+// 1. "🔧 Failed: read_file"
+// 2. "Error: something went wrong"
+```
+同一错误在视图中出现两次。
+
+**修复方案**: 只保留 `addErrorMessage`（更详细的错误描述），删除 "🔧 Failed" 系统消息。
+在 `handleAgentError` 中保留工具状态标记为 failed（用于 ToolArea 显示），但不再追加 "🔧 Failed" 系统消息。
+
+#### 问题 4: GotoBottom 阻止用户滚动
+
+`updateViewport()` 无条件调用 `m.viewport.GotoBottom()`，用户无法在流式输出时向上滚动。
+
+**修复方案**: 只在用户已处于底部时自动滚动：
+```go
+func (m *Model) updateViewport() {
+    m.convVM.Refresh(...)
+    m.viewport.SetContent(m.convVM.Content())
+    if m.viewport.AtBottom() {
+        m.viewport.GotoBottom()
+    }
+}
+```
+
+#### 步骤
+
+1. 修改 `handleAgentError` 删除重复的 "🔧 Failed" 消息
+2. 修改 `updateViewport()` 检测 `viewport.AtBottom()`
+3. 新增 2 个测试验证行为
+
+#### 验证
+
+- 错误事件只产生一条可见消息
+- 用户向上滚动时不再被强制跳回底部
+- 流式输出时自动滚到底部行为不变（用户未手动滚动时）
+
+---
+
+### Phase 10c: 性能与布局优化 [P2]
+
+**风险**: ⭐⭐（中等风险 — 布局变化需多终端尺寸测试）
+
+#### 问题 5: tickMsg 无差别刷新
+
+处理期间每 100ms 发 tick，即使无新内容也走 Update 循环。
+
+**修复方案**: 在 Model 中添加 `contentChanged bool` 标志，tick handler 只在标志为 true 时触发 viewport 刷新并重置标志。
+
+#### 问题 6: Header/StatusBar 信息重复
+
+Header 和 StatusBar 都显示 Mode+Provider+Model，浪费两行屏幕空间。
+
+**修复方案**: 合并 Header 和 StatusBar 为一行：
+- 左侧：🚀 gline · Provider/Model · [MODE]
+- 右侧：动态状态（Processing/Streaming/Tool）
+
+#### 问题 7: 固定高度配比不灵活
+
+`inputHeight=3`, `toolAreaHeight=3`, 魔数 `4`，小窗口体验差。
+
+**修复方案**: 按比例分配 + 最小/最大值约束：
+```go
+func calculateLayout(totalHeight int) (viewportH, toolH, inputH int) {
+    inputH = clamp(3, totalHeight/10, 5)
+    toolH = clamp(2, totalHeight/10, 6)
+    reserved := inputH + toolH + 2  // header + help
+    viewportH = totalHeight - reserved
+    if viewportH < 3 { viewportH = 3 }
+    return
+}
+```
+
+#### 步骤
+
+1. 添加 `contentChanged` 标志到 Model，修改 tickMsg 处理
+2. 合并 Header+StatusBar 为单行 `RenderCompactBar()`
+3. 创建 `calculateLayout()` 函数替换硬编码
+4. 更新 `handleWindowSize` 使用新的布局计算
+5. 新增 3-4 个测试
+
+#### 验证
+
+- 无新内容时 tick 不触发 viewport 刷新
+- 屏幕空间节省一行
+- 小窗口（<20 行）和大窗口（>60 行）布局合理
+
+---
+
+### Phase 10d: 架构完整性 [P3 — 原 Phase 10 更新版]
+
+**风险**: ⭐（低风险，增量添加）
+
+#### 问题 8: Tool Area 渲染逻辑位置错误
+
+`view/tool_area.go` 是空壳透传，真正逻辑在 `viewmodel/conversation_vm.go` 的 `renderToolArea()`。
+
+**修复方案**: 将 `renderToolArea()` 移到 `view/tool_area.go`，改为纯函数：
+```go
+func RenderToolAreaContent(history []model.ToolStatus, width, maxEntries int) string {
+    // 纯函数，零副作用
+}
+```
+ViewModel 的 `Refresh()` 调用 `view.RenderToolAreaContent()` 替代内联渲染。
+
+#### 问题 9: 缺少 StatusViewModel
+
+状态栏数据在 `View()` 中内联组装，无法独立测试。
+
+**修复方案**: 创建 `viewmodel/status_vm.go`：
+```go
+type StatusViewModel struct {
+    data view.StatusBarData
+}
+
+func (vm *StatusViewModel) Refresh(mode, provider, model string, isProcessing, isStreaming bool, currentTool, spinnerView string, width int) view.StatusBarData {
+    vm.data = view.StatusBarData{...}
+    return vm.data
+}
+```
+注意：若 Phase 10c 已合并 Header/StatusBar，此处应适配新的合并布局。
+
+#### 问题 10: messageCache 无驱逐机制
+
+`messageCache` 只增不减，长会话内存增长。`Clear()` 后靠隐式 `len(msgs) != len(cache)` 兜底。
+
+**修复方案**:
+- `Conversation.Clear()` 时调用 `vm.InvalidateCache()` 清空缓存
+- 或在 `Refresh()` 全量重建时自动清理已删除消息的缓存条目
+
+#### 问题 11: 系统消息静默丢弃
+
+`renderSystemMessage` 对不匹配前缀的消息返回空字符串，用户看不到。
+
+**修复方案**: 不匹配任何已知前缀的系统消息，以默认灰色样式显示，而非丢弃：
+```go
+default:
+    b.WriteString(view.SystemStyle.Render(content))
+    b.WriteString("\n\n")
+```
+
+#### 补充测试
+
+| 文件 | 需要补充的测试 | 当前状态 |
+|------|---------------|---------|
+| `tui_input.go` | `handleKeyMsg` 各分支（Ctrl+C/Esc/Tab/Enter/Ctrl+L） | ❌ 完全缺失 |
+| `tui_input.go` | `handleWindowSize` 小窗口/宽度0/重复resize | ⚠️ 仅有1个 |
+| `tui_agent.go` | `startAgent()` 错误路径（nil agent/空消息） | ❌ 完全缺失 |
+| `view/tool_area.go` | 工具区域渲染测试（迁移后） | ⚠️ 只有透传测试 |
+
+#### 步骤
+
+1. 迁移 `renderToolArea` 到 `view/tool_area.go`
+2. 创建 `viewmodel/status_vm.go`（适配 Phase 10c 的布局变更）
+3. 添加 `InvalidateCache()` 方法，在 `Clear()` 时调用
+4. 修改 `renderSystemMessage` 默认显示而非丢弃
+5. 补充 handleKeyMsg / startAgent / handleWindowSize 测试
+6. 目标：测试总数 90 → 110+
+
+#### 验证
+
+- `view/tool_area.go` 包含真正的渲染逻辑和测试
+- 系统消息不再被静默丢弃
+- messageCache 在 Clear 后正确清空
+- 测试总数达到 110+
+
+---
+
+## Phase 10 总体迁移风险控制
 
 ### 基本原则
 
-- **每个 Phase 独立提交**，保证可回滚
-- **每个 Phase 前后运行 `go test ./internal/ui/...`**
-- **Phase 6-7 行为等价重构**，不改变用户可见行为
-- **Phase 8-10 纯增量**，不动现有行为
+- **每个子阶段独立提交**，保证可回滚
+- **每个子阶段前后运行 `go test ./internal/ui/...`**
+- **Phase 10a 必须最先做** — 并发 bug 影响程序正确性
+- **Phase 10b-10d 按优先级顺序** — 每个可独立完成
 
 ### 回滚策略
 
-| Phase | 回滚复杂度 | 回滚方式 |
-|-------|-----------|----------|
-| Phase 6 | 中 | 恢复 `Refresh()` 为全量重建，删除 `dirtyMessages` |
-| Phase 7 | 低 | 恢复 handler 中直接调用 `updateViewport()` |
-| Phase 8 | 低 | 恢复 `handleAgentToolStart` 内联逻辑 |
-| Phase 9 | 中 | 恢复 `model.Message` 缓存字段 |
-| Phase 10 | 低 | 删除新增文件，恢复旧测试 |
+| 子阶段 | 回滚复杂度 | 回滚方式 |
+|--------|-----------|----------|
+| Phase 10a | 低 | 移除 mutex，恢复直接访问 cancelFn；恢复旧 Esc handler |
+| Phase 10b | 低 | 恢复双重错误消息；移除 AtBottom 检测 |
+| Phase 10c | 中 | 恢复 Header+StatusBar 分离；恢复硬编码高度 |
+| Phase 10d | 低 | 恢复 tool_area.go 空壳；删除 StatusViewModel |
 
 ### 预期收益
 
 | 指标 | 当前 | 优化后 | 提升 |
 |------|------|--------|------|
-| View 渲染时间（100条消息） | O(n) 全量 | O(1) 增量 | 数量级 ↓ |
-| 状态 handler 可独立测试 | ❌ | ✅ | 7 个新测试 |
-| Model 层纯度 | 含缓存字段 | 零外部依赖 | 架构更纯净 |
-| `handleAgentToolStart` 行数 | ~80 行 | ~30 行 | 60% ↓ |
-| 总测试数 | 69 | 90+ | 30% ↑ |
+| 并发安全 | ❌ data race | ✅ mutex 保护 | 修复潜在 crash |
+| goroutine 泄漏 | ❌ pendingReply 未关闭 | ✅ Esc 正确清理 | 修复资源泄漏 |
+| 错误显示 | 双重 | 单一 | UX 改善 |
+| 滚动体验 | 强制跳底 | 智能跟随 | UX 改善 |
+| 屏幕利用率 | Header+StatusBar 重复 | 合并为一行 | 节省 1 行 |
+| 系统消息 | 静默丢弃 | 默认显示 | 信息完整 |
+| 总测试数 | 90 | 110+ | 22% ↑ |
+
+---
+
+## 延后项（Phase 11+）
+
+以下优化点按需实施，不在 Phase 10 范围内：
+
+| # | 问题 | 优先级 | 工作量 |
+|---|------|--------|--------|
+| 1 | 用户消息无 Markdown 渲染 | P4 | 小 |
+| 2 | 无输入历史（上下箭头翻阅） | P4 | 中 |
+| 3 | 无代码语法高亮（需 chroma） | P4 | 大 |
+| 4 | 工具区条目数计算有误（border 占一行未计入） | P4 | 小 |
+| 5 | 硬编码颜色无主题支持 | P4 | 中 |
+| 6 | 无视觉层次（缩进/边框/分隔线） | P4 | 中 |
+| 7 | reasoning_content 不显示 | P4 | 小 |

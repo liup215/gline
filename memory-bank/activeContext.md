@@ -22,7 +22,13 @@
 - ✅ Phase 7: 状态 Handler 解耦（View 和 State 分离）— **已完成** (2026-05-11)
 - ✅ Phase 8: 拆分 `handleAgentToolStart` + 工具显示逻辑迁移 — **已完成** (2026-05-11)
 - ✅ Phase 9: Model 层净化 + 渲染缓存迁移 — **已完成** (2026-05-12)
-- ⬜ Phase 10: 架构完整性 + 测试覆盖 — **待开始**
+- ⬜ Phase 10: 并发安全 + 用户体验 + 性能布局 + 架构完整性 — **待开始**
+  - ⬜ Phase 10a [P0]: 并发安全修复 — cancelFn data race + pendingReply 通道泄漏
+  - ⬜ Phase 10b [P1]: 用户体验修复 — 错误双重显示 + GotoBottom 阻止滚动
+  - ⬜ Phase 10c [P2]: 性能与布局优化 — tickMsg 无差别刷新 + Header/StatusBar 合并 + 灵活高度配比
+  - ⬜ Phase 10d [P3]: 架构完整性 — Tool Area 渲染迁移 + StatusViewModel + cache 驱逐 + 系统消息默认显示 + 补充测试
+
+**详细计划**: 见 `memory-bank/tui-optimization-plan.md`（Phase 10 已于 2026-05-12 修订，从原 3 项扩展为 4 个子阶段 11 项优化）
 
 **Phase 9 完成记录**:
 1. 从 `model.Message` 删除渲染缓存字段 — 删除 `Rendered`, `RenderedWrapWidth`, `RenderedSource` 三个字段
@@ -364,11 +370,11 @@ export ANTHROPIC_API_KEY=your_key
 
 ### 下一步计划
 
-**Phase 9: Model 层净化 + 渲染缓存迁移**
-- 从 `model.Message` 中删除 `Rendered`, `RenderedWrapWidth`, `RenderedSource` 字段
-- 在 ViewModel 中创建 `cachedMessage` 结构体持有渲染缓存
-- ViewModel 维护 `map[int]*cachedMessage` 映射消息索引到缓存
-- 更新所有相关测试
+**Phase 10a [P0]: 并发安全修复** — 必须最先做
+- `cancelFn` 加 `sync.Mutex` 保护，消除 data race
+- `pendingReply` 通道在 Esc/Ctrl+C 中断时正确关闭，修复 goroutine 泄漏
+- `AskFollowupQuestion` 处理 channel 关闭（返回 `context.Canceled`）
+- 新增 2-3 个并发安全测试，`go test -race` 通过
 
 ## 最近决策
 
@@ -393,28 +399,39 @@ export ANTHROPIC_API_KEY=your_key
 
 ### 短期目标（本周）
 
-1. **Phase 7: 状态 Handler 解耦**
-   - handler 返回 `needsRefresh bool`
-   - `Update()` 统一调用 `updateViewport()`
-   - 为每个 handler 编写独立单元测试
+1. **Phase 10a: 并发安全修复 [P0]**
+   - `cancelFn` 加 `sync.Mutex` 保护，消除 data race
+   - `pendingReply` 通道在 Esc/Ctrl+C 时正确关闭，修复 goroutine 泄漏
+   - `AskFollowupQuestion` 处理 channel 关闭
+   - `go test -race ./internal/ui/...` 通过
+
+2. **Phase 10b: 用户体验修复 [P1]**
+   - 错误双重显示 → 只保留一种
+   - GotoBottom → 检测 viewport.AtBottom()
 
 ### 中期目标（本月）
 
-1. **UI 层实现**
-   - TUI 基础框架
-   - 纯文本模式
-   - 交互式对话
+1. **Phase 10c: 性能与布局优化 [P2]**
+   - tickMsg 无差别刷新优化
+   - Header/StatusBar 合并去重
+   - 灵活高度配比计算
 
-2. **高级功能**
-   - 任务历史
-   - 配置管理界面
-   - 多 Provider 支持
+2. **Phase 10d: 架构完整性 [P3]**
+   - Tool Area 渲染逻辑迁移到 view/
+   - 创建 StatusViewModel
+   - messageCache 驱逐机制
+   - 补充 handleKeyMsg / startAgent 测试
 
 ### 长期目标（下月）
 
-1. **性能优化**
-2. **测试覆盖**
-3. **文档完善**
+1. **Phase 11+: 锦上添花**
+   - 用户消息 Markdown 渲染
+   - 输入历史（上下箭头翻阅）
+   - 代码语法高亮
+   - 终端主题适配
+2. **高级功能**
+   - 任务历史界面
+   - 配置管理界面
 
 ## 开放问题
 
