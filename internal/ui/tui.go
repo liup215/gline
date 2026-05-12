@@ -3,7 +3,6 @@ package ui
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -15,6 +14,7 @@ import (
 	"github.com/liup215/gline/internal/agent"
 	"github.com/liup215/gline/internal/ui/bridge"
 	"github.com/liup215/gline/internal/ui/model"
+	"github.com/liup215/gline/internal/ui/view"
 	"github.com/liup215/gline/internal/ui/viewmodel"
 	"github.com/liup215/gline/pkg/types"
 )
@@ -119,6 +119,7 @@ func (m *Model) Init() tea.Cmd {
 // Update handles messages and updates the model
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
+	needsRefresh := false
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -137,29 +138,40 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case bridge.AskQuestionEvent:
 		// Display the follow-up question and options, set pending reply channel
-		m.conversation.AppendMessage(model.Message{
+		idx := m.conversation.AppendMessage(model.Message{
 			Role:      types.RoleSystem,
 			Content:   "❓ " + msg.Question,
 			Options:   msg.Options,
 			Timestamp: time.Now(),
 		})
+		m.convVM.MarkMessageDirty(idx)
 		// Set the reply channel so Enter will send the answer back to the agent
 		m.pendingReply = msg.Reply
 		m.textarea.Reset()
 		m.textarea.Placeholder = "Type option number or your answer..."
 		m.textarea.Focus()
 		cmds = append(cmds, textarea.Blink)
-		m.updateViewport()
+		needsRefresh = true
 
 	case bridge.AgentEvent:
-		// Delegate to extracted handler
-		cmds = append(cmds, handleAgentUpdate(m, msg)...)
+		// Delegate to extracted handler; collect needsRefresh for unified viewport update
+		needsAgentRefresh, agentCmds := handleAgentUpdate(m, msg)
+		cmds = append(cmds, agentCmds...)
+		if needsAgentRefresh {
+			needsRefresh = true
+		}
 
 	// Handle internal messages for real-time viewport updates
 	case tickMsg:
 		if m.isProcessing {
 			cmds = append(cmds, m.tick())
 		}
+	}
+
+	// Unified viewport refresh: if any handler signaled a state change,
+	// refresh the viewport content once instead of each handler doing it individually.
+	if needsRefresh {
+		m.updateViewport()
 	}
 
 	// Update textarea
@@ -185,56 +197,40 @@ func (m *Model) tick() tea.Cmd {
 	})
 }
 
-// View renders the TUI
+// updateViewport refreshes the viewport content via the ViewModel.
+func (m *Model) updateViewport() {
+	m.convVM.Refresh(m.conversation, m.viewport.Width, m.toolAreaHeight, m.isStreaming, m.activeAssistantIndex)
+	m.viewport.SetContent(m.convVM.Content())
+	m.viewport.GotoBottom()
+}
+
+// View renders the TUI by composing pure view functions.
 func (m *Model) View() string {
 	if m.width == 0 || m.height == 0 {
 		return "Loading..."
 	}
 
-	// Build the view
-	var sections []string
-
-	// Header (title + provider/model + mode badge)
-	modeBadge := "UNKNOWN"
-	if m.conversation.Mode == agent.ModeAct {
-		modeBadge = lipgloss.NewStyle().Foreground(lipgloss.Color("#00FF00")).Render("[ACT]")
-	} else {
-		modeBadge = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFA500")).Render("[PLAN]")
-	}
-	prov := m.conversation.Provider
-	if prov == "" {
-		prov = "-"
-	}
-	mdl := m.conversation.ModelName
-	if mdl == "" {
-		mdl = "-"
-	}
-	headerContent := fmt.Sprintf(" 🚀 gline   ●  %s / %s    %s ", prov, mdl, modeBadge)
-	header := lipgloss.NewStyle().Margin(0, 1).Bold(true).Render(headerContent)
-	sections = append(sections, header)
-
-	// Messages viewport
-	sections = append(sections, m.viewport.View())
-
-	// Tool status area
-	sections = append(sections, m.renderToolArea())
-
-	// Input area — textarea wrapped with a border
-	// textarea width was already set via SetWidth(innerWidth) in the WindowSizeMsg handler,
-	// so we render it directly. inputBoxStyle adds border (2) + padding (6) + MarginLeft (1) = 9,
-	// which makes the total width exactly m.width.
-	inputBox := inputBoxStyle.BorderForeground(lipgloss.Color("#888888")).MarginLeft(1).Render(m.textarea.View())
-	sections = append(sections, inputBox)
-
-	// Status bar
-	status := m.renderStatusBar()
-	sections = append(sections, status)
-
-	// Help text
-	help := helpStyle.Render("enter: send • tab: toggle mode • esc: interrupt • ctrl+l: clear • ctrl+c: quit")
-	sections = append(sections, help)
-
-	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+	return view.RenderLayout(view.LayoutData{
+		Header: view.RenderHeader(view.HeaderData{
+			Mode:      m.conversation.Mode,
+			Provider:  m.conversation.Provider,
+			ModelName: m.conversation.ModelName,
+		}),
+		Content:   m.viewport.View(),
+		ToolArea:  view.RenderToolArea(m.convVM.ToolAreaContent()),
+		InputView: m.textarea.View(),
+		StatusBar: view.RenderStatusBar(view.StatusBarData{
+			Mode:         m.conversation.Mode,
+			Provider:     m.conversation.Provider,
+			ModelName:    m.conversation.ModelName,
+			IsProcessing: m.isProcessing,
+			IsStreaming:   m.isStreaming,
+			CurrentTool:  m.currentTool,
+			SpinnerView:  m.spinner.View(),
+			Width:        m.width,
+		}),
+		Help: view.RenderHelp(),
+	})
 }
 
 // sendMessage adds a user message and prepares for response
@@ -243,11 +239,12 @@ func (m *Model) sendMessage(content string) {
 	m.conversation.ClearToolHistory()
 
 	// Add user message
-	m.conversation.AppendMessage(model.Message{
+	idx := m.conversation.AppendMessage(model.Message{
 		Role:      types.RoleUser,
 		Content:   content,
 		Timestamp: time.Now(),
 	})
+	m.convVM.MarkMessageDirty(idx)
 
 	// Do not pre-create assistant message slot here.
 	// The UI will create the assistant slot when the agent signals streamStart.
@@ -260,11 +257,12 @@ func (m *Model) sendMessage(content string) {
 
 // addErrorMessage adds an error message
 func (m *Model) addErrorMessage(content string) {
-	m.conversation.AppendMessage(model.Message{
+	idx := m.conversation.AppendMessage(model.Message{
 		Role:      types.RoleSystem,
 		Content:   content,
 		Timestamp: time.Now(),
 	})
+	m.convVM.MarkMessageDirty(idx)
 	m.updateViewport()
 }
 

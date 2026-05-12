@@ -13,81 +13,26 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/liup215/gline/internal/ui/model"
+	"github.com/liup215/gline/internal/ui/view"
 	"github.com/liup215/gline/pkg/types"
-)
-
-// ---------------------------------------------------------------------------
-// Styles (duplicated from ui package to avoid circular dependency)
-// ---------------------------------------------------------------------------
-
-var (
-	userStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#00FF00")).
-			Bold(true)
-
-	assistantStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#00AAFF")).
-			Bold(true)
-
-	systemStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#888888"))
-
-	errorStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FF0000")).
-			Bold(true)
-
-	toolRunningStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#FFD700")).
-				Bold(true)
-
-	toolCompletedStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#00AA00"))
-
-	toolFailedStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#FF4444"))
-
-	streamingIndicatorStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#00FF00")).
-				Bold(true)
-
-	questionIconStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("#FFD700")).
-				MarginLeft(1)
-
-	questionStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#FFD700")).
-			MarginLeft(2)
-
-	optionNumStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#00FFAA"))
-
-	optionStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FFFFFF")).
-			Background(lipgloss.Color("#3A3A5C")).
-			Padding(0, 2).
-			MarginLeft(4)
-
-	optionHintStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#666666")).
-				Italic(true).
-				MarginLeft(4)
-
-	toolAreaBorderStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#555555"))
 )
 
 // ---------------------------------------------------------------------------
 // ConversationViewModel
 // ---------------------------------------------------------------------------
 
+// cachedMessage holds the pre-rendered string for a single message index.
+type cachedMessage struct {
+	rendered string
+}
+
 // ConversationViewModel derives rendered display state from a model.Conversation.
 type ConversationViewModel struct {
 	content           string
 	toolAreaContent   string
 	dirty             bool
+	dirtyMessages     map[int]bool       // per-message dirty flags
+	messageCache      map[int]cachedMessage // pre-rendered message strings
 	renderer          *glamour.TermRenderer
 	rendererWrapWidth int
 }
@@ -95,12 +40,25 @@ type ConversationViewModel struct {
 // NewConversationViewModel creates a new ViewModel ready for use.
 func NewConversationViewModel() *ConversationViewModel {
 	return &ConversationViewModel{
-		dirty: true,
+		dirty:         true,
+		dirtyMessages: make(map[int]bool),
+		messageCache:  make(map[int]cachedMessage),
 	}
 }
 
-// MarkDirty marks the ViewModel as needing a refresh.
+// MarkDirty marks the ViewModel as needing a full refresh.
 func (vm *ConversationViewModel) MarkDirty() {
+	vm.dirty = true
+}
+
+// MarkMessageDirty marks a specific message index as needing re-rendering.
+// This is more efficient than MarkDirty() when only a single message changed.
+func (vm *ConversationViewModel) MarkMessageDirty(idx int) {
+	if idx < 0 {
+		vm.dirty = true // negative index means unknown, fall back to full refresh
+		return
+	}
+	vm.dirtyMessages[idx] = true
 	vm.dirty = true
 }
 
@@ -120,79 +78,126 @@ func (vm *ConversationViewModel) ToolAreaContent() string {
 }
 
 // Refresh rebuilds content and toolAreaContent from the conversation.
-// Call this when dirty is true and you need fresh rendered output.
+// When only specific messages are dirty (via MarkMessageDirty), it performs
+// incremental rendering: only re-renders changed messages and re-joins the
+// cached results. Falls back to full rebuild when dirtyMessages is empty
+// (MarkDirty was called) or when message count changed.
 func (vm *ConversationViewModel) Refresh(conv *model.Conversation, width int, toolAreaHeight int, isStreaming bool, activeAssistantIndex int) {
-	var content strings.Builder
 	msgs := conv.Messages
 
-	for i := range msgs {
-		msg := msgs[i]
-		switch msg.Role {
-		case types.RoleUser:
-			vm.writeUserMessage(&content, msg)
-		case types.RoleAssistant:
-			vm.writeAssistantMessage(&content, msgs, i, width, isStreaming && i == activeAssistantIndex)
-		case types.RoleSystem:
-			vm.writeSystemMessage(&content, msg)
+	// Determine if we can do incremental refresh.
+	// Full rebuild is needed when:
+	//   1. No per-message dirty flags set (MarkDirty was used)
+	//   2. Message count changed (messages were added/removed)
+	//   3. Cache is empty (first call)
+	doFullRebuild := len(vm.dirtyMessages) == 0 || len(msgs) != len(vm.messageCache) || len(vm.messageCache) == 0
+
+	if doFullRebuild {
+		var content strings.Builder
+		for i := range msgs {
+			rendered := vm.renderMessage(msgs, i, width, isStreaming && i == activeAssistantIndex)
+			content.WriteString(rendered)
+			vm.messageCache[i] = cachedMessage{rendered: rendered}
 		}
+		vm.content = content.String()
+	} else {
+		// Incremental: only re-render dirty messages, reuse cache for others.
+		var content strings.Builder
+		for i := range msgs {
+			if vm.dirtyMessages[i] {
+				rendered := vm.renderMessage(msgs, i, width, isStreaming && i == activeAssistantIndex)
+				content.WriteString(rendered)
+				vm.messageCache[i] = cachedMessage{rendered: rendered}
+			} else {
+				content.WriteString(vm.messageCache[i].rendered)
+			}
+		}
+		vm.content = content.String()
 	}
 
-	vm.content = content.String()
 	vm.toolAreaContent = vm.renderToolArea(conv, width, toolAreaHeight)
 	vm.dirty = false
+	vm.dirtyMessages = make(map[int]bool) // reset dirty flags
+}
+
+// renderMessage renders a single message at index i into its full string representation.
+func (vm *ConversationViewModel) renderMessage(msgs []model.Message, i int, width int, isActiveStreaming bool) string {
+	if i < 0 || i >= len(msgs) {
+		return ""
+	}
+	msg := msgs[i]
+	switch msg.Role {
+	case types.RoleUser:
+		return vm.renderUserMessage(msg)
+	case types.RoleAssistant:
+		return vm.renderAssistantMessage(msgs, i, width, isActiveStreaming)
+	case types.RoleSystem:
+		return vm.renderSystemMessage(msg)
+	default:
+		return ""
+	}
 }
 
 // ---------------------------------------------------------------------------
-// Private rendering helpers
+// Private rendering helpers — single-message renderers
 // ---------------------------------------------------------------------------
 
-func (vm *ConversationViewModel) writeUserMessage(b *strings.Builder, msg model.Message) {
-	b.WriteString(userStyle.Render("You: "))
+// renderUserMessage renders a single user message to its full string.
+func (vm *ConversationViewModel) renderUserMessage(msg model.Message) string {
+	var b strings.Builder
+	b.WriteString(view.UserStyle.Render("You: "))
 	b.WriteString(msg.Content)
 	b.WriteString("\n")
-	b.WriteString(systemStyle.Render(msg.Timestamp.Format("15:04")))
+	b.WriteString(view.SystemStyle.Render(msg.Timestamp.Format("15:04")))
 	b.WriteString("\n\n")
+	return b.String()
 }
 
-func (vm *ConversationViewModel) writeAssistantMessage(b *strings.Builder, msgs []model.Message, idx int, width int, isActiveStreaming bool) {
+// renderAssistantMessage renders a single assistant message to its full string.
+func (vm *ConversationViewModel) renderAssistantMessage(msgs []model.Message, idx int, width int, isActiveStreaming bool) string {
+	var b strings.Builder
 	b.WriteString(vm.renderMessageHeader(msgs, idx))
 	b.WriteString(vm.renderAssistantContent(msgs, idx, width, isActiveStreaming))
 	b.WriteString("\n")
+	return b.String()
 }
 
-func (vm *ConversationViewModel) writeSystemMessage(b *strings.Builder, msg model.Message) {
+// renderSystemMessage renders a single system message to its full string.
+func (vm *ConversationViewModel) renderSystemMessage(msg model.Message) string {
 	content := msg.Content
+	var b strings.Builder
 	if strings.HasPrefix(content, "Error:") || strings.HasPrefix(content, "✗") {
-		b.WriteString(errorStyle.Render(content))
+		b.WriteString(view.ErrorStyle.Render(content))
 		b.WriteString("\n\n")
 	} else if strings.HasPrefix(content, "❓") || len(msg.Options) > 0 {
-		b.WriteString(questionIconStyle.Render("❓ "))
-		b.WriteString(questionStyle.Render(strings.TrimPrefix(content, "❓ ")))
+		b.WriteString(view.QuestionIconStyle.Render("❓ "))
+		b.WriteString(view.QuestionStyle.Render(strings.TrimPrefix(content, "❓ ")))
 		b.WriteString("\n")
 		if len(msg.Options) > 0 {
 			for i, opt := range msg.Options {
-				num := optionNumStyle.Render(fmt.Sprintf("%d.", i+1))
-				b.WriteString(optionStyle.Render(fmt.Sprintf("%s %s", num, opt)))
+				num := view.OptionNumStyle.Render(fmt.Sprintf("%d.", i+1))
+				b.WriteString(view.OptionStyle.Render(fmt.Sprintf("%s %s", num, opt)))
 				b.WriteString("\n")
 			}
-			b.WriteString(optionHintStyle.Render("Enter option number or type your answer"))
+			b.WriteString(view.OptionHintStyle.Render("Enter option number or type your answer"))
 			b.WriteString("\n")
 		}
 		b.WriteString("\n")
 	} else if strings.HasPrefix(content, "🔧") {
 		if strings.Contains(content, "Running") || strings.Contains(content, "running") || strings.Contains(content, "started") {
-			b.WriteString(toolRunningStyle.Render(content))
+			b.WriteString(view.ToolRunningStyle.Render(content))
 		} else if strings.Contains(content, "Completed") || strings.Contains(content, "✓") || strings.Contains(content, "completed") {
-			b.WriteString(toolCompletedStyle.Render(content))
+			b.WriteString(view.ToolCompletedStyle.Render(content))
 		} else if strings.Contains(content, "Failed") || strings.Contains(content, "✗") || strings.Contains(content, "failed") {
-			b.WriteString(toolFailedStyle.Render(content))
+			b.WriteString(view.ToolFailedStyle.Render(content))
 		} else {
-			b.WriteString(systemStyle.Render(content))
+			b.WriteString(view.SystemStyle.Render(content))
 		}
 		b.WriteString("\n\n")
 	}
 	// Note: system messages that don't match any prefix are silently dropped,
 	// preserving the original behavior.
+	return b.String()
 }
 
 func (vm *ConversationViewModel) renderMessageHeader(msgs []model.Message, i int) string {
@@ -201,17 +206,17 @@ func (vm *ConversationViewModel) renderMessageHeader(msgs []model.Message, i int
 	}
 	msg := msgs[i]
 	author := ""
-	style := userStyle
+	style := view.UserStyle
 	switch msg.Role {
 	case types.RoleUser:
 		author = "You"
-		style = userStyle
+		style = view.UserStyle
 	case types.RoleSystem:
 		author = "System"
-		style = systemStyle
+		style = view.SystemStyle
 	case types.RoleAssistant:
 		author = "Assistant"
-		style = assistantStyle
+		style = view.AssistantStyle
 	}
 	return fmt.Sprintf("%s %s\n", style.Render(author+":"), msg.Timestamp.Format("15:04"))
 }
@@ -242,7 +247,7 @@ func (vm *ConversationViewModel) renderAssistantContent(msgs []model.Message, i 
 
 	// Streaming indicator for active assistant message.
 	if isActiveStreaming && msg.Role == types.RoleAssistant {
-		rendered = strings.TrimRight(rendered, "\n") + "\n" + streamingIndicatorStyle.Render("▌")
+		rendered = strings.TrimRight(rendered, "\n") + "\n" + view.StreamingIndicatorStyle.Render("▌")
 	}
 
 	// If tool calls are attached to the message, pretty-print them after content.
@@ -313,7 +318,7 @@ func (vm *ConversationViewModel) formatToolCallsInline(calls []types.ToolCall) s
 func (vm *ConversationViewModel) renderToolArea(conv *model.Conversation, width int, toolAreaHeight int) string {
 	history := conv.ToolHistory
 	if len(history) == 0 {
-		return toolAreaBorderStyle.Render(strings.Repeat("─", width))
+		return view.ToolAreaBorderStyle.Render(strings.Repeat("─", width))
 	}
 
 	maxEntries := toolAreaHeight
@@ -330,17 +335,17 @@ func (vm *ConversationViewModel) renderToolArea(conv *model.Conversation, width 
 		ts := history[i]
 		switch ts.Status {
 		case "running":
-			lines = append(lines, toolRunningStyle.Render(fmt.Sprintf("  🔧 %s ⏳", ts.Name)))
+			lines = append(lines, view.ToolRunningStyle.Render(fmt.Sprintf("  🔧 %s ⏳", ts.Name)))
 		case "completed":
-			lines = append(lines, toolCompletedStyle.Render(fmt.Sprintf("  🔧 %s ✓", ts.Name)))
+			lines = append(lines, view.ToolCompletedStyle.Render(fmt.Sprintf("  🔧 %s ✓", ts.Name)))
 		case "failed":
-			lines = append(lines, toolFailedStyle.Render(fmt.Sprintf("  🔧 %s ✗", ts.Name)))
+			lines = append(lines, view.ToolFailedStyle.Render(fmt.Sprintf("  🔧 %s ✗", ts.Name)))
 		default:
-			lines = append(lines, systemStyle.Render(fmt.Sprintf("  🔧 %s", ts.Name)))
+			lines = append(lines, view.SystemStyle.Render(fmt.Sprintf("  🔧 %s", ts.Name)))
 		}
 	}
 
-	border := toolAreaBorderStyle.Render(strings.Repeat("─", width))
+	border := view.ToolAreaBorderStyle.Render(strings.Repeat("─", width))
 	all := []string{border}
 	all = append(all, lines...)
 	return lipgloss.JoinVertical(lipgloss.Left, all...)

@@ -283,3 +283,242 @@ func TestConversationModeAndProvider(t *testing.T) {
 		t.Errorf("expected user message content, got: %q", content)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Phase 6: Incremental rendering tests
+// ---------------------------------------------------------------------------
+
+func TestMarkMessageDirty(t *testing.T) {
+	vm := NewConversationViewModel()
+	conv := model.NewConversation()
+
+	// Add two messages and refresh
+	conv.AppendMessage(model.Message{
+		Role:      types.RoleUser,
+		Content:   "first",
+		Timestamp: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
+	})
+	conv.AppendMessage(model.Message{
+		Role:      types.RoleUser,
+		Content:   "second",
+		Timestamp: time.Date(2024, 1, 1, 12, 1, 0, 0, time.UTC),
+	})
+	vm.Refresh(conv, 80, 3, false, -1)
+
+	// After refresh, dirty should be false
+	if vm.IsDirty() {
+		t.Error("expected clean after Refresh")
+	}
+
+	// Mark message 0 as dirty
+	vm.MarkMessageDirty(0)
+	if !vm.IsDirty() {
+		t.Error("expected dirty after MarkMessageDirty")
+	}
+	if !vm.dirtyMessages[0] {
+		t.Error("expected dirtyMessages[0] to be set")
+	}
+	if vm.dirtyMessages[1] {
+		t.Error("expected dirtyMessages[1] not to be set")
+	}
+}
+
+func TestMarkMessageDirtyNegativeIndex(t *testing.T) {
+	vm := NewConversationViewModel()
+	// Negative index should fall back to full dirty
+	vm.MarkMessageDirty(-1)
+	if !vm.IsDirty() {
+		t.Error("expected dirty after MarkMessageDirty(-1)")
+	}
+	// dirtyMessages should be empty (full refresh fallback)
+	if len(vm.dirtyMessages) != 0 {
+		t.Errorf("expected empty dirtyMessages for negative index, got %d", len(vm.dirtyMessages))
+	}
+}
+
+func TestIncrementalRefreshReusesCache(t *testing.T) {
+	vm := NewConversationViewModel()
+	conv := model.NewConversation()
+
+	// Add three messages
+	conv.AppendMessage(model.Message{
+		Role:      types.RoleUser,
+		Content:   "hello",
+		Timestamp: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
+	})
+	conv.AppendMessage(model.Message{
+		Role:      types.RoleUser,
+		Content:   "world",
+		Timestamp: time.Date(2024, 1, 1, 12, 1, 0, 0, time.UTC),
+	})
+	conv.AppendMessage(model.Message{
+		Role:      types.RoleAssistant,
+		Content:   "response",
+		Timestamp: time.Date(2024, 1, 1, 12, 2, 0, 0, time.UTC),
+	})
+
+	// First refresh — full rebuild, populates cache
+	vm.Refresh(conv, 80, 3, false, -1)
+	firstContent := vm.Content()
+
+	// Verify cache is populated
+	if len(vm.messageCache) != 3 {
+		t.Errorf("expected 3 cached messages, got %d", len(vm.messageCache))
+	}
+
+	// Mark only message 2 (assistant) as dirty and refresh
+	vm.MarkMessageDirty(2)
+	vm.Refresh(conv, 80, 3, false, -1)
+
+	// Content should still contain all messages
+	secondContent := vm.Content()
+	if !strings.Contains(secondContent, "hello") {
+		t.Error("expected 'hello' in content after incremental refresh")
+	}
+	if !strings.Contains(secondContent, "world") {
+		t.Error("expected 'world' in content after incremental refresh")
+	}
+	if !strings.Contains(secondContent, "response") {
+		t.Error("expected 'response' in content after incremental refresh")
+	}
+
+	// Content should be the same since we only re-rendered the assistant message
+	// (the assistant message content didn't change, so rendering should be identical)
+	if firstContent != secondContent {
+		t.Error("expected identical content after incremental refresh with no actual changes")
+	}
+
+	// Verify dirty flags were reset
+	if vm.IsDirty() {
+		t.Error("expected clean after incremental Refresh")
+	}
+	if len(vm.dirtyMessages) != 0 {
+		t.Errorf("expected empty dirtyMessages after Refresh, got %d", len(vm.dirtyMessages))
+	}
+}
+
+func TestIncrementalRefreshWithContentChange(t *testing.T) {
+	vm := NewConversationViewModel()
+	conv := model.NewConversation()
+
+	// Add two messages
+	conv.AppendMessage(model.Message{
+		Role:      types.RoleUser,
+		Content:   "original",
+		Timestamp: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
+	})
+	conv.AppendMessage(model.Message{
+		Role:      types.RoleAssistant,
+		Content:   "old response",
+		Timestamp: time.Date(2024, 1, 1, 12, 1, 0, 0, time.UTC),
+	})
+
+	// First refresh
+	vm.Refresh(conv, 80, 3, false, -1)
+	firstContent := vm.Content()
+
+	// Change the assistant message content
+	conv.Messages[1].Content = "updated response"
+
+	// Mark only the changed message as dirty
+	vm.MarkMessageDirty(1)
+	vm.Refresh(conv, 80, 3, false, -1)
+	secondContent := vm.Content()
+
+	// Should contain the updated content
+	if !strings.Contains(secondContent, "updated response") {
+		t.Errorf("expected 'updated response' in content, got: %q", secondContent)
+	}
+
+	// Should NOT contain the old content
+	if strings.Contains(secondContent, "old response") {
+		t.Error("did not expect 'old response' in content after update")
+	}
+
+	// First message should still be present unchanged
+	if !strings.Contains(secondContent, "original") {
+		t.Error("expected 'original' to still be in content")
+	}
+
+	// Content should be different from before
+	if firstContent == secondContent {
+		t.Error("expected content to differ after message content change")
+	}
+}
+
+func TestFullRebuildOnMessageCountChange(t *testing.T) {
+	vm := NewConversationViewModel()
+	conv := model.NewConversation()
+
+	// Add one message and refresh
+	conv.AppendMessage(model.Message{
+		Role:      types.RoleUser,
+		Content:   "first",
+		Timestamp: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
+	})
+	vm.Refresh(conv, 80, 3, false, -1)
+
+	// Add a second message (simulating a new message arriving)
+	conv.AppendMessage(model.Message{
+		Role:      types.RoleAssistant,
+		Content:   "second",
+		Timestamp: time.Date(2024, 1, 1, 12, 1, 0, 0, time.UTC),
+	})
+
+	// MarkDirty (not MarkMessageDirty) — should trigger full rebuild
+	vm.MarkDirty()
+	vm.Refresh(conv, 80, 3, false, -1)
+
+	// Both messages should be present
+	content := vm.Content()
+	if !strings.Contains(content, "first") {
+		t.Error("expected 'first' in content")
+	}
+	if !strings.Contains(content, "second") {
+		t.Error("expected 'second' in content")
+	}
+
+	// Cache should have 2 entries
+	if len(vm.messageCache) != 2 {
+		t.Errorf("expected 2 cached messages, got %d", len(vm.messageCache))
+	}
+}
+
+func TestIncrementalRefreshWithAppendedMessage(t *testing.T) {
+	vm := NewConversationViewModel()
+	conv := model.NewConversation()
+
+	// Add one message and refresh
+	conv.AppendMessage(model.Message{
+		Role:      types.RoleUser,
+		Content:   "first",
+		Timestamp: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
+	})
+	vm.Refresh(conv, 80, 3, false, -1)
+
+	// Append a new message (simulating tool start or stream start)
+	idx := conv.AppendMessage(model.Message{
+		Role:      types.RoleAssistant,
+		Content:   "new response",
+		Timestamp: time.Date(2024, 1, 1, 12, 1, 0, 0, time.UTC),
+	})
+
+	// Mark the new message as dirty — message count changed, so this should
+	// trigger a full rebuild (len(msgs) != len(vm.messageCache))
+	vm.MarkMessageDirty(idx)
+	vm.Refresh(conv, 80, 3, false, -1)
+
+	// Both messages should be present
+	content := vm.Content()
+	if !strings.Contains(content, "first") {
+		t.Error("expected 'first' in content")
+	}
+	if !strings.Contains(content, "new response") {
+		t.Error("expected 'new response' in content")
+	}
+
+	// Cache should have 2 entries
+	if len(vm.messageCache) != 2 {
+		t.Errorf("expected 2 cached messages, got %d", len(vm.messageCache))
+	}
+}

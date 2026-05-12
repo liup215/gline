@@ -2,9 +2,9 @@
 
 ## 项目状态概览
 
-**当前阶段**: MVVM 重构 Phase 4 已完成
+**当前阶段**: MVVM 重构全部完成 ✅
 
-**总体进度**: 65% - 完成 TUI MVVM 架构重构 Phase 1-4（类型安全消息系统 + 纯数据 Model + ViewModel 层 + Bridge 解耦）
+**总体进度**: 75% - 完成 TUI MVVM 架构重构全部 5 个 Phase（类型安全消息系统 + 纯数据 Model + ViewModel 层 + Bridge 解耦 + View 纯函数化）
 ```
 
 ## 已完成工作
@@ -217,14 +217,28 @@ gline/
 
 ## 已知问题
 
-### 架构债务（正在重构）
+### 架构债务（已解决）✅
 
-**TUI 层架构混乱** — 通过 MVVM 重构解决（进行中）
+**TUI 层架构混乱** — 通过 MVVM 重构已解决 ✅
 - **问题描述**: `internal/ui/` 下 TUI Model 是上帝对象，混合 UI 状态、业务状态、Agent 胶水代码
 - **影响**: 可测试性差（仅 ~10% 可独立测试）、View 渲染性能差（全量重建）、添加新功能需改动 4-5 个文件
 - **解决方案**: 5 阶段渐进 MVVM 重构（见 `memory-bank/tui-mvvm-refactor.md`）
 - **优先级**: 高（阻塞 TUI 功能扩展）
-- **当前进度**: Phase 4 已完成 ✅
+- **当前进度**: 全部 5 Phase 已完成 ✅
+- **重构后架构**:
+  ```
+  internal/ui/
+  ├── model/         # Domain Model（纯数据，零依赖）— 23 个测试
+  ├── viewmodel/     # ViewModel（派生状态 + 渲染缓存）— 18 个测试
+  ├── view/          # View（纯渲染函数）— 12 个测试
+  ├── bridge/        # Agent-TUI 桥接层（类型安全消息）— 16 个测试
+  ├── tui.go         # Bubbletea 薄壳（Init/Update/View）
+  ├── tui_agent.go   # startAgent() 集成
+  ├── tui_input.go   # 键盘/窗口处理
+  ├── tui_state.go   # 状态变更 handler
+  ├── tui_update.go  # AgentEvent 分发器
+  └── tui_test.go    # 集成测试
+  ```
 ```
 
 ### MVVM 重构进度
@@ -235,7 +249,7 @@ gline/
 | Phase 2 | 抽离纯数据 Model (`model/` 包) | ✅ 完成 | 2026-05-11 |
 | Phase 3 | 引入 ViewModel 层（渲染逻辑迁移） | ✅ 完成 | 2026-05-11 |
 | Phase 4 | Bridge 层重构（Agent 回调脱离 `tea.Program`） | ✅ 完成 | 2026-05-11 |
-| Phase 5 | View 纯函数化 + Bubbletea 薄壳 | ⏳ 待开始 | — |
+| Phase 5 | View 纯函数化 + Bubbletea 薄壳 | ✅ 完成 | 2026-05-11 |
 ```
 
 ### 已修复问题 ✅

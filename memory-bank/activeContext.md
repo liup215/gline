@@ -2,36 +2,76 @@
 
 ## 当前焦点
 
-### TUI MVVM 架构重构（进行中）🔧
+### TUI MVVM 架构重构 ✅ 已完成
 
-**目标**: 将当前 `internal/ui/` 下的单体 Bubbletea Model 重构为 MVVM 架构，解决当前 TUI 层的架构问题。
+**5 阶段渐进方案**（全部完成 2026-05-11）:
+- ✅ Phase 1: 类型安全的消息系统（消除魔法字符串）
+- ✅ Phase 2: 抽离纯数据 Model
+- ✅ Phase 3: 引入 ViewModel 层
+- ✅ Phase 4: Bridge 层重构（解耦 Agent 和 TUI）
+- ✅ Phase 5: View 纯函数化 + Bubbletea 薄壳
 
-**已识别的问题**:
-1. Model 结构体是上帝对象，混合了 UI 状态、业务状态和 Agent 胶水代码
-2. `agentUpdateMsg.updateType` 使用魔法字符串，无编译时类型检查
-3. View 和 State 紧耦合，每次状态变更后立即调用 `updateViewport()`
-4. Agent 回调直接耦合 TUI，无法独立测试
-5. View 渲染效率低，每次全量重建消息列表
-6. 拆成 10 个文件但分割依据是人工而非架构边界
-7. 无可测试的 ViewModel 层
+### TUI 优化 Phase 6-10（进行中）🔧
 
-**目标架构**:
-```
-internal/ui/
-├── model/         # Domain Model（纯数据，零依赖）
-├── viewmodel/     # ViewModel（派生状态 + 命令）
-├── view/          # View（纯渲染函数）
-├── bridge/        # Agent-TUI 桥接层（类型安全消息）
-└── tui.go         # Bubbletea 薄壳
-```
+**目标**: 在 MVVM 重构基础上，进一步优化渲染性能、解耦状态 handler、净化 Model 层、补齐架构完整性。
+
+**详细计划**: 见 `memory-bank/tui-optimization-plan.md`
 
 **5 阶段渐进方案**:
-- ✅ Phase 1: 类型安全的消息系统（消除魔法字符串）— **已完成 2026-05-11**
-- ✅ Phase 2: 抽离纯数据 Model — **已完成 2026-05-11**
-- ✅ Phase 3: 引入 ViewModel 层 — **已完成 2026-05-11**
-- ✅ Phase 4: Bridge 层重构（解耦 Agent 和 TUI）— **已完成 2026-05-11**
-- Phase 5: View 纯函数化 + Bubbletea 薄壳
-```
+- ✅ Phase 6: 渲染性能优化（脏标记 → 增量渲染）— **已完成** (2026-05-11)
+- ✅ Phase 7: 状态 Handler 解耦（View 和 State 分离）— **已完成** (2026-05-11)
+- ✅ Phase 8: 拆分 `handleAgentToolStart` + 工具显示逻辑迁移 — **已完成** (2026-05-11)
+- ⬜ Phase 9: Model 层净化 + 渲染缓存迁移 — **待开始**
+- ⬜ Phase 10: 架构完整性 + 测试覆盖 — **待开始**
+
+**Phase 8 完成记录**:
+1. 创建 `internal/ui/view/tool_format.go` — 提取 3 个工具显示格式化函数：
+   - `FormatToolStartDisplay(name, input string) string` — 格式化工具启动显示（处理 attempt_completion 保持完整输入、普通工具显示主要参数、JSON 回退格式化）
+   - `FormatAttemptCompletionContent(input string) string` — 从 attempt_completion 的 JSON 输入中提取人类可读的结果（优先 result/content 字符串、对象转 JSON 代码块、无效 JSON 返回原始输入）
+   - `FormatToolCompleteDisplay(name, result, status string) string` — 格式化工具完成显示（包含 Completed/Failed 状态和截断的结果预览）
+2. 简化 `handleAgentToolStart`（~80 行 → ~30 行）— 删除内联的 JSON 解析和格式化逻辑，委托给 `view.FormatToolStartDisplay()` 和 `view.FormatAttemptCompletionContent()`
+3. 简化 `handleAgentToolComplete`（~30 行 → ~20 行）— 删除内联的格式化逻辑，委托给 `view.FormatToolCompleteDisplay()`
+4. 删除 `tui_state.go` 中不再需要的 `bytes`、`encoding/json`、`strings` 导入
+5. 为 3 个新格式化函数编写 13 个单元测试（`view/view_test.go`）：
+   - `TestFormatToolStartDisplay`: 4 个测试（空输入、主要参数、attempt_completion、未知工具）
+   - `TestFormatAttemptCompletionContent`: 5 个测试（字符串 result、字符串 content、对象 result、无效 JSON、空对象）
+   - `TestFormatToolCompleteDisplay`: 4 个测试（完成状态、失败状态、空结果、截断行）
+6. `go build ./...` 成功，`go test ./internal/ui/...` 全部通过
+
+**Phase 7 完成记录**:
+1. 修改 `tui_state.go` 中全部 7 个 handler 签名，从 `(m *Model, msg) []tea.Cmd` 改为 `(m *Model, msg) (bool, []tea.Cmd)`，返回 `needsRefresh` 替代直接调用 `updateViewport()`
+   - `handleAgentContent` — 返回 `true, nil`
+   - `handleAgentToolStart` — 返回 `true, nil`
+   - `handleAgentToolComplete` — 返回 `true, nil`
+   - `handleAgentError` — 返回 `true, cmds`（含 textarea.Blink）
+   - `handleAgentComplete` — 返回 `true, cmds`（含 textarea.Blink）
+   - `handleAgentStreamStart` — 返回 `true, nil`
+   - `handleAgentStreamEnd` — 返回 `true, nil`
+2. 修改 `tui_update.go` 的 `handleAgentUpdate()` — 返回 `(bool, []tea.Cmd)`，收集各 handler 的 `needsRefresh`
+3. 修改 `tui.go` 的 `Update()` — 添加 `needsRefresh` 变量，在 switch 后统一调用 `m.updateViewport()` 当 `needsRefresh == true`
+4. `AskQuestionEvent` handler 也改为设置 `needsRefresh = true` 替代直接调用 `m.updateViewport()`
+5. 创建 `internal/ui/tui_state_test.go` — 21 个独立单元测试覆盖所有 handler：
+   - `handleAgentContent`: 3 个测试（返回脏标记、创建缺失 slot、追加 delta）
+   - `handleAgentToolStart`: 5 个测试（返回脏标记、attempt_completion、ask_followup_question、plan_mode_respond、普通工具系统消息）
+   - `handleAgentToolComplete`: 4 个测试（返回脏标记、attempt_completion、plan_mode_respond、ask_followup_question）
+   - `handleAgentError`: 2 个测试（有/无运行中工具）
+   - `handleAgentComplete`: 1 个测试（返回脏标记和状态重置）
+   - `handleAgentStreamStart`: 1 个测试（返回脏标记和创建消息）
+   - `handleAgentStreamEnd`: 1 个测试（返回脏标记和停止流）
+   - 集成测试: 4 个（Update 触发 viewport 刷新、AskQuestionEvent、tickMsg 不触发、所有事件类型返回脏标记）
+6. `go build ./...` 成功，`go test ./internal/ui/...` 全部通过（76 个测试）
+
+**Phase 6 完成记录**:
+1. 在 `ConversationViewModel` 中添加 `dirtyMessages map[int]bool` 和 `messageCache map[int]cachedMessage`
+2. 添加 `MarkMessageDirty(idx int)` 方法 — 支持标记单个消息为脏
+3. 修改 `Refresh()` 实现增量重建：
+   - 当 `dirtyMessages` 非空且消息数量匹配时，只重新渲染脏消息
+   - 其他消息复用 `messageCache` 中的缓存
+   - 消息数量变化或首次调用时自动回退到全量重建
+4. 将 `writeUserMessage`/`writeAssistantMessage`/`writeSystemMessage` 重构为 `renderUserMessage`/`renderAssistantMessage`/`renderSystemMessage` 纯函数
+5. 在 `tui_state.go` 和 `tui.go` 的所有 handler 中调用 `MarkMessageDirty()` 替代 `MarkDirty()`
+6. 新增 6 个单元测试覆盖增量渲染场景
+7. `go build ./...` 成功，`go test ./internal/ui/...` 全部 55 个测试通过
 
 **Phase 1 完成记录**:
 1. 创建 `internal/ui/bridge/messages.go` — 定义 `AgentEvent` 接口 + 8 个具体事件类型
@@ -77,6 +117,22 @@ internal/ui/
    - 删除 `tuiCallback` 结构体及其全部 7 个方法
    - `startAgent()` 改为创建 `TUIBridge` 实例
 5. `go build ./...` 成功，`go test ./internal/ui/...` 全部 49 个测试通过
+
+**Phase 5 完成记录**:
+1. 创建 `internal/ui/view/styles.go` — 所有样式变量和工具格式化函数迁移到 `view` 包
+   - 20+ lipgloss 样式变量（`UserStyle`, `AssistantStyle`, `StatusBarStyle` 等）导出供其他包引用
+   - `NormalizeToolName`, `GetToolDescription`, `GetToolMainArg`, `FormatToolResultLines` 导出
+   - `ToolDescriptions` map 导出
+2. 创建 `internal/ui/view/status_bar.go` — `RenderStatusBar(StatusBarData) string` 纯函数
+3. 创建 `internal/ui/view/tool_area.go` — `RenderToolArea(content) string` 纯函数
+4. 创建 `internal/ui/view/layout.go` — `RenderHeader`, `RenderHelp`, `RenderInputBox`, `RenderLayout` 纯函数
+5. 重写 `tui.go` 的 `View()` — 委托给 `view.RenderLayout()` + 各纯函数，Model 成为薄壳
+6. 更新 `tui_state.go` — `normalizeToolName`/`getToolDescription`/`getToolMainArg`/`formatToolResultLines` 改为 `view.NormalizeToolName`/`view.GetToolDescription`/`view.GetToolMainArg`/`view.FormatToolResultLines`
+7. 更新 `viewmodel/conversation_vm.go` — 删除重复的样式定义，改用 `view.UserStyle`/`view.AssistantStyle` 等
+8. 删除 `tui_view.go` 和 `tui_styles.go` — 逻辑已迁移到 `view/` 包
+9. 删除空目录 `agent/` 和 `core/`
+10. 创建 `internal/ui/view/view_test.go` — 12 个单元测试全部通过
+11. `go build ./...` 成功，`go test ./internal/ui/...` 全部通过
 
 **Phase 3 完成记录**:
 1. 创建 `internal/ui/viewmodel/conversation_vm.go` — `ConversationViewModel` 结构体
@@ -294,11 +350,11 @@ export ANTHROPIC_API_KEY=your_key
 
 ### 下一步计划
 
-**Phase 4: 高级功能**
-- 任务历史持久化
-- 配置管理界面
-- 性能优化
-- 测试覆盖提升
+**Phase 9: Model 层净化 + 渲染缓存迁移**
+- 从 `model.Message` 中删除 `Rendered`, `RenderedWrapWidth`, `RenderedSource` 字段
+- 在 ViewModel 中创建 `cachedMessage` 结构体持有渲染缓存
+- ViewModel 维护 `map[int]*cachedMessage` 映射消息索引到缓存
+- 更新所有相关测试
 
 ## 最近决策
 
@@ -323,10 +379,10 @@ export ANTHROPIC_API_KEY=your_key
 
 ### 短期目标（本周）
 
-1. **Phase 3: LLM 集成**
-   - OpenAI Provider 实现
-   - 流式响应处理
-   - CLI 命令集成
+1. **Phase 7: 状态 Handler 解耦**
+   - handler 返回 `needsRefresh bool`
+   - `Update()` 统一调用 `updateViewport()`
+   - 为每个 handler 编写独立单元测试
 
 ### 中期目标（本月）
 
