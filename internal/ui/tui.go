@@ -214,7 +214,11 @@ func (m *Model) tick() tea.Cmd {
 func (m *Model) updateViewport() {
 	m.convVM.Refresh(m.conversation, m.viewport.Width, m.toolAreaHeight, m.isStreaming, m.activeAssistantIndex)
 	m.viewport.SetContent(m.convVM.Content())
-	m.viewport.GotoBottom()
+	// Only scroll to bottom when the user is already at the bottom.
+	// This prevents forcing the user back down when they manually scroll up to read history.
+	if m.viewport.AtBottom() {
+		m.viewport.GotoBottom()
+	}
 }
 
 // View renders the TUI by composing pure view functions.

@@ -322,9 +322,12 @@ func TestHandleAgentErrorReturnsNeedsRefresh(t *testing.T) {
 	if len(m.conversation.ToolHistory) > 0 && m.conversation.ToolHistory[0].Status != "failed" {
 		t.Errorf("expected tool status 'failed', got %q", m.conversation.ToolHistory[0].Status)
 	}
-	// Should have appended error message
-	if len(m.conversation.Messages) == 0 {
-		t.Error("expected at least one error message")
+	// Should have appended exactly one error message (no extra "🔧 Failed" system message)
+	if len(m.conversation.Messages) != 1 {
+		t.Errorf("expected exactly 1 error message, got %d", len(m.conversation.Messages))
+	}
+	if !strings.Contains(m.conversation.Messages[0].Content, "Error: something went wrong") {
+		t.Errorf("expected error message content, got %q", m.conversation.Messages[0].Content)
 	}
 }
 

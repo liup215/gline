@@ -106,17 +106,10 @@ func handleAgentError(m *Model, msg bridge.ErrorEvent) (bool, []tea.Cmd) {
 	m.err = msg.Err
 	m.isProcessing = false
 	m.isStreaming = false
-	// If an error occurred during a tool run, mark the most recent running tool as failed for visibility.
+	// If an error occurred during a tool run, mark the most recent running tool as failed.
 	for i := len(m.conversation.ToolHistory) - 1; i >= 0; i-- {
 		if m.conversation.ToolHistory[i].Status == "running" {
 			m.conversation.ToolHistory[i].Status = "failed"
-			// Append a short system message to make the failure obvious in the conversation
-			idx := m.conversation.AppendMessage(model.Message{
-				Role:      types.RoleSystem,
-				Content:   fmt.Sprintf("🔧 Failed: %s", m.conversation.ToolHistory[i].Name),
-				Timestamp: time.Now(),
-			})
-			m.convVM.MarkMessageDirty(idx)
 			break
 		}
 	}
