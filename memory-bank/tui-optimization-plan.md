@@ -322,7 +322,7 @@ func (b *TUIBridge) AskFollowupQuestion(question string, options []string) (stri
 
 ---
 
-### Phase 10b: 用户体验修复 [P1]
+### Phase 10b: 用户体验修复 [P1] — ✅ 已完成 2026-05-14
 
 **风险**: ⭐（低风险）
 
@@ -367,7 +367,7 @@ func (m *Model) updateViewport() {
 
 ---
 
-### Phase 10c: 性能与布局优化 [P2]
+### Phase 10c: 性能与布局优化 [P2] — ✅ 已完成 2026-05-14
 
 **风险**: ⭐⭐（中等风险 — 布局变化需多终端尺寸测试）
 

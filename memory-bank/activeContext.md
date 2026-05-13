@@ -24,11 +24,29 @@
 - ✅ Phase 9: Model 层净化 + 渲染缓存迁移 — **已完成** (2026-05-12)
 - ⬜ Phase 10: 并发安全 + 用户体验 + 性能布局 + 架构完整性 — **待开始**
   - ⬜ Phase 10a [P0]: 并发安全修复 — cancelFn data race + pendingReply 通道泄漏
-  - ⬜ Phase 10b [P1]: 用户体验修复 — 错误双重显示 + GotoBottom 阻止滚动
+  - ✅ Phase 10b [P1]: 用户体验修复 — 错误双重显示 + GotoBottom 阻止滚动 — **已完成 2026-05-14**
   - ⬜ Phase 10c [P2]: 性能与布局优化 — tickMsg 无差别刷新 + Header/StatusBar 合并 + 灵活高度配比
   - ⬜ Phase 10d [P3]: 架构完整性 — Tool Area 渲染迁移 + StatusViewModel + cache 驱逐 + 系统消息默认显示 + 补充测试
 
 **详细计划**: 见 `memory-bank/tui-optimization-plan.md`（Phase 10 已于 2026-05-12 修订，从原 3 项扩展为 4 个子阶段 11 项优化）
+
+**Phase 10c 完成记录**:
+1. 添加 `contentChanged bool` 标志到 Model — 用于追踪内容是否实际变化
+2. 修改 `tickMsg` handler — 只有当 `contentChanged == true` 时才调用 `updateViewport()`，避免每 100ms 无差别刷新
+3. 在内容变更处设置 `contentChanged = true` — `sendMessage()`, `addErrorMessage()`, `Update()` 中 needsRefresh 时
+4. 创建 `RenderCompactBar()` — 合并 Header 和 StatusBar 为一行显示
+5. 修改 `LayoutData` 结构 — 用 `CompactBar` 替代单独的 `Header` 和 `StatusBar`
+6. 更新 `View()` — 使用新的 `RenderCompactBar()` 渲染单行状态栏
+7. 创建 `calculateLayout()` 函数 — 按比例分配窗口高度，支持最小/最大约束
+8. 更新 `handleWindowSize()` — 使用灵活高度计算替代硬编码值
+9. 更新测试 `TestRenderLayout` — 适配新的 LayoutData 结构
+10. `go test ./internal/ui/...` 全部通过（90+ 测试）
+
+**Phase 10b 完成记录**:
+1. 修改 `handleAgentError` — 删除重复的 "🔧 Failed" 系统消息追加逻辑，只保留工具状态标记为 failed
+2. 简化 `updateViewport()` — 添加 `m.viewport.AtBottom()` 检查，只在用户已处于底部时才调用 `GotoBottom()`
+3. 更新 `TestHandleAgentErrorReturnsNeedsRefresh` 测试 — 验证只产生 1 条错误消息（而非之前的 2 条）
+4. `go build ./...` 成功，`go test ./internal/ui/...` 全部通过（90+ 测试）
 
 **Phase 9 完成记录**:
 1. 从 `model.Message` 删除渲染缓存字段 — 删除 `Rendered`, `RenderedWrapWidth`, `RenderedSource` 三个字段
@@ -399,24 +417,24 @@ export ANTHROPIC_API_KEY=your_key
 
 ### 短期目标（本周）
 
-1. **Phase 10a: 并发安全修复 [P0]**
+1. **Phase 10a: 并发安全修复 [P0]** — ✅ 已完成 2026-05-12
    - `cancelFn` 加 `sync.Mutex` 保护，消除 data race
    - `pendingReply` 通道在 Esc/Ctrl+C 时正确关闭，修复 goroutine 泄漏
    - `AskFollowupQuestion` 处理 channel 关闭
    - `go test -race ./internal/ui/...` 通过
 
-2. **Phase 10b: 用户体验修复 [P1]**
+2. **Phase 10b: 用户体验修复 [P1]** — ✅ 已完成 2026-05-14
    - 错误双重显示 → 只保留一种
    - GotoBottom → 检测 viewport.AtBottom()
 
 ### 中期目标（本月）
 
-1. **Phase 10c: 性能与布局优化 [P2]**
+1. **Phase 10c: 性能与布局优化 [P2]** — ✅ 已完成 2026-05-14
    - tickMsg 无差别刷新优化
    - Header/StatusBar 合并去重
    - 灵活高度配比计算
 
-2. **Phase 10d: 架构完整性 [P3]**
+2. **Phase 10d: 架构完整性 [P3]** — 当前进行中
    - Tool Area 渲染逻辑迁移到 view/
    - 创建 StatusViewModel
    - messageCache 驱逐机制

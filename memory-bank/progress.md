@@ -260,8 +260,8 @@ gline/
 | Phase 8 | 拆分 handleAgentToolStart + 工具显示逻辑迁移 | ✅ 完成 | 2026-05-11 |
 | Phase 9 | Model 层净化 + 渲染缓存迁移 | ✅ 完成 | 2026-05-12 |
 | Phase 10a | [P0] 并发安全修复（cancelFn race + pendingReply 泄漏） | ✅ 已完成 | 2026-05-12 |
-| Phase 10b | [P1] 用户体验修复（错误双重显示 + 滚动阻止） | ⬜ 待开始 | — |
-| Phase 10c | [P2] 性能与布局优化（tickMsg + Header/StatusBar + 灵活配比） | ⬜ 待开始 | — |
+| Phase 10b | [P1] 用户体验修复（错误双重显示 + 滚动阻止） | ✅ 已完成 | 2026-05-14 |
+| Phase 10c | [P2] 性能与布局优化（tickMsg + Header/StatusBar + 灵活配比） | ✅ 已完成 | 2026-05-14 |
 | Phase 10d | [P3] 架构完整性（Tool Area迁移 + StatusVM + cache驱逐 + 测试） | ⬜ 待开始 | — |
 
 ### TUI 已知问题（2026-05-12 审查发现）
@@ -270,11 +270,11 @@ gline/
 |---|------|--------|------|-----------|
 | 1 | `cancelFn` 并发 data race（跨 goroutine 无同步） | P0 | ⬜ | 10a |
 | 2 | `pendingReply` 通道泄漏（Esc 中断时 goroutine 永久阻塞） | P0 | ⬜ | 10a |
-| 3 | 错误双重显示（handleAgentError 添加两条系统消息） | P1 | ⬜ | 10b |
-| 4 | GotoBottom 阻止用户向上滚动 | P1 | ⬜ | 10b |
-| 5 | tickMsg 每 100ms 无差别刷新 | P2 | ⬜ | 10c |
-| 6 | Header/StatusBar 信息重复浪费屏幕空间 | P2 | ⬜ | 10c |
-| 7 | 固定高度配比不灵活（小窗口体验差） | P2 | ⬜ | 10c |
+| 3 | 错误双重显示（handleAgentError 添加两条系统消息） | P1 | ✅ | 10b |
+| 4 | GotoBottom 阻止用户向上滚动 | P1 | ✅ | 10b |
+| 5 | tickMsg 每 100ms 无差别刷新 | P2 | ✅ | 10c |
+| 6 | Header/StatusBar 信息重复浪费屏幕空间 | P2 | ✅ | 10c |
+| 7 | 固定高度配比不灵活（小窗口体验差） | P2 | ✅ | 10c |
 | 8 | Tool Area 渲染逻辑位置错误（view/tool_area.go 空壳） | P3 | ⬜ | 10d |
 | 9 | 缺少 StatusViewModel | P3 | ⬜ | 10d |
 | 10 | messageCache 无驱逐机制 | P3 | ⬜ | 10d |
