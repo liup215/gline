@@ -259,7 +259,7 @@ gline/
 | Phase 7 | 状态 Handler 解耦（View 和 State 分离） | ✅ 完成 | 2026-05-11 |
 | Phase 8 | 拆分 handleAgentToolStart + 工具显示逻辑迁移 | ✅ 完成 | 2026-05-11 |
 | Phase 9 | Model 层净化 + 渲染缓存迁移 | ✅ 完成 | 2026-05-12 |
-| Phase 10a | [P0] 并发安全修复（cancelFn race + pendingReply 泄漏） | ⬜ 待开始 | — |
+| Phase 10a | [P0] 并发安全修复（cancelFn race + pendingReply 泄漏） | ✅ 已完成 | 2026-05-12 |
 | Phase 10b | [P1] 用户体验修复（错误双重显示 + 滚动阻止） | ⬜ 待开始 | — |
 | Phase 10c | [P2] 性能与布局优化（tickMsg + Header/StatusBar + 灵活配比） | ⬜ 待开始 | — |
 | Phase 10d | [P3] 架构完整性（Tool Area迁移 + StatusVM + cache驱逐 + 测试） | ⬜ 待开始 | — |
