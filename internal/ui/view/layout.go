@@ -47,22 +47,20 @@ func RenderInputBox(inputView string) string {
 
 // LayoutData holds all the pre-rendered sections for the main layout.
 type LayoutData struct {
-	Header    string
-	Content   string // viewport content
-	ToolArea  string
-	InputView string // pre-rendered textarea view
-	StatusBar string
-	Help      string
+	CompactBar string // merged header + status bar
+	Content    string // viewport content
+	ToolArea   string
+	InputView  string // pre-rendered textarea view
+	Help       string
 }
 
 // RenderLayout assembles all sections into the final TUI output.
 func RenderLayout(data LayoutData) string {
 	sections := []string{
-		data.Header,
+		data.CompactBar,
 		data.Content,
 		data.ToolArea,
 		RenderInputBox(data.InputView),
-		data.StatusBar,
 		data.Help,
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)

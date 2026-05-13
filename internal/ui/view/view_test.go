@@ -201,15 +201,14 @@ func TestRenderInputBox(t *testing.T) {
 
 func TestRenderLayout(t *testing.T) {
 	s := stripANSI(RenderLayout(LayoutData{
-		Header:    "HEADER",
-		Content:   "CONTENT",
-		ToolArea:  "TOOLAREA",
-		InputView: "INPUT",
-		StatusBar: "STATUS",
-		Help:      "HELP",
+		CompactBar: "COMPACT",
+		Content:    "CONTENT",
+		ToolArea:   "TOOLAREA",
+		InputView:  "INPUT",
+		Help:       "HELP",
 	}))
-	if !strings.Contains(s, "HEADER") {
-		t.Errorf("layout missing HEADER: %q", s)
+	if !strings.Contains(s, "COMPACT") {
+		t.Errorf("layout missing COMPACT: %q", s)
 	}
 	if !strings.Contains(s, "CONTENT") {
 		t.Errorf("layout missing CONTENT: %q", s)

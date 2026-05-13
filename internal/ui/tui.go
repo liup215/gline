@@ -69,6 +69,9 @@ type Model struct {
  // Dimensions
  width  int
  height int
+
+ // Performance optimization: only refresh viewport when content actually changed
+ contentChanged bool
 }
 
 // New creates a new TUI model
@@ -176,6 +179,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Handle internal messages for real-time viewport updates
 	case tickMsg:
+		if m.isProcessing && m.contentChanged {
+			m.updateViewport()
+			m.contentChanged = false
+		}
 		if m.isProcessing {
 			cmds = append(cmds, m.tick())
 		}
@@ -184,6 +191,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Unified viewport refresh: if any handler signaled a state change,
 	// refresh the viewport content once instead of each handler doing it individually.
 	if needsRefresh {
+		m.contentChanged = true
 		m.updateViewport()
 	}
 
@@ -228,15 +236,7 @@ func (m *Model) View() string {
 	}
 
 	return view.RenderLayout(view.LayoutData{
-		Header: view.RenderHeader(view.HeaderData{
-			Mode:      m.conversation.Mode,
-			Provider:  m.conversation.Provider,
-			ModelName: m.conversation.ModelName,
-		}),
-		Content:   m.viewport.View(),
-		ToolArea:  view.RenderToolArea(m.convVM.ToolAreaContent()),
-		InputView: m.textarea.View(),
-		StatusBar: view.RenderStatusBar(view.StatusBarData{
+		CompactBar: view.RenderCompactBar(view.CompactBarData{
 			Mode:         m.conversation.Mode,
 			Provider:     m.conversation.Provider,
 			ModelName:    m.conversation.ModelName,
@@ -246,7 +246,10 @@ func (m *Model) View() string {
 			SpinnerView:  m.spinner.View(),
 			Width:        m.width,
 		}),
-		Help: view.RenderHelp(),
+		Content:   m.viewport.View(),
+		ToolArea:  view.RenderToolArea(m.convVM.ToolAreaContent()),
+		InputView: m.textarea.View(),
+		Help:      view.RenderHelp(),
 	})
 }
 
@@ -269,6 +272,7 @@ func (m *Model) sendMessage(content string) {
 
 	m.isProcessing = true
 	m.isStreaming = false
+	m.contentChanged = true
 	m.updateViewport()
 }
 
@@ -280,6 +284,7 @@ func (m *Model) addErrorMessage(content string) {
 		Timestamp: time.Now(),
 	})
 	m.convVM.MarkMessageDirty(idx)
+	m.contentChanged = true
 	m.updateViewport()
 }
 
@@ -313,4 +318,42 @@ func Run(agentInstance *agent.BaseAgent) error {
 	_, err := p.Run()
 	close(done) // signal the forwarding goroutine to stop
 	return err
+}
+
+// calculateLayout calculates flexible height distribution for TUI components.
+// Uses proportional allocation with min/max constraints:
+// - input: 10% of height, min 3, max 5
+// - tool area: 10% of height, min 2, max 6
+// - viewport: remaining space, min 3
+// Also reserves space for compact bar (1) and help (1).
+func calculateLayout(totalHeight int) (viewportH, toolH, inputH int) {
+	if totalHeight < 10 {
+		// Minimum viable layout for very small terminals
+		return 3, 2, 3
+	}
+
+	// Reserve space for compact bar (1) and help (1)
+	available := totalHeight - 2
+
+	// Calculate proportional heights
+	inputH = totalHeight / 10
+	if inputH < 3 {
+		inputH = 3
+	} else if inputH > 5 {
+		inputH = 5
+	}
+
+	toolH = totalHeight / 10
+	if toolH < 2 {
+		toolH = 2
+	} else if toolH > 6 {
+		toolH = 6
+	}
+
+	viewportH = available - inputH - toolH
+	if viewportH < 3 {
+		viewportH = 3
+	}
+
+	return viewportH, toolH, inputH
 }

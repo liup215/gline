@@ -10,16 +10,21 @@ tea "github.com/charmbracelet/bubbletea"
 
 // handleWindowSize moves WindowSizeMsg handling out of Update.
 func handleWindowSize(m *Model, msg tea.WindowSizeMsg) []tea.Cmd {
-	// Update dimensions and textarea width, then refresh viewport.
+	// Update dimensions
 	m.width = msg.Width
 	m.height = msg.Height
 	m.viewport.Width = msg.Width
 
-	// Reserve space for: title (1) + tool area (toolAreaHeight) + input (inputHeight) + status bar (1) + help (1)
-	m.viewport.Height = msg.Height - m.inputHeight - m.toolAreaHeight - 4
-	if m.viewport.Height < 3 {
-		m.viewport.Height = 3
-	}
+	// Calculate flexible layout
+	viewportH, toolH, inputH := calculateLayout(msg.Height)
+	m.toolAreaHeight = toolH
+	m.inputHeight = inputH
+
+	// Set viewport height
+	m.viewport.Height = viewportH
+
+	// Update textarea height
+	m.textarea.SetHeight(inputH)
 
 	// Compute inner width available for textarea content (subtract border + horizontal padding and left margin).
 	// inputBoxStyle has Padding(0, 3) which gives 3 cols on left and right, border (2 cols), plus we render with a left margin of 1.
