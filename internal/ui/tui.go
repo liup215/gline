@@ -15,7 +15,8 @@ tea "github.com/charmbracelet/bubbletea"
 "github.com/liup215/gline/internal/agent"
 "github.com/liup215/gline/internal/ui/bridge"
 "github.com/liup215/gline/internal/ui/model"
-"github.com/liup215/gline/internal/ui/view"
+"github.com/liup215/gline/internal/ui/tool"
+	"github.com/liup215/gline/internal/ui/view"
 "github.com/liup215/gline/internal/ui/viewmodel"
 "github.com/liup215/gline/pkg/types"
 )
@@ -65,7 +66,10 @@ type Model struct {
  
  // ViewModel derives rendered display state from the conversation.
  convVM *viewmodel.ConversationViewModel
- 
+
+ // Tool registry for rendering tool outputs
+ toolRegistry *tool.Registry
+
  // Dimensions
  width  int
  height int
@@ -106,15 +110,16 @@ func New(agentInstance *agent.BaseAgent) *Model {
 	conv.ModelName = modelName
 
 return &Model{
-textarea:             ta,
-viewport:             vp,
-spinner:              s,
-conversation:         conv,
-convVM:               viewmodel.NewConversationViewModel(),
-inputHeight:          3,
-toolAreaHeight:       3,
-activeAssistantIndex: -1,
-agentInstance:        agentInstance,
+	textarea:             ta,
+	viewport:             vp,
+	spinner:              s,
+	conversation:         conv,
+	convVM:               viewmodel.NewConversationViewModel(),
+	toolRegistry:         tool.NewDefaultRegistry(),
+	inputHeight:          3,
+	toolAreaHeight:       3,
+	activeAssistantIndex: -1,
+	agentInstance:        agentInstance,
     ctx:                  context.Background(),
     // keep legacy cancelCh for tests
     cancelCh:             make(chan context.CancelFunc, 1),

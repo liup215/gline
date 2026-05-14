@@ -1,6 +1,7 @@
 package viewmodel
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -245,7 +246,7 @@ func TestMarkDirtyAndIsDirty(t *testing.T) {
 	}
 }
 
-func TestSystemMessageWithoutPrefixIsDropped(t *testing.T) {
+func TestSystemMessageWithoutPrefixIsDisplayed(t *testing.T) {
 	vm := NewConversationViewModel()
 	conv := model.NewConversation()
 	conv.AppendMessage(model.Message{
@@ -256,8 +257,9 @@ func TestSystemMessageWithoutPrefixIsDropped(t *testing.T) {
 	vm.Refresh(conv, 80, 3, false, -1)
 
 	content := vm.Content()
-	if strings.Contains(content, "random system text") {
-		t.Errorf("expected unmatched system message to be dropped, got: %q", content)
+	// After Phase 10d: unmatched system messages are now displayed with SystemStyle instead of being dropped
+	if !strings.Contains(content, "random system text") {
+		t.Errorf("expected unmatched system message to be displayed, got: %q", content)
 	}
 }
 
@@ -653,4 +655,86 @@ func TestViewModelCacheNoDirectAccessToMessageCache(t *testing.T) {
 	// If this compiles, it means Message doesn't have Rendered, RenderedWrapWidth, RenderedSource fields
 	msg := conv.Messages[0]
 	_ = msg.Content // just to use the variable
+}
+
+func TestInvalidateCache(t *testing.T) {
+	vm := NewConversationViewModel()
+	conv := model.NewConversation()
+
+	// Add multiple messages
+	for i := 0; i < 5; i++ {
+		conv.AppendMessage(model.Message{
+			Role:      types.RoleUser,
+			Content:   fmt.Sprintf("message %d", i),
+			Timestamp: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
+		})
+	}
+
+	// Refresh to populate cache
+	vm.Refresh(conv, 80, 3, false, -1)
+
+	// Verify cache is populated
+	if len(vm.messageCache) != 5 {
+		t.Fatalf("expected 5 cached messages, got %d", len(vm.messageCache))
+	}
+
+	// Mark some messages dirty
+	vm.MarkMessageDirty(1)
+	vm.MarkMessageDirty(3)
+
+	// Verify dirty flags are set
+	if len(vm.dirtyMessages) != 2 {
+		t.Fatalf("expected 2 dirty messages, got %d", len(vm.dirtyMessages))
+	}
+
+	// Invalidate cache
+	vm.InvalidateCache()
+
+	// Verify cache is cleared
+	if len(vm.messageCache) != 0 {
+		t.Errorf("expected message cache to be cleared, got %d entries", len(vm.messageCache))
+	}
+
+	// Verify dirty messages are cleared
+	if len(vm.dirtyMessages) != 0 {
+		t.Errorf("expected dirty messages to be cleared, got %d entries", len(vm.dirtyMessages))
+	}
+
+	// Verify ViewModel is marked dirty
+	if !vm.IsDirty() {
+		t.Error("expected ViewModel to be dirty after InvalidateCache")
+	}
+}
+
+func TestInvalidateCachePreventsMemoryGrowth(t *testing.T) {
+	vm := NewConversationViewModel()
+	conv := model.NewConversation()
+
+	// Simulate a long conversation
+	for i := 0; i < 100; i++ {
+		conv.AppendMessage(model.Message{
+			Role:      types.RoleUser,
+			Content:   fmt.Sprintf("message %d with some content", i),
+			Timestamp: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
+		})
+	}
+
+	// Refresh to populate cache
+	vm.Refresh(conv, 80, 3, false, -1)
+
+	// Verify cache is populated
+	if len(vm.messageCache) != 100 {
+		t.Fatalf("expected 100 cached messages, got %d", len(vm.messageCache))
+	}
+
+	// Clear conversation
+	conv.Clear()
+
+	// Invalidate cache
+	vm.InvalidateCache()
+
+	// Verify cache is cleared, preventing memory growth
+	if len(vm.messageCache) != 0 {
+		t.Errorf("expected message cache to be cleared after Clear, got %d entries", len(vm.messageCache))
+	}
 }

@@ -70,6 +70,14 @@ func (vm *ConversationViewModel) IsDirty() bool {
 	return vm.dirty
 }
 
+// InvalidateCache clears the message cache.
+// This should be called when the conversation is cleared to prevent memory growth.
+func (vm *ConversationViewModel) InvalidateCache() {
+	vm.messageCache = make(map[int]cachedMessage)
+	vm.dirtyMessages = make(map[int]bool)
+	vm.dirty = true
+}
+
 // Content returns the full rendered viewport content string.
 func (vm *ConversationViewModel) Content() string {
 	return vm.content
@@ -141,7 +149,7 @@ func (vm *ConversationViewModel) renderMessage(msgs []model.Message, i int, widt
 	msg := msgs[i]
 	switch msg.Role {
 	case types.RoleUser:
-		return vm.renderUserMessage(msg)
+		return vm.renderUserMessage(msg, width)
 	case types.RoleAssistant:
 		return vm.renderAssistantMessage(msgs, i, width, isActiveStreaming)
 	case types.RoleSystem:
@@ -156,10 +164,11 @@ func (vm *ConversationViewModel) renderMessage(msgs []model.Message, i int, widt
 // ---------------------------------------------------------------------------
 
 // renderUserMessage renders a single user message to its full string.
-func (vm *ConversationViewModel) renderUserMessage(msg model.Message) string {
+func (vm *ConversationViewModel) renderUserMessage(msg model.Message, width int) string {
 	var b strings.Builder
 	b.WriteString(view.UserStyle.Render("You: "))
-	b.WriteString(msg.Content)
+	// Apply markdown rendering to user message content for consistent formatting
+	b.WriteString(vm.renderMarkdown(msg.Content, width))
 	b.WriteString("\n")
 	b.WriteString(view.SystemStyle.Render(msg.Timestamp.Format("15:04")))
 	b.WriteString("\n\n")
@@ -179,6 +188,28 @@ func (vm *ConversationViewModel) renderAssistantMessage(msgs []model.Message, id
 func (vm *ConversationViewModel) renderSystemMessage(msg model.Message) string {
 	content := msg.Content
 	var b strings.Builder
+
+	// Handle based on Strategy field
+	switch msg.Strategy {
+	case types.StrategyMarkdown:
+		// System message with markdown rendering
+		b.WriteString(vm.renderMarkdown(content, 80))
+		b.WriteString("\n\n")
+		return b.String()
+	case types.StrategyJSON:
+		// JSON code block
+		b.WriteString(view.SystemStyle.Render(content))
+		b.WriteString("\n\n")
+		return b.String()
+	case types.StrategySpecial:
+		// Special rendering handled elsewhere
+		return ""
+	case types.StrategySkip:
+		// Skip this message
+		return ""
+	}
+
+	// Fallback: legacy hardcoded detection
 	if strings.HasPrefix(content, "Error:") || strings.HasPrefix(content, "✗") {
 		b.WriteString(view.ErrorStyle.Render(content))
 		b.WriteString("\n\n")
@@ -207,9 +238,11 @@ func (vm *ConversationViewModel) renderSystemMessage(msg model.Message) string {
 			b.WriteString(view.SystemStyle.Render(content))
 		}
 		b.WriteString("\n\n")
+	} else {
+		// Default: display unknown system messages with SystemStyle instead of silently dropping them
+		b.WriteString(view.SystemStyle.Render(content))
+		b.WriteString("\n\n")
 	}
-	// Note: system messages that don't match any prefix are silently dropped,
-	// preserving the original behavior.
 	return b.String()
 }
 
@@ -334,37 +367,5 @@ func (vm *ConversationViewModel) formatToolCallsInline(calls []types.ToolCall) s
 }
 
 func (vm *ConversationViewModel) renderToolArea(conv *model.Conversation, width int, toolAreaHeight int) string {
-	history := conv.ToolHistory
-	if len(history) == 0 {
-		return view.ToolAreaBorderStyle.Render(strings.Repeat("─", width))
-	}
-
-	maxEntries := toolAreaHeight
-	if maxEntries < 1 {
-		maxEntries = 1
-	}
-	start := 0
-	if len(history) > maxEntries {
-		start = len(history) - maxEntries
-	}
-
-	var lines []string
-	for i := start; i < len(history); i++ {
-		ts := history[i]
-		switch ts.Status {
-		case "running":
-			lines = append(lines, view.ToolRunningStyle.Render(fmt.Sprintf("  🔧 %s ⏳", ts.Name)))
-		case "completed":
-			lines = append(lines, view.ToolCompletedStyle.Render(fmt.Sprintf("  🔧 %s ✓", ts.Name)))
-		case "failed":
-			lines = append(lines, view.ToolFailedStyle.Render(fmt.Sprintf("  🔧 %s ✗", ts.Name)))
-		default:
-			lines = append(lines, view.SystemStyle.Render(fmt.Sprintf("  🔧 %s", ts.Name)))
-		}
-	}
-
-	border := view.ToolAreaBorderStyle.Render(strings.Repeat("─", width))
-	all := []string{border}
-	all = append(all, lines...)
-	return lipgloss.JoinVertical(lipgloss.Left, all...)
+	return view.RenderToolAreaContent(conv.ToolHistory, width, toolAreaHeight)
 }

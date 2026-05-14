@@ -12,19 +12,36 @@ tea "github.com/charmbracelet/bubbletea"
 
 func TestCancelChConcurrentAccess(t *testing.T) {
 	m := New(nil)
-// ensure event channel and forwarding goroutine for tests to avoid blocking
-m.eventCh = make(chan bridge.AgentEvent, 64)
-m.done = make(chan struct{})
-go func() {
-for {
-select {
-case <-m.eventCh:
-// drop events
-case <-m.done:
-return
-}
-}
-}()
+	// ensure event channel and forwarding goroutine for tests to avoid blocking
+	m.eventCh = make(chan bridge.AgentEvent, 64)
+	m.done = make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-m.eventCh:
+				// drop events
+			case <-m.done:
+				return
+			}
+		}
+	}()
+
+	// Start a consumer goroutine to drain cancelCh and prevent deadlocks
+	var consumerWg sync.WaitGroup
+	consumerWg.Add(1)
+	go func() {
+		defer consumerWg.Done()
+		for {
+			select {
+			case cancel := <-m.cancelCh:
+				if cancel != nil {
+					cancel()
+				}
+			case <-m.done:
+				return
+			}
+		}
+	}()
 
 	var wg sync.WaitGroup
 	for i := 0; i < 10; i++ {
@@ -48,6 +65,10 @@ return
 		}()
 	}
 	wg.Wait()
+
+	// Signal consumer to stop and wait for it
+	close(m.done)
+	consumerWg.Wait()
 }
 
 func TestEscInterruptAskFollowupQuestion(t *testing.T) {
