@@ -225,58 +225,65 @@ gline/
 - **Workspace State**: 项目特定设置（持久化）
 - **Session State**: 临时覆盖（非持久化）
 
-## 扩展点
+## TUI 架构设计
 
-### 添加新的 LLM 提供商
-1. 实现 `api.Provider` 接口
-2. 在 `api/registry.go` 中注册
+### 整体架构（MVVM + Bridge）
 
-### 添加新的工具
-1. 实现 `tools.Tool` 接口
-2. 在 `tools/registry.go` 中注册
-3. 更新系统提示词
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         TUI Layer                          │
+├─────────────────────────────────────────────────────────────┤
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐ │
+│  │    Model    │  │  ViewModel  │  │   tool.Registry   │ │
+│  │  (纯数据)   │  │ (派生状态)  │  │  (工具渲染器注册表) │ │
+│  └──────┬──────┘  └──────┬──────┘  └──────────┬──────────┘ │
+│         │                │                    │            │
+│         └────────────────┴────────────────────┘            │
+│                          │                                  │
+│                   ┌──────┴──────┐                          │
+│                   │   Bridge    │                          │
+│                   │  (事件转换)  │                          │
+│                   └──────┬──────┘                          │
+│                          │                                  │
+│         ┌────────────────┼────────────────┐                │
+│         │                │                │                │
+│    ┌────┴────┐    ┌─────┴─────┐    ┌────┴────┐           │
+│    │  Agent  │    │   LLM     │    │  Tools  │           │
+│    │  Core   │    │ Providers │    │ Registry│           │
+│    └─────────┘    └───────────┘    └─────────┘           │
+└─────────────────────────────────────────────────────────────┘
+```
 
-### 添加新的 UI 模式
-1. 实现 UI 接口
-2. 在 `ui/` 下创建新包
-
-## TUI MVVM 架构模式（规划中）
-
-### 背景
-
-当前 TUI 层（`internal/ui/`）采用传统 Bubbletea 架构，所有状态、视图渲染和 Agent 交互集中在单一的 `Model` 结构体中。随着功能增加，出现了以下问题：
-- 上帝对象：Model 混合 UI 状态、业务状态、Agent 胶水代码
-- 类型不安全：`agentUpdateMsg.updateType` 使用魔法字符串
-- 渲染效率低：每次状态变更后全量重建消息列表
-- 测试困难：无法脱离 Bubbletea 框架进行单元测试
-
-### 目标架构：MVVM + Bridge
+### 目录结构
 
 ```
 internal/ui/
-├── model/         # Domain Model（纯数据，零外部依赖）
-│   ├── conversation.go   # 对话：messages、toolHistory、mode
-│   └── message.go        # 消息：Role、Content、ToolCalls、渲染缓存
+├── model/              # Domain Model（纯数据，零外部依赖）
+│   ├── message.go      # Message: Role, Content, MsgType, Strategy, Meta
+│   ├── meta.go         # ErrorMeta, ToolMeta + 辅助方法
+│   └── conversation.go # Conversation: Messages, ToolHistory
 │
-├── viewmodel/     # ViewModel（派生展示状态）
-│   ├── conversation_vm.go  # 格式化消息列表、滚动状态
-│   ├── status_vm.go        # 状态栏信息
-│   └── input_vm.go         # 输入框状态
+├── viewmodel/          # ViewModel（派生展示状态 + 渲染缓存）
+│   └── conversation_vm.go  # 格式化消息列表，增量渲染
 │
-├── view/          # View（纯渲染函数）
-│   ├── messages.go      # 消息列表渲染
-│   ├── header.go        # 标题栏
-│   ├── input.go         # 输入框
-│   ├── status_bar.go    # 状态栏
-│   ├── tool_area.go     # 工具状态区域
-│   └── styles.go        # Lipgloss 样式定义
+├── view/               # View（纯渲染函数）
+│   ├── tool_area.go    # 工具状态区域渲染
+│   └── styles.go       # Lipgloss 样式定义
 │
-├── bridge/        # Agent-TUI 桥接层
-│   ├── callback.go      # 类型安全的事件发送
-│   └── messages.go      # AgentEvent 接口 + 具体事件类型
+├── tool/               # 工具自描述渲染
+│   ├── render.go       # Renderer 接口
+│   ├── registry.go     # 工具注册表
+│   ├── attempt_completion.go
+│   ├── ask_followup_question.go
+│   ├── plan_mode_respond.go
+│   ├── read_file.go
+│   └── default.go      # 通用工具默认渲染器
 │
-└── tui.go         # Bubbletea 薄壳
-    # 仅组合以上各层，处理 tea.Msg 分发
+├── bridge/             # Agent-TUI 桥接层（类型安全）
+│   ├── callback.go     # TUIBridge 实现 StreamCallback
+│   └── messages.go     # AgentEvent 接口定义
+│
+└── tui.go              # Bubbletea 薄壳（Init/Update/View）
 ```
 
 ### 核心分层原则
@@ -285,24 +292,96 @@ internal/ui/
 |------|------|------|----------|
 | Model | 纯数据、业务规则 | 无外部依赖 | 纯 Go 单元测试 |
 | ViewModel | 派生状态、格式化 | Model | 纯 Go 单元测试 |
-| View | 纯函数：输入 ViewModel → 输出 string | ViewModel, lipgloss | 纯 Go 单元测试 |
-| Bridge | Agent 回调 → TUI 事件转换 | Agent 接口 | 纯 Go 单元测试（mock Agent） |
+| View | 纯函数渲染 | ViewModel, lipgloss | 纯 Go 单元测试 |
+| Bridge | Agent 回调 → TUI 事件 | Agent 接口 | 纯 Go 单元测试（mock Agent）|
 | TUI Shell | Bubbletea 生命周期 | 以上全部 | 集成测试 |
 
-### 当前状态
+### Message 数据结构
 
-- **`bridge/` 已完成** ✅: `internal/ui/bridge/messages.go` + `callback.go` + `messages_test.go` + `callback_test.go`
-  - `TUIBridge` 实现 `agent.StreamCallback` 接口，通过 channel 发送事件（不依赖 `tea.Program`）
-- **`model/` 已完成** ✅: `internal/ui/model/message.go` + `conversation.go` + `conversation_test.go`
-- **`viewmodel/` 已完成** ✅: `internal/ui/viewmodel/conversation_vm.go` + `conversation_vm_test.go`
-- **空目录预留**: `internal/ui/view/`（Phase 5）
-- **废弃目录**: `internal/ui/agent/`, `internal/ui/core/`（功能已并入 `bridge/` 和 `model/`）
-- **当前代码**: `internal/ui/` 根目录仍有 `tui.go`, `tui_agent.go`, `tui_state.go`, `tui_update.go`, `tui_view.go`, `tui_input.go`, `tui_styles.go`, `tui_test.go`
-- **重构进度**: Phase 1-4 已完成，Phase 5 待开始（详见 `memory-bank/tui-mvvm-refactor.md`）
+```go
+type Message struct {
+    Role      types.Role           // System | Assistant | User
+    Content   string               // 显示内容
+    ToolCalls []types.ToolCall     // 工具调用
+    Options   []string             // 问题选项
+    MsgType   types.MessageType    // 语义类型 (Error/Question/Tool/Normal)
+    Strategy  types.RenderStrategy // 渲染策略 (Plain/Markdown/JSON)
+    Meta      json.RawMessage     // 结构化元数据 (ErrorMeta, ToolMeta)
+    Timestamp time.Time
+}
+```
+
+### 渲染优先级
+
+ViewModel.renderSystemMessage 的三层渲染优先级：
+
+1. **MsgType (语义类型)**
+   - TypeError → ErrorStyle (红色)
+   - TypeQuestion → QuestionStyle (带选项)
+   - TypeToolStart → ToolRunningStyle (橙色)
+   - TypeToolComplete → ToolCompletedStyle (绿色)
+
+2. **Strategy (渲染策略)**
+   - StrategyMarkdown → Glamour 渲染
+   - StrategyJSON → 代码块
+   - StrategyPlain → 纯文本
+
+3. **Fallback (向后兼容)**
+   - 字符串前缀检测 (保留用于旧消息兼容)
+
+### 工具自描述渲染
+
+```go
+// Renderer 接口让工具自己决定如何渲染
+type Renderer interface {
+    Render(req RenderRequest) RenderResult
+    Name() types.ToolName
+    Description() string
+    Icon() string
+}
+
+// RenderResult 包含渲染决策
+type RenderResult struct {
+    Content  string               // 显示内容
+    Role     types.Role           // System | Assistant
+    Strategy types.RenderStrategy // Plain | Markdown
+    Skip     bool                 // 是否跳过创建消息
+}
+```
+
+### 常量定义
+
+**pkg/types/**:
+- `message_type.go` - MessageType (TypeError, TypeQuestion, etc.)
+- `render_strategy.go` - RenderStrategy (StrategyPlain, StrategyMarkdown, etc.)
+- `tool_phases.go` - ToolPhase (ToolPhaseStart, ToolPhaseComplete)
+- `tool_names.go` - ToolName (ToolAttemptCompletion, ToolReadFile, etc.)
 
 ### 与现有架构的关系
 
-MVVM 架构是 UI 层内部的细化，不影响系统整体架构：
+TUI MVVM 是 UI 层内部细化，不影响系统整体架构：
 - Agent、Provider、Tools 层保持不变
 - 仅 UI 层内部重新组织
 - `Agent.StreamCallback` 接口不变，Bridge 层提供新的实现
+
+## 扩展点
+
+### 添加新的消息类型
+1. 在 `pkg/types/message_type.go` 添加常量
+2. 在 `internal/ui/model/meta.go` 添加对应的 Meta 结构体
+3. 在 `viewmodel/conversation_vm.go` 添加渲染逻辑
+
+### 添加新的工具
+1. 实现 `tool.Renderer` 接口
+2. 在 `tool/registry.go` 注册
+3. 工具自动使用自己的渲染策略
+
+### 添加新的 LLM 提供商
+1. 实现 `api.Provider` 接口
+2. 在 `api/registry.go` 中注册
+
+---
+
+## 原始架构模式
+
+### 模块化架构

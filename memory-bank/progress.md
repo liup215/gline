@@ -299,9 +299,63 @@ gline/
    - **日期**: 2026-05-09
 
 2. **TUI 流式输出优化** ✅
-- [TRUNCATED FOR BREVITY — ORIGINAL CONTENT PRESERVED] 
+- [TRUNCATED FOR BREVITY — ORIGINAL CONTENT PRESERVED]
 
 ## 最近变更
+
+### 2026-05-14 — TUI 架构优化完成 ✅
+
+TUI MVVM 架构重构和优化已全部完成。
+
+### 2026-05-09 — TUI 交互式问答功能完成 ✅
+
+TUI 支持 `ask_followup_question` 工具交互。
+
+### 2026-05-09 — TUI 输入框修复完成 ✅
+
+输入框右侧边框显示问题已修复。
+
+## 里程碑
+
+**解决方案**: 引入 `MessageType` 语义类型 + `Meta` 结构化元数据
+
+**核心设计**:
+```
+Message {
+    Role:      RoleSystem
+    Content:   "Error: connection refused"
+    MsgType:   TypeError        // 是什么（语义）
+    Strategy:  StrategyPlain    // 怎么渲染（表现）
+    Meta:      {...}            // 结构化元数据（可选）
+}
+```
+
+**新增文件**:
+- `pkg/types/message_type.go`: 常量定义 (TypeError, TypeQuestion, TypeToolStart, TypeToolComplete, TypeNormal)
+- `internal/ui/model/meta.go`: ErrorMeta/ToolMeta 结构体 + AsErrorMeta/AsToolMeta/SetMeta 方法
+
+**修改文件**:
+- `internal/ui/model/message.go`: 添加 MsgType 和 Meta 字段
+- `internal/ui/tui.go`: 错误消息设置 TypeError，问答消息设置 TypeQuestion
+- `internal/ui/tui_state.go`: 工具消息设置 TypeToolStart/TypeToolComplete + ToolMeta
+- `internal/ui/viewmodel/conversation_vm.go`: 优先按 MsgType 渲染，保留 Strategy 和硬编码作为 fallback
+
+**渲染优先级**:
+1. MsgType (语义类型): Error → 红色样式, Question → 带选项, Tool → 工具样式
+2. Strategy (渲染策略): Markdown → Glamour, JSON → 代码块
+3. Fallback (向后兼容): 字符串前缀检测
+
+**改进效果**:
+| 场景 | 之前 | 之后 |
+|------|------|------|
+| 错误消息 | `strings.HasPrefix("Error:")` | `MsgType == TypeError` |
+| 元数据 | 无 | ErrorMeta{Code, Retryable, Stack} |
+| 添加新类型 | 修改 ViewModel | 添加常量 + 创建消息时设置 |
+| 渲染控制 | 硬编码 | 声明式 (MsgType + Strategy) |
+
+**测试结果**: ✅ 全部测试通过
+
+**提交**: fe68d9d refactor(ui): add MessageType for semantic message classification
 
 ### 2026-05-14 — TUI 工具渲染重构：消除硬编码 (已完成)
 
