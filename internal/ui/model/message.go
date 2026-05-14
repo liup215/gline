@@ -3,6 +3,7 @@
 package model
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/liup215/gline/pkg/types"
@@ -17,5 +18,7 @@ type Message struct {
 	ToolCalls []types.ToolCall
 	Options   []string           // Options for ask_followup_question display (nil for non-question messages)
 	Strategy  types.RenderStrategy // How to render this message (plain, markdown, etc.)
+	MsgType   types.MessageType    // Semantic type of the message (error, question, tool status, etc.)
+	Meta      json.RawMessage      // Type-specific structured metadata (optional)
 	Timestamp time.Time
 }

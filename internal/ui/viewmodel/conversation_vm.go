@@ -189,27 +189,59 @@ func (vm *ConversationViewModel) renderSystemMessage(msg model.Message) string {
 	content := msg.Content
 	var b strings.Builder
 
-	// Handle based on Strategy field
+	// Primary: Handle based on MessageType (semantic type)
+	switch msg.MsgType {
+	case types.TypeError:
+		b.WriteString(view.ErrorStyle.Render(content))
+		b.WriteString("\n\n")
+		return b.String()
+
+	case types.TypeQuestion:
+		b.WriteString(view.QuestionIconStyle.Render("❓ "))
+		b.WriteString(view.QuestionStyle.Render(strings.TrimPrefix(content, "❓ ")))
+		b.WriteString("\n")
+		if len(msg.Options) > 0 {
+			for i, opt := range msg.Options {
+				num := view.OptionNumStyle.Render(fmt.Sprintf("%d.", i+1))
+				b.WriteString(view.OptionStyle.Render(fmt.Sprintf("%s %s", num, opt)))
+				b.WriteString("\n")
+			}
+			b.WriteString(view.OptionHintStyle.Render("Enter option number or type your answer"))
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+		return b.String()
+
+	case types.TypeToolStart:
+		b.WriteString(view.ToolRunningStyle.Render(content))
+		b.WriteString("\n\n")
+		return b.String()
+
+	case types.TypeToolComplete:
+		b.WriteString(view.ToolCompletedStyle.Render(content))
+		b.WriteString("\n\n")
+		return b.String()
+
+	case types.TypeNormal:
+		// Fall through to Strategy-based rendering
+	}
+
+	// Secondary: Handle based on RenderStrategy
 	switch msg.Strategy {
 	case types.StrategyMarkdown:
-		// System message with markdown rendering
 		b.WriteString(vm.renderMarkdown(content, 80))
 		b.WriteString("\n\n")
 		return b.String()
 	case types.StrategyJSON:
-		// JSON code block
 		b.WriteString(view.SystemStyle.Render(content))
 		b.WriteString("\n\n")
 		return b.String()
-	case types.StrategySpecial:
-		// Special rendering handled elsewhere
-		return ""
-	case types.StrategySkip:
-		// Skip this message
+	case types.StrategySpecial, types.StrategySkip:
 		return ""
 	}
 
-	// Fallback: legacy hardcoded detection
+	// Fallback: legacy hardcoded detection (for backward compatibility)
+	// This ensures old messages without MsgType/Strategy still render correctly
 	if strings.HasPrefix(content, "Error:") || strings.HasPrefix(content, "✗") {
 		b.WriteString(view.ErrorStyle.Render(content))
 		b.WriteString("\n\n")
@@ -239,7 +271,6 @@ func (vm *ConversationViewModel) renderSystemMessage(msg model.Message) string {
 		}
 		b.WriteString("\n\n")
 	} else {
-		// Default: display unknown system messages with SystemStyle instead of silently dropping them
 		b.WriteString(view.SystemStyle.Render(content))
 		b.WriteString("\n\n")
 	}

@@ -58,12 +58,19 @@ func handleAgentToolStart(m *Model, msg bridge.ToolStartEvent) (bool, []tea.Cmd)
 	}
 
 	// Create message based on tool's decision
-	idx := m.conversation.AppendMessage(model.Message{
+	newMsg := model.Message{
 		Role:      result.Role,
 		Content:   result.Content,
 		Strategy:  result.Strategy,
+		MsgType:   types.TypeToolStart,
 		Timestamp: time.Now(),
+	}
+	// Set metadata for tool status
+	newMsg.SetMeta(model.ToolMeta{
+		ToolName: msg.Name,
+		Status:   "running",
 	})
+	idx := m.conversation.AppendMessage(newMsg)
 	m.convVM.MarkMessageDirty(idx)
 	return true, nil
 }
@@ -89,12 +96,19 @@ func handleAgentToolComplete(m *Model, msg bridge.ToolCompleteEvent) (bool, []te
 	}
 
 	// Create message based on tool's decision
-	idx := m.conversation.AppendMessage(model.Message{
+	newMsg := model.Message{
 		Role:      result.Role,
 		Content:   result.Content,
 		Strategy:  result.Strategy,
+		MsgType:   types.TypeToolComplete,
 		Timestamp: time.Now(),
+	}
+	// Set metadata for tool status
+	newMsg.SetMeta(model.ToolMeta{
+		ToolName: msg.Name,
+		Status:   "completed",
 	})
+	idx := m.conversation.AppendMessage(newMsg)
 	m.convVM.MarkMessageDirty(idx)
 	return true, nil
 }

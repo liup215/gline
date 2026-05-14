@@ -163,6 +163,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Role:      types.RoleSystem,
 			Content:   "❓ " + msg.Question,
 			Options:   msg.Options,
+			MsgType:   types.TypeQuestion,
+			Strategy:  types.StrategyPlain,
 			Timestamp: time.Now(),
 		})
 		m.convVM.MarkMessageDirty(idx)
@@ -281,13 +283,18 @@ func (m *Model) sendMessage(content string) {
 	m.updateViewport()
 }
 
-// addErrorMessage adds an error message
+// addErrorMessage adds an error message with proper typing
 func (m *Model) addErrorMessage(content string) {
-	idx := m.conversation.AppendMessage(model.Message{
-		Role:      types.RoleSystem,
-		Content:   content,
+	msg := model.Message{
+		Role:     types.RoleSystem,
+		Content:  content,
+		MsgType:  types.TypeError,
+		Strategy: types.StrategyPlain,
 		Timestamp: time.Now(),
-	})
+	}
+	// Optionally set metadata for complex errors
+	// msg.SetMeta(model.ErrorMeta{Code: 500, Retryable: false})
+	idx := m.conversation.AppendMessage(msg)
 	m.convVM.MarkMessageDirty(idx)
 	m.contentChanged = true
 	m.updateViewport()
