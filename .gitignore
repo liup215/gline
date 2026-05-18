@@ -1,5 +1,6 @@
 # Cline reference code (not part of this project)
 cline/
+.claude/
 
 # Go build artifacts
 *.exe
