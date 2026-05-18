@@ -24,9 +24,10 @@ func TestContentUpdateSurvivesToolStatus(t *testing.T) {
 	m.height = 30
 
 	m.sendMessage("read the file")
+	m.isProcessing = true // Set processing so tool status appears
 
-	// Simulate tool start via bridge event (tool status goes to toolHistory, not messages)
-	m.Update(bridge.ToolStartEvent{Name: "read_file"})
+	// Simulate tool start via bridge event - creates system message for tool
+	m.Update(bridge.ToolStartEvent{Name: "read_file", Input: "{}"})
 
 	// Simulate content arriving from the LLM
 	updatedModel, _ := m.Update(bridge.ContentEvent{Delta: "text from model"})
@@ -51,9 +52,9 @@ func TestContentUpdateSurvivesToolStatus(t *testing.T) {
 		t.Fatalf("view missing user output: %q", view)
 	}
 
-	// Tool status should appear in the tool area
-	if !strings.Contains(view, "read_file") {
-		t.Fatalf("view missing tool status: %q", view)
+	// Tool status appears as system message (🔧 icon indicates tool)
+	if !strings.Contains(view, "🔧") {
+		t.Fatalf("view missing tool indicator (🔧): %q", view)
 	}
 }
 
@@ -62,38 +63,27 @@ func TestToolStatusArea(t *testing.T) {
 	m.width = 100
 	m.height = 30
 
-	// No tools active — should show just a border
-	m.updateViewport()
-	view := m.View()
-	if !strings.Contains(view, "──") {
-		t.Fatalf("expected border line when no tools active, got: %q", view)
+	// Verify initial state - no current tool
+	if m.currentTool != "" {
+		t.Fatalf("expected no current tool initially, got: %q", m.currentTool)
 	}
 
-	// Add a running tool
-	m.conversation.ToolHistory = append(m.conversation.ToolHistory, uimodel.ToolStatus{
-		Name:   "read_file",
-		Status: "running",
-	})
-	m.updateViewport()
-	view = m.View()
-	if !strings.Contains(view, "read_file") || !strings.Contains(view, "⏳") {
-		t.Fatalf("expected running tool indicator, got: %q", view)
+	// Simulate tool start - should set currentTool
+	m.Update(bridge.ToolStartEvent{Name: "read_file", Input: "{}"})
+	if m.currentTool != "read_file" {
+		t.Fatalf("expected currentTool='read_file', got: %q", m.currentTool)
 	}
 
-	// Mark tool as completed
-	m.conversation.ToolHistory[0].Status = "completed"
-	m.updateViewport()
-	view = m.View()
-	if !strings.Contains(view, "read_file") || !strings.Contains(view, "✓") {
-		t.Fatalf("expected completed tool indicator, got: %q", view)
+	// Verify tool appears in conversation as system message
+	view := stripANSI(m.View())
+	if !strings.Contains(view, "🔧") {
+		t.Fatalf("expected tool indicator (🔧) in view, got: %q", view)
 	}
 
-	// Mark tool as failed
-	m.conversation.ToolHistory[0].Status = "failed"
-	m.updateViewport()
-	view = m.View()
-	if !strings.Contains(view, "read_file") || !strings.Contains(view, "✗") {
-		t.Fatalf("expected failed tool indicator, got: %q", view)
+	// Mark tool as completed - should clear currentTool
+	m.Update(bridge.ToolCompleteEvent{Name: "read_file", Result: "done"})
+	if m.currentTool != "" {
+		t.Fatalf("expected currentTool cleared after complete, got: %q", m.currentTool)
 	}
 }
 
@@ -126,15 +116,15 @@ func TestToolHistoryDoesNotPushContent(t *testing.T) {
 		t.Fatalf("expected 10 tool history entries, got %d", len(m.conversation.ToolHistory))
 	}
 
-	// View should contain both the assistant content and tool status
-	// Tool area shows only the most recent 4 entries (toolAreaHeight=5, minus 1 for border)
+	// View should contain the assistant content
 	view := stripANSI(m.View())
 	if !strings.Contains(view, "final answer") {
 		t.Fatalf("view missing assistant output: %q", view)
 	}
-	if !strings.Contains(view, "tool_J") {
-		t.Fatalf("view missing latest tool status (tool_J), got: %q", view)
-	}
+
+	// Note: Tool history is no longer displayed in the view directly.
+	// Current tool is shown via CompactBar when isProcessing is true.
+	// Tool history is kept for internal tracking but not rendered in the TUI.
 }
 
 func TestWindowSizeUpdateKeepsModelUsable(t *testing.T) {

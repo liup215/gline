@@ -11,8 +11,10 @@ import (
 "github.com/charmbracelet/bubbles/viewport"
 tea "github.com/charmbracelet/bubbletea"
 "github.com/charmbracelet/lipgloss"
+	"strings"
  
 "github.com/liup215/gline/internal/agent"
+	"github.com/liup215/gline/internal/slash"
 "github.com/liup215/gline/internal/ui/bridge"
 "github.com/liup215/gline/internal/ui/model"
 "github.com/liup215/gline/internal/ui/tool"
@@ -76,6 +78,12 @@ type Model struct {
 
  // Performance optimization: only refresh viewport when content actually changed
  contentChanged bool
+
+	// Slash command pending quit flag
+	quitting         bool
+
+	// Slash command menu state
+	slashMenu        *SlashMenuState
 }
 
 // New creates a new TUI model
@@ -125,6 +133,7 @@ return &Model{
     cancelCh:             make(chan context.CancelFunc, 1),
     // agentCtx/agentCancel initialized when agent starts
     pendingReply: nil,
+		slashMenu:          NewSlashMenuState(slash.NewDefaultRegistry(conv, nil)),
 }
 }
 
@@ -207,6 +216,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.textarea = newTextarea
 	cmds = append(cmds, textareaCmd)
 
+	// Update slash menu query based on current textarea content.
+	// We detect slash mode by checking if the value starts with / and has no space.
+	if m.slashMenu != nil {
+		v := m.textarea.Value()
+		if !m.slashMenu.Active {
+			if strings.HasPrefix(v, "/") && !strings.Contains(strings.TrimPrefix(v, "/"), " ") {
+				m.slashMenu.EnterSlashMode()
+				m.slashMenu.UpdateQuery(v, len(v))
+			}
+		} else {
+			m.slashMenu.UpdateQuery(v, len(v))
+		}
+	}
+
 	// Update viewport
 	newViewport, viewportCmd := m.viewport.Update(msg)
 	m.viewport = newViewport
@@ -225,13 +248,23 @@ func (m *Model) tick() tea.Cmd {
 	})
 }
 
+// isNearBottom checks if viewport is near bottom (within threshold lines).
+// This is more forgiving than AtBottom() which requires exact bottom position.
+func isNearBottom(v viewport.Model, content string, threshold int) bool {
+	totalLines := len(strings.Split(content, "\n"))
+	visibleEnd := v.YOffset + v.Height
+	return totalLines - visibleEnd <= threshold
+}
+
 // updateViewport refreshes the viewport content via the ViewModel.
 func (m *Model) updateViewport() {
 	m.convVM.Refresh(m.conversation, m.viewport.Width, m.toolAreaHeight, m.isStreaming, m.activeAssistantIndex)
-	m.viewport.SetContent(m.convVM.Content())
-	// Only scroll to bottom when the user is already at the bottom.
-	// This prevents forcing the user back down when they manually scroll up to read history.
-	if m.viewport.AtBottom() {
+	content := m.convVM.Content()
+	m.viewport.SetContent(content)
+	// Scroll to bottom when user is at bottom or near bottom (within 10 lines).
+	// This allows manual scrolling while reading history, but auto-scrolls
+	// when new content comes in while user is near bottom.
+	if isNearBottom(m.viewport, content, 10) {
 		m.viewport.GotoBottom()
 	}
 }
@@ -242,7 +275,26 @@ func (m *Model) View() string {
 		return "Loading..."
 	}
 
-	return view.RenderLayout(view.LayoutData{
+	// Render slash command menu if active
+	var menu string
+	if m.slashMenu != nil && m.slashMenu.Active && len(m.slashMenu.Filtered) > 0 {
+		menu = view.RenderSlashMenu(view.SlashMenuData{
+			Commands:      m.slashMenu.Filtered,
+			SelectedIndex: m.slashMenu.Selected,
+			Width:         m.width,
+			Query:         m.slashMenu.Query,
+		}, 5)
+	}
+
+	// Render input status bar (below input, cline style)
+	inputStatusBar := view.RenderInputStatusBar(view.InputStatusBarData{
+		Mode:      m.conversation.Mode,
+		Provider:  m.conversation.Provider,
+		ModelName: m.conversation.ModelName,
+		Width:     m.width,
+	})
+
+	layout := view.RenderLayout(view.LayoutData{
 		CompactBar: view.RenderCompactBar(view.CompactBarData{
 			Mode:         m.conversation.Mode,
 			Provider:     m.conversation.Provider,
@@ -253,11 +305,60 @@ func (m *Model) View() string {
 			SpinnerView:  m.spinner.View(),
 			Width:        m.width,
 		}),
-		Content:   m.viewport.View(),
-		ToolArea:  view.RenderToolArea(m.convVM.ToolAreaContent()),
-		InputView: m.textarea.View(),
-		Help:      view.RenderHelp(),
+		Content:        m.viewport.View(),
+		InputView:      m.textarea.View(),
+		InputStatusBar: inputStatusBar,
+		Help:           view.RenderHelp(),
+		Menu:           menu,
+		Height:         m.height,
+		InputHeight:    m.inputHeight,
 	})
+
+	return layout
+}
+
+// handleSlashCommandResult processes the result of a slash command execution.
+func handleSlashCommandResult(m *Model, result slash.CommandResult, message string) {
+	switch result {
+	case slash.ResultClearScreen:
+		m.conversation.Clear()
+		m.convVM.InvalidateCache()
+		m.updateViewport()
+	case slash.ResultQuit:
+		m.quitting = true
+	case slash.ResultShowHelp:
+		idx := m.conversation.AppendMessage(model.Message{
+			Role:      types.RoleSystem,
+			Content:   message,
+			MsgType:   types.TypeNormal,
+			Strategy: types.StrategyPlain,
+			Timestamp: time.Now(),
+		})
+		m.convVM.MarkMessageDirty(idx)
+		m.updateViewport()
+	case slash.ResultNewTask:
+		m.conversation.Clear()
+		m.convVM.InvalidateCache()
+		idx := m.conversation.AppendMessage(model.Message{
+			Role:      types.RoleSystem,
+			Content:   message,
+			MsgType:   types.TypeNormal,
+			Strategy: types.StrategyPlain,
+			Timestamp: time.Now(),
+		})
+		m.convVM.MarkMessageDirty(idx)
+		m.updateViewport()
+	case slash.ResultCompact:
+		idx := m.conversation.AppendMessage(model.Message{
+			Role:      types.RoleSystem,
+			Content:   message + ": context compaction is not yet implemented.",
+			MsgType:   types.TypeNormal,
+			Strategy: types.StrategyPlain,
+			Timestamp: time.Now(),
+		})
+		m.convVM.MarkMessageDirty(idx)
+		m.updateViewport()
+	}
 }
 
 // sendMessage adds a user message and prepares for response

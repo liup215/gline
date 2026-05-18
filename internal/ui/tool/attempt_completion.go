@@ -11,17 +11,22 @@ import (
 type AttemptCompletionRenderer struct{}
 
 func (r *AttemptCompletionRenderer) Render(req RenderRequest) RenderResult {
+	// Skip Start phase - tool result will be shown in Complete phase as system message
 	if req.Phase == types.ToolPhaseStart {
-		content := r.extractContent(req.Input)
-		return RenderResult{
-			Content:  content,
-			Role:     types.RoleAssistant,
-			Strategy: types.StrategyMarkdown,
-			Skip:     false,
-		}
+		return RenderResult{Skip: true}
 	}
-	// ToolPhaseComplete phase is skipped (already handled in Start)
-	return RenderResult{Skip: true}
+
+	// ToolPhaseComplete: show completion result as system message
+	content := r.extractContent(req.Input)
+	if content == "" {
+		return RenderResult{Skip: true}
+	}
+	return RenderResult{
+		Content:  content,
+		Role:     types.RoleSystem,
+		Strategy: types.StrategyMarkdown,
+		Skip:     false,
+	}
 }
 
 func (r *AttemptCompletionRenderer) Name() types.ToolName {

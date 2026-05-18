@@ -147,10 +147,8 @@ func TestStatusViewModelRender(t *testing.T) {
 		t.Error("Rendered output should contain 'gline'")
 	}
 
-	// When processing with streaming, should show AI is responding
-	if !contains(rendered, "AI") {
-		t.Error("Rendered output should contain 'AI' when streaming")
-	}
+	// CompactBar only shows spinner + gline, not "AI" text
+	// The AI responding status is shown elsewhere (in conversation as system message)
 }
 
 func TestStatusViewModelRenderNotProcessing(t *testing.T) {
@@ -177,10 +175,8 @@ func TestStatusViewModelRenderWithTool(t *testing.T) {
 		t.Error("Render should return non-empty string")
 	}
 
-	// When processing with a tool, should show tool name
-	if !contains(rendered, "read_file") {
-		t.Error("Rendered output should contain tool name when running tool")
-	}
+	// CompactBar only shows spinner + gline, not tool name
+	// Tool status is shown in conversation as system message (🔧 icon)
 }
 
 // Helper function

@@ -20,18 +20,28 @@ type CompactBarData struct {
 	Width        int
 }
 
-// RenderCompactBar renders a single line combining header info and dynamic status.
-// Left side: 🚀 gline · Provider/Model · [MODE]
-// Right side: dynamic status (Processing/Streaming/Tool with spinner)
+// RenderCompactBar renders a minimal header bar with just the gline logo.
 func RenderCompactBar(data CompactBarData) string {
-	// Left section: logo, provider/model, mode badge
-	modeBadge := "UNKNOWN"
-	if data.Mode == agent.ModeAct {
-		modeBadge = lipgloss.NewStyle().Foreground(lipgloss.Color("#00FF00")).Render("[ACT]")
-	} else {
-		modeBadge = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFA500")).Render("[PLAN]")
+	// Just show the gline logo and spinner if processing
+	leftContent := "🚀 gline"
+	if data.IsProcessing {
+		leftContent = fmt.Sprintf("%s %s", data.SpinnerView, leftContent)
 	}
+	return lipgloss.NewStyle().Bold(true).Render(leftContent)
+}
 
+// InputStatusBarData holds data for the status bar below input.
+type InputStatusBarData struct {
+	Mode      agent.Mode
+	Provider  string
+	ModelName string
+	Width     int
+}
+
+// RenderInputStatusBar renders the multi-line status bar below input (cline style).
+// Line 1: Model info (left) | Plan/Act mode (right)
+// Line 2: Current working directory
+func RenderInputStatusBar(data InputStatusBarData) string {
 	prov := data.Provider
 	if prov == "" {
 		prov = "-"
@@ -41,41 +51,42 @@ func RenderCompactBar(data CompactBarData) string {
 		mdl = "-"
 	}
 
-	leftContent := fmt.Sprintf("🚀 gline · %s/%s · %s", prov, mdl, modeBadge)
-	leftSection := lipgloss.NewStyle().Bold(true).Render(leftContent)
+	// Line 1: Model info | Plan/Act toggle
+	modelInfo := fmt.Sprintf("%s · %s", prov, mdl)
 
-	// Right section: dynamic status
-	rightSection := ""
-	if data.IsProcessing {
-		if data.IsStreaming {
-			rightSection = fmt.Sprintf("%s AI is responding...", data.SpinnerView)
-		} else if data.CurrentTool != "" {
-			rightSection = fmt.Sprintf("%s Running: %s", data.SpinnerView, data.CurrentTool)
-		} else {
-			rightSection = fmt.Sprintf("%s Processing...", data.SpinnerView)
-		}
-		rightSection = lipgloss.NewStyle().Foreground(lipgloss.Color("#00AAFF")).Render(rightSection)
+	// Mode toggle (○ Plan ● Act)
+	var planIndicator, actIndicator string
+	if data.Mode == agent.ModePlan {
+		planIndicator = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFA500")).Render("● Plan")
+		actIndicator = lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render("○ Act")
+	} else {
+		planIndicator = lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render("○ Plan")
+		actIndicator = lipgloss.NewStyle().Foreground(lipgloss.Color("#00AAFF")).Render("● Act")
+	}
+	modeToggle := fmt.Sprintf("%s %s (Tab)", planIndicator, actIndicator)
+
+	// Join line 1 with spacing
+	modelWidth := lipgloss.Width(modelInfo)
+	modeWidth := lipgloss.Width(modeToggle)
+	available := data.Width - modelWidth - modeWidth - 2 // 2 for padding
+	if available < 0 {
+		available = 0
 	}
 
-	// Calculate left width and pad right to align
-	leftWidth := lipgloss.Width(leftSection)
-	rightWidth := lipgloss.Width(rightSection)
+	line1 := lipgloss.JoinHorizontal(lipgloss.Top,
+		lipgloss.NewStyle().Render(modelInfo),
+		lipgloss.NewStyle().Width(available).Render(" "),
+		lipgloss.NewStyle().Render(modeToggle),
+	)
 
-	// If no status, just return the left section
-	if rightSection == "" {
-		return StatusBarStyle.Width(data.Width).Render(leftSection)
+	// Line 2: Current directory (would need to be passed in data)
+	// For now, just use a placeholder or empty
+	line2 := "" // Could add WorkingDir to data if needed
+
+	if line2 != "" {
+		return lipgloss.JoinVertical(lipgloss.Left, line1, line2)
 	}
-
-	// Join with padding to push right section to the edge
-	// Available space for middle padding
-	available := data.Width - leftWidth - rightWidth
-	if available < 1 {
-		available = 1
-	}
-
-	// Use lipgloss.JoinHorizontal with the calculated spacing
-	result := lipgloss.JoinHorizontal(lipgloss.Top, leftSection, lipgloss.NewStyle().Width(available).Render(""), rightSection)
-	return StatusBarStyle.Width(data.Width).Render(result)
+	return line1
 }
 
 // StatusBarData holds the data needed to render the status bar.

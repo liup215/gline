@@ -8,16 +8,16 @@ import (
 type PlanModeRespondRenderer struct{}
 
 func (r *PlanModeRespondRenderer) Render(req RenderRequest) RenderResult {
+	// Skip Start phase - tool result will be shown in Complete phase as system message
 	if req.Phase == types.ToolPhaseStart {
-		// Skip in start phase, will handle in complete
 		return RenderResult{Skip: true}
 	}
 
-	// ToolPhaseComplete: render the result as assistant message with markdown
+	// ToolPhaseComplete: render the result as system message with markdown
 	if req.Input != "" {
 		return RenderResult{
 			Content:  req.Input,
-			Role:     types.RoleAssistant,
+			Role:     types.RoleSystem,
 			Strategy: types.StrategyMarkdown,
 			Skip:     false,
 		}

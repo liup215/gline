@@ -121,15 +121,10 @@ func TestHandleAgentToolStartAttemptCompletion(t *testing.T) {
 	if !needsRefresh {
 		t.Error("expected needsRefresh=true")
 	}
-	// Should append an assistant message with the result
-	if len(m.conversation.Messages) != 1 {
-		t.Fatalf("expected 1 message, got %d", len(m.conversation.Messages))
-	}
-	if m.conversation.Messages[0].Role != types.RoleAssistant {
-		t.Errorf("expected assistant role, got %v", m.conversation.Messages[0].Role)
-	}
-	if !strings.Contains(m.conversation.Messages[0].Content, "Task completed successfully") {
-		t.Errorf("expected result in content, got %q", m.conversation.Messages[0].Content)
+	// attempt_completion now skips Start phase, messages created in Complete phase
+	// So Start phase should have 0 messages
+	if len(m.conversation.Messages) != 0 {
+		t.Fatalf("expected 0 messages in Start phase (now skipped), got %d", len(m.conversation.Messages))
 	}
 }
 
@@ -241,9 +236,12 @@ func TestHandleAgentToolCompleteAttemptCompletion(t *testing.T) {
 	if !needsRefresh {
 		t.Error("expected needsRefresh=true")
 	}
-	// Should NOT append any message (handled by toolStart)
-	if len(m.conversation.Messages) != 0 {
-		t.Errorf("expected 0 messages, got %d", len(m.conversation.Messages))
+	// Should append a system message (now created in Complete phase)
+	if len(m.conversation.Messages) != 1 {
+		t.Errorf("expected 1 message, got %d", len(m.conversation.Messages))
+	}
+	if m.conversation.Messages[0].Role != types.RoleSystem {
+		t.Errorf("expected system role, got %v", m.conversation.Messages[0].Role)
 	}
 }
 
@@ -260,12 +258,12 @@ func TestHandleAgentToolCompletePlanModeRespond(t *testing.T) {
 	if !needsRefresh {
 		t.Error("expected needsRefresh=true")
 	}
-	// Should append an assistant message with the full result
+	// Should append a system message with the full result (changed from assistant)
 	if len(m.conversation.Messages) != 1 {
 		t.Fatalf("expected 1 message, got %d", len(m.conversation.Messages))
 	}
-	if m.conversation.Messages[0].Role != types.RoleAssistant {
-		t.Errorf("expected assistant role, got %v", m.conversation.Messages[0].Role)
+	if m.conversation.Messages[0].Role != types.RoleSystem {
+		t.Errorf("expected system role, got %v", m.conversation.Messages[0].Role)
 	}
 	if !strings.Contains(m.conversation.Messages[0].Content, "Here is my detailed plan") {
 		t.Errorf("expected plan content, got %q", m.conversation.Messages[0].Content)
