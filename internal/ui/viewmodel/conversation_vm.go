@@ -327,6 +327,11 @@ func (vm *ConversationViewModel) renderAssistantContent(msgs []model.Message, i 
 		}
 	}
 
+	// Show a "Thinking..." placeholder when the assistant message is empty and streaming.
+	if isActiveStreaming && msg.Role == types.RoleAssistant && rendered == "" {
+		rendered = view.ThinkingIndicatorStyle.Render("Thinking...")
+	}
+
 	// Streaming indicator for active assistant message.
 	if isActiveStreaming && msg.Role == types.RoleAssistant {
 		rendered = strings.TrimRight(rendered, "\n") + "\n" + view.StreamingIndicatorStyle.Render("▌")

@@ -63,6 +63,10 @@ var (
 				Foreground(lipgloss.Color("#00FF00")).
 				Bold(true)
 
+	ThinkingIndicatorStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#888888")).
+				Italic(true)
+
 	ToolAreaBorderStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#555555"))
 
