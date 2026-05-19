@@ -34,7 +34,7 @@ type ConversationViewModel struct {
 	content           string
 	toolAreaContent   string
 	dirty             bool
-	dirtyMessages     map[int]bool       // per-message dirty flags
+	dirtyMessages     map[int]bool          // per-message dirty flags
 	messageCache      map[int]cachedMessage // pre-rendered message strings
 	renderer          *glamour.TermRenderer
 	rendererWrapWidth int

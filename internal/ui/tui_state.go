@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/bubbles/textarea"
+	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/liup215/gline/internal/ui/bridge"
 	"github.com/liup215/gline/internal/ui/model"
