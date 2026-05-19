@@ -3,6 +3,7 @@ package tool
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/liup215/gline/pkg/types"
 )
@@ -65,8 +66,12 @@ func (r *DefaultRenderer) formatStartDisplay(input string) string {
 		return fmt.Sprintf("%s %s: %s", r.icon, r.description, main)
 	}
 
-	// Fallback: show formatted input
-	return fmt.Sprintf("%s %s\n  Input: %s", r.icon, r.description, input)
+	// Fallback: show compact input (truncate if too long)
+	input = strings.TrimSpace(input)
+	if len(input) > 100 {
+		input = input[:97] + "..."
+	}
+	return fmt.Sprintf("%s %s: %s", r.icon, r.description, input)
 }
 
 func (r *DefaultRenderer) formatCompleteDisplay(input, status string) string {

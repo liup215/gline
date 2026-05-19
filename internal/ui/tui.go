@@ -192,6 +192,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if needsAgentRefresh {
 			needsRefresh = true
 		}
+		// Force scroll to bottom on stream start to follow streaming output
+		if _, ok := msg.(bridge.StreamStartEvent); ok {
+			m.updateViewportForceScroll()
+			needsRefresh = false // already handled
+		}
 
 	// Handle internal messages for real-time viewport updates
 	case tickMsg:
@@ -257,14 +262,26 @@ func isNearBottom(v viewport.Model, content string, threshold int) bool {
 }
 
 // updateViewport refreshes the viewport content via the ViewModel.
+// forceScroll parameter controls whether to force scroll to bottom.
 func (m *Model) updateViewport() {
+	m.updateViewportWithOptions(false)
+}
+
+// updateViewportForceScroll refreshes the viewport and forces scroll to bottom.
+// Use this when user sends a new message or when streaming starts.
+func (m *Model) updateViewportForceScroll() {
+	m.updateViewportWithOptions(true)
+}
+
+// updateViewportWithOptions refreshes the viewport content with options.
+func (m *Model) updateViewportWithOptions(forceScroll bool) {
 	m.convVM.Refresh(m.conversation, m.viewport.Width, m.toolAreaHeight, m.isStreaming, m.activeAssistantIndex)
 	content := m.convVM.Content()
 	m.viewport.SetContent(content)
-	// Scroll to bottom when user is at bottom or near bottom (within 10 lines).
-	// This allows manual scrolling while reading history, but auto-scrolls
-	// when new content comes in while user is near bottom.
-	if isNearBottom(m.viewport, content, 10) {
+	// Scroll to bottom when:
+	// 1. forceScroll is true (user sent new message or streaming started)
+	// 2. User is at bottom or near bottom (within 10 lines) to follow streaming output
+	if forceScroll || isNearBottom(m.viewport, content, 10) {
 		m.viewport.GotoBottom()
 	}
 }
@@ -381,7 +398,8 @@ func (m *Model) sendMessage(content string) {
 	m.isProcessing = true
 	m.isStreaming = false
 	m.contentChanged = true
-	m.updateViewport()
+	// Force scroll to bottom to show the new user message
+	m.updateViewportForceScroll()
 }
 
 // addErrorMessage adds an error message with proper typing

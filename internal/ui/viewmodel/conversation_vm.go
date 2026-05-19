@@ -167,8 +167,8 @@ func (vm *ConversationViewModel) renderMessage(msgs []model.Message, i int, widt
 func (vm *ConversationViewModel) renderUserMessage(msg model.Message, width int) string {
 	var b strings.Builder
 	b.WriteString(view.UserStyle.Render("You: "))
-	// Apply markdown rendering to user message content for consistent formatting
-	b.WriteString(vm.renderMarkdown(msg.Content, width))
+	// Render user message content directly (not as markdown)
+	b.WriteString(msg.Content)
 	b.WriteString("\n")
 	b.WriteString(view.SystemStyle.Render(msg.Timestamp.Format("15:04")))
 	b.WriteString("\n\n")
@@ -214,12 +214,12 @@ func (vm *ConversationViewModel) renderSystemMessage(msg model.Message) string {
 
 	case types.TypeToolStart:
 		b.WriteString(view.ToolRunningStyle.Render(content))
-		b.WriteString("\n\n")
+		b.WriteString("\n")
 		return b.String()
 
 	case types.TypeToolComplete:
 		b.WriteString(view.ToolCompletedStyle.Render(content))
-		b.WriteString("\n\n")
+		b.WriteString("\n")
 		return b.String()
 
 	case types.TypeNormal:
@@ -305,26 +305,20 @@ func (vm *ConversationViewModel) renderAssistantContent(msgs []model.Message, i 
 	msg := msgs[i]
 	rendered := ""
 
-	// Use ViewModel's messageCache when possible.
-	// Check if we have a cached entry for this message index with matching content and width.
-	if cache, ok := vm.messageCache[i]; ok && cache.content == msg.Content && cache.wrapWidth == wrapWidth {
-		rendered = cache.rendered
-	} else {
-		switch msg.Role {
-		case types.RoleAssistant:
-			rendered = vm.renderMarkdown(msg.Content, wrapWidth)
-		default:
+	// Always render fresh content here.
+	// Refresh() handles full-message-level caching via vm.messageCache;
+	// reading that cache here would return a FULL render (header + content),
+	// causing renderAssistantMessage to double-wrap with another header.
+	switch msg.Role {
+	case types.RoleAssistant:
+		// During streaming, show raw content to avoid empty renders for short content
+		if isActiveStreaming && len(msg.Content) < 100 {
 			rendered = msg.Content
+		} else {
+			rendered = vm.renderMarkdown(msg.Content, wrapWidth)
 		}
-
-		// Cache rendered output in ViewModel's messageCache.
-		// Note: This cache is updated in Refresh(), but we also update here
-		// for consistency when renderAssistantContent is called directly.
-		vm.messageCache[i] = cachedMessage{
-			content:   msg.Content,
-			wrapWidth: wrapWidth,
-			rendered:  rendered,
-		}
+	default:
+		rendered = msg.Content
 	}
 
 	// Show a "Thinking..." placeholder when the assistant message is empty and streaming.

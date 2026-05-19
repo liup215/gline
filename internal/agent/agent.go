@@ -430,19 +430,9 @@ func (a *BaseAgent) processStream(ctx context.Context, streamChan <-chan StreamC
 		})
 	}
 
-	// Add assistant message to conversation, including any accumulated reasoning content
-	// Surface tool calls in the visible assistant content so tests and UIs can render them.
-	toolText := formatToolCallText(toolCalls)
+	// Add assistant message to conversation, including any accumulated reasoning content.
+	// Tool calls are stored in the ToolCalls field; the TUI renders them via OnToolCallStart/Complete callbacks.
 	fullContent := content.String()
-	if toolText != "" {
-		if fullContent != "" {
-			fullContent = fullContent + "\n" + toolText
-		} else {
-			fullContent = toolText
-		}
-		// Also send tool text to callback so it's visible in the UI
-		callback.OnContent("\n" + toolText)
-	}
 	a.conversation.AddMessage(types.Message{
 		Role:             types.RoleAssistant,
 		Content:          fullContent,
@@ -457,28 +447,6 @@ func (a *BaseAgent) processStream(ctx context.Context, streamChan <-chan StreamC
 	}
 
 	return nil
-}
-
-func formatToolCallText(toolCalls []ToolCall) string {
-	if len(toolCalls) == 0 {
-		return ""
-	}
-
-	parts := make([]string, 0, len(toolCalls))
-	for _, tc := range toolCalls {
-		if tc.Name == "" {
-			continue
-		}
-
-		input := strings.TrimSpace(tc.Input)
-		if input == "" {
-			input = "{}"
-		}
-
-		parts = append(parts, fmt.Sprintf("[tool:%s] %s", tc.Name, input))
-	}
-
-	return strings.Join(parts, "\n")
 }
 
 // convertTools converts internal tool definitions to provider format

@@ -333,7 +333,7 @@ func TestFormatToolCompleteDisplay(t *testing.T) {
 			toolName: "read_file",
 			result:   "line1\nline2\nline3\nline4\nline5\nline6\nline7",
 			status:   "completed",
-			wantSub:  "2 more lines",
+			wantSub:  "...",
 		},
 	}
 	for _, tt := range tests {

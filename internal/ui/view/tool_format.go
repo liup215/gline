@@ -1,7 +1,6 @@
 package view
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -26,12 +25,12 @@ func FormatToolStartDisplay(name, input string) string {
 		return fmt.Sprintf("🔧 %s: %s", desc, main)
 	}
 
-	// Fallback: pretty-print the JSON input
-	var buf bytes.Buffer
-	if err := json.Indent(&buf, []byte(input), "  ", "  "); err == nil {
-		return fmt.Sprintf("🔧 %s\n  Input:\n%s", desc, buf.String())
+	// Fallback: show compact input (truncate if too long)
+	input = strings.TrimSpace(input)
+	if len(input) > 100 {
+		return fmt.Sprintf("🔧 %s: %s...", desc, input[:97])
 	}
-	return fmt.Sprintf("🔧 %s\n  Input: %s", desc, input)
+	return fmt.Sprintf("🔧 %s: %s", desc, input)
 }
 
 // FormatAttemptCompletionContent extracts a human-friendly result string from
@@ -74,10 +73,12 @@ func FormatToolCompleteDisplay(name, result, status string) string {
 	}
 	content := fmt.Sprintf("🔧 %s: %s", statusText, name)
 	if result != "" {
-		lines := FormatToolResultLines(result, 5)
-		content += "\n"
-		for _, l := range lines {
-			content += l + "\n"
+		lines := FormatToolResultLines(result, 3)
+		if len(lines) > 0 {
+			content += " | " + lines[0]
+			if len(lines) > 1 {
+				content += "..."
+			}
 		}
 	}
 	return content

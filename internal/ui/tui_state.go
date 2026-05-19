@@ -21,10 +21,18 @@ import (
 
 // handleAgentContent appends streaming content to the active assistant message.
 func handleAgentContent(m *Model, msg bridge.ContentEvent) (bool, []tea.Cmd) {
-	msgs := m.conversation.Messages
-	// Ensure an assistant slot exists; create one if not present (e.g., tool status arrived first).
-	if m.activeAssistantIndex < 0 || m.activeAssistantIndex >= len(msgs) || msgs[m.activeAssistantIndex].Role != types.RoleAssistant {
+	// Ensure an assistant slot exists; create one if not present
+	// Check bounds and role to handle cases where tool messages were added
+	if m.activeAssistantIndex < 0 || m.activeAssistantIndex >= len(m.conversation.Messages) {
 		// Create a new assistant message slot and set it active.
+		m.activeAssistantIndex = m.conversation.AppendMessage(model.Message{
+			Role:      types.RoleAssistant,
+			Content:   "",
+			Timestamp: time.Now(),
+		})
+	} else if m.conversation.Messages[m.activeAssistantIndex].Role != types.RoleAssistant {
+		// The index points to a non-assistant message (e.g., tool message)
+		// Create a new assistant message
 		m.activeAssistantIndex = m.conversation.AppendMessage(model.Message{
 			Role:      types.RoleAssistant,
 			Content:   "",
@@ -143,10 +151,22 @@ func handleAgentComplete(m *Model, msg bridge.CompleteEvent) (bool, []tea.Cmd) {
 	return true, cmds
 }
 
-// handleAgentStreamStart creates a new assistant message slot for streaming.
+// handleAgentStreamStart creates (or reuses) an assistant message slot for streaming.
 func handleAgentStreamStart(m *Model, msg bridge.StreamStartEvent) (bool, []tea.Cmd) {
 	m.isStreaming = true
-	// Create a new assistant message slot for the new stream round
+	// Reuse the existing assistant message slot if it is still empty.
+	// This prevents accumulating blank assistant messages across multiple
+	// tool-call rounds where the LLM outputs no text before making a tool call.
+	if m.activeAssistantIndex >= 0 &&
+		m.activeAssistantIndex < len(m.conversation.Messages) &&
+		m.conversation.Messages[m.activeAssistantIndex].Role == types.RoleAssistant &&
+		m.conversation.Messages[m.activeAssistantIndex].Content == "" {
+		// Reuse: just refresh the timestamp so it looks current.
+		m.conversation.Messages[m.activeAssistantIndex].Timestamp = time.Now()
+		m.convVM.MarkMessageDirty(m.activeAssistantIndex)
+		return true, nil
+	}
+	// Create a new assistant message slot for this stream round.
 	m.activeAssistantIndex = m.conversation.AppendMessage(model.Message{
 		Role:      types.RoleAssistant,
 		Content:   "",
