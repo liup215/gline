@@ -118,24 +118,25 @@ func New(agentInstance *agent.BaseAgent) *Model {
 	conv.Provider = providerName
 	conv.ModelName = modelName
 
-return &Model{
-	textarea:             ta,
-	viewport:             vp,
-	spinner:              s,
-	conversation:         conv,
-	convVM:               viewmodel.NewConversationViewModel(),
-	toolRegistry:         tool.NewDefaultRegistry(),
-	inputHeight:          3,
-	toolAreaHeight:       3,
-	activeAssistantIndex: -1,
-	agentInstance:        agentInstance,
-    ctx:                  context.Background(),
-    // keep legacy cancelCh for tests
-    cancelCh:             make(chan context.CancelFunc, 1),
-    // agentCtx/agentCancel initialized when agent starts
-    pendingReply: nil,
-		slashMenu:          NewSlashMenuState(slash.NewDefaultRegistry(conv, nil)),
-}
+	m := &Model{
+		textarea:             ta,
+		viewport:             vp,
+		spinner:              s,
+		conversation:         conv,
+		convVM:               viewmodel.NewConversationViewModel(),
+		toolRegistry:         tool.NewDefaultRegistry(),
+		inputHeight:          3,
+		toolAreaHeight:       3,
+		activeAssistantIndex: -1,
+		agentInstance:        agentInstance,
+		ctx:                  context.Background(),
+		cancelCh:             make(chan context.CancelFunc, 1),
+		pendingReply:         nil,
+	}
+	m.slashMenu = NewSlashMenuState(slash.NewDefaultRegistry(conv, func(result slash.CommandResult, message string) {
+		handleSlashCommandResult(m, result, message)
+	}))
+	return m
 }
 
 // Init initializes the TUI
@@ -241,6 +242,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.viewport = newViewport
 	cmds = append(cmds, viewportCmd)
 
+	// If a slash command requested quit, append tea.Quit so Bubbletea exits.
+	if m.quitting {
+		cmds = append(cmds, tea.Quit)
+	}
+
 	return m, tea.Batch(cmds...)
 }
 
@@ -339,8 +345,21 @@ func (m *Model) View() string {
 func handleSlashCommandResult(m *Model, result slash.CommandResult, message string) {
 	switch result {
 	case slash.ResultClearScreen:
+		// If agent is processing, abort it first so the clear is clean
+		if m.isProcessing && m.agentInstance != nil {
+			m.agentInstance.Abort()
+		}
 		m.conversation.Clear()
 		m.convVM.InvalidateCache()
+		if m.agentInstance != nil {
+			if conv := m.agentInstance.GetConversation(); conv != nil {
+				conv.Clear()
+			}
+		}
+		m.isProcessing = false
+		m.isStreaming = false
+		m.currentTool = ""
+		m.textarea.Focus()
 		m.updateViewport()
 	case slash.ResultQuit:
 		m.quitting = true
@@ -355,8 +374,21 @@ func handleSlashCommandResult(m *Model, result slash.CommandResult, message stri
 		m.convVM.MarkMessageDirty(idx)
 		m.updateViewport()
 	case slash.ResultNewTask:
+		// Abort any running agent work before starting a new task
+		if m.isProcessing && m.agentInstance != nil {
+			m.agentInstance.Abort()
+		}
 		m.conversation.Clear()
 		m.convVM.InvalidateCache()
+		if m.agentInstance != nil {
+			if conv := m.agentInstance.GetConversation(); conv != nil {
+				conv.Clear()
+			}
+		}
+		m.isProcessing = false
+		m.isStreaming = false
+		m.currentTool = ""
+		m.activeAssistantIndex = -1
 		idx := m.conversation.AppendMessage(model.Message{
 			Role:      types.RoleSystem,
 			Content:   message,

@@ -334,6 +334,44 @@ gline/
 - `internal/prompts/system.go` — 支持追加自定义规则
 - `README.md` — 使用文档
 
+### 2025-06-20 — Slash 命令功能修复 ✅
+
+**功能**: 修复 TUI slash 命令"有 UI 无后台"的关键缺陷。
+
+**根因分析** (4 个关键缺陷):
+1. **`OnResult` 回调为 `nil`** — `New()` 中 `slash.NewDefaultRegistry(conv, nil)` 传入了 nil，所有 handler 的 `ctx.OnResult()` 调用无效
+2. **`handleSlashCommandResult` 从未被调用** — 已完整实现所有结果处理逻辑，但因 OnResult 为 nil 从未执行
+3. **`quitting` 标志未处理** — `ResultQuit` 设置了 `m.quitting = true`，但 `Update()` 没有检查该标志来触发 `tea.Quit`
+4. **Agent 层状态未同步** — `/clear`、`/newtask` 只清空了 UI 层 `model.Conversation`，没有清空后台 Agent 的 `types.Conversation`
+
+**修复内容**:
+1. **修复 `New()` 初始化** — 将 `slashMenu` 初始化移到 `Model` 创建之后，传入真正引用 `m` 的 `OnResult` 闭包
+2. **修复 `Update()` 退出逻辑** — 在 return 前检查 `m.quitting`，若为 true 则追加 `tea.Quit`
+3. **增强 `handleSlashCommandResult`** — 所有结果处理都同步 Agent 层状态
+
+**支持的 Slash 命令**:
+- `/clear` — 清空当前对话（UI + Agent 双清空，abort 运行中任务）
+- `/exit` 或 `/q` — 退出 gline
+- `/help` — 显示帮助信息
+- `/newtask [name]` — 开始新任务（UI + Agent 双清空，保留系统上下文）
+- `/smol` 或 `/compact` — 压缩对话上下文（调用 TrimToMaxTokens）
+
+**验证结果**:
+- ✅ `go build ./...` 编译通过
+- ✅ `go vet ./...` 无静态分析错误
+- ✅ `go test ./internal/slash/...` 通过
+- ✅ `go test ./internal/ui/...` 全部通过
+
+**修改文件**:
+- `internal/ui/tui.go` — 3 处修改（New、Update、handleSlashCommandResult）
+
+**参考研究** (Cline CLI 源码分析):
+- Cline CLI 的 slash 命令通过 `SlashCommandRegistry` 管理，分为三类：
+  - `execution: "local"` — TUI 本地处理（如 /help, /exit, /clear）
+  - `execution: "runtime"` — 发送到后端 Agent 处理（如 /newtask → 转换为 new_task 工具调用）
+  - `execution: "user-command"` — 展开为提示词注入（如 workflow/skill 命令）
+- `parseSlashCommands()` 在 `src/core/slash-commands/index.ts` 中将命令替换为对应的系统提示词
+
 ## 最近变更
 
 ### 2026-05-14 — TUI 架构优化完成 ✅

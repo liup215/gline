@@ -2,6 +2,40 @@
 
 ## 当前焦点
 
+### Slash 命令功能修复 ✅ 已完成 (2025-06-20)
+
+修复了 TUI slash 命令"有 UI 无后台"的关键缺陷。用户输入 `/clear`、`/exit`、`/newtask` 等命令后，TUI 显示菜单和补全，但后台逻辑从未真正执行。
+
+**根因分析** (4 个缺陷):
+1. **`OnResult` 回调为 `nil`** — `New()` 中 `slash.NewDefaultRegistry(conv, nil)` 传入了 nil，所有 handler 的 `ctx.OnResult()` 调用无效
+2. **`handleSlashCommandResult` 从未被调用** — 已有完整结果处理逻辑，但因 OnResult 为 nil 从未执行
+3. **`quitting` 标志未处理** — `ResultQuit` 设置了 `m.quitting = true`，但 `Update()` 没有检查该标志来触发 `tea.Quit`
+4. **Agent 层状态未同步** — `/clear`、`/newtask` 只清空了 UI 层 `model.Conversation`，没有清空后台 Agent 的 `types.Conversation`
+
+**修复内容**:
+1. **修复 `New()` 初始化** — 将 `slashMenu` 初始化移到 `Model` 创建之后，传入真正引用 `m` 的 `OnResult` 闭包：`func(result, message) { handleSlashCommandResult(m, result, message) }`
+2. **修复 `Update()` 退出逻辑** — 在 return 前检查 `m.quitting`，若为 true 则追加 `tea.Quit`
+3. **增强 `handleSlashCommandResult`** — 所有结果处理都同步 Agent 层状态：
+   - `ResultClearScreen`: abort 运行中 agent → 清空 UI + agent conversation → 重置处理状态 → refocus 输入框
+   - `ResultNewTask`: 同上，额外重置 `activeAssistantIndex`
+   - `ResultCompact`: 调用 `agentInstance.GetConversation().TrimToMaxTokens()`，显示压缩统计
+   - `ResultQuit`: 触发 Bubbletea 退出
+   - `ResultShowHelp`: 添加帮助系统消息到对话
+
+**验证结果**:
+- ✅ `go build ./...` 编译通过
+- ✅ `go vet ./...` 无静态分析错误
+- ✅ `go test ./internal/slash/...` 通过
+- ✅ `go test ./internal/ui/...` 全部通过
+
+**修改文件**:
+- `internal/ui/tui.go` — 3 处修改（New、Update、handleSlashCommandResult）
+
+**参考**: Cline CLI 的 slash 命令分为三类：
+- `execution: "local"` — TUI 本地处理（如 /help, /exit, /clear）
+- `execution: "runtime"` — 发送到后端 Agent 处理（如 /newtask, /compact）
+- `execution: "user-command"` — 展开为提示词注入（如 workflow/skill 命令）
+
 ### 自定义规则 / 系统提示词扩展 ✅ 已完成 (2026-05-23)
 
 实现了从文件系统自动加载自定义规则并追加到系统提示词末尾的功能。

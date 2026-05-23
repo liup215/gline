@@ -380,6 +380,158 @@ TUI MVVM 是 UI 层内部细化，不影响系统整体架构：
 1. 实现 `api.Provider` 接口
 2. 在 `api/registry.go` 中注册
 
+### 添加新的 Slash 命令
+1. 在 `internal/slash/commands.go` 的 `DefaultCommands()` 中定义命令
+2. 通过 `CommandContext.OnResult` 与 TUI 交互（使用 `slash.CommandResult`）
+3. 在 `NewDefaultRegistry()` 中注册到 `slash.Registry`
+
+---
+
+## Slash 命令架构
+
+### 分层设计
+
+```
+┌─────────────────────────────────────────────┐
+│              TUI (Bubbletea)                │
+│  ┌──────────────────────────────────────┐  │
+│  │  Model.Update() → handleKeyMsg()     │  │
+│  │    ↓                                 │  │
+│  │  executeSlashCommand()               │  │
+│  │    ↓                                 │  │
+│  │  slashMenu.Registry.Get(name)        │  │
+│  │    ↓                                 │  │
+│  │  cmd.Handler(args) → OnResult()      │  │
+│  │    ↓                                 │  │
+│  │  handleSlashCommandResult()          │  │
+│  └──────────────────────────────────────┘  │
+├─────────────────────────────────────────────┤
+│           UI Layer (internal/ui)              │
+│  ┌──────────────┐      ┌─────────────────┐  │
+│  │ SlashMenuState│     │ SlashMenuState  │  │
+│  │  (菜单/导航)   │     │  (过滤/选择)    │  │
+│  └──────────────┘      └─────────────────┘  │
+├─────────────────────────────────────────────┤
+│         Slash Layer (internal/slash)          │
+│  ┌──────────────┐      ┌─────────────────┐  │
+│  │   Registry   │      │  DefaultCommands │  │
+│  │  (命令注册表) │      │  (内置命令定义)  │  │
+│  └──────────────┘      └─────────────────┘  │
+├─────────────────────────────────────────────┤
+│         Domain Layer (model/agent)           │
+│  ┌──────────────┐      ┌─────────────────┐  │
+│  │ model.Conversation  │  types.Conversation│ │
+│  │   (UI 状态)         │   (Agent 状态)     │ │
+│  └──────────────┘      └─────────────────┘  │
+└─────────────────────────────────────────────┘
+```
+
+### 核心交互流程
+
+```
+用户输入: "/clear"
+    ↓
+handleKeyMsg() → IsStandaloneCommand("/clear") == true
+    ↓
+executeSlashCommand(m, "/clear")
+    ↓
+slash.ParseCommand("/clear") → ("clear", "")
+    ↓
+m.slashMenu.Registry.Get("clear") → *SlashCommand
+    ↓
+cmd.Handler("") —— 调用内置 handler
+    ↓
+handler 内部: ctx.OnResult(ResultClearScreen, "Conversation cleared")
+    ↓
+OnResult 闭包: handleSlashCommandResult(m, ResultClearScreen, "...")
+    ↓
+结果处理:
+  - abort 运行中 agent
+  - m.conversation.Clear()      ← UI 层
+  - m.agentInstance.GetConversation().Clear()  ← Agent 层
+  - m.updateViewport()
+```
+
+### 关键数据流
+
+**1. 命令定义 → 结果通知 → UI 响应**
+```go
+// internal/slash/commands.go
+func DefaultCommands(ctx *CommandContext) []*types.SlashCommand {
+    return []*types.SlashCommand{
+        {
+            Name: "clear",
+            Handler: func(args string) (bool, error) {
+                ctx.Conversation.Clear()
+                ctx.OnResult(ResultClearScreen, "Conversation cleared")
+                return true, nil
+            },
+        },
+    }
+}
+
+// internal/ui/tui.go — New() 中建立连接
+m.slashMenu = NewSlashMenuState(slash.NewDefaultRegistry(conv, 
+    func(result slash.CommandResult, message string) {
+        handleSlashCommandResult(m, result, message)
+    }))
+```
+
+**2. 双 Conversation 同步**
+
+Slash 命令影响两个独立但关联的 conversation：
+
+| 层级 | 类型 | 职责 | 影响命令 |
+|------|------|------|----------|
+| UI 层 | `model.Conversation` | 用户可见消息、工具历史、渲染缓存 | `/clear`, `/newtask` |
+| Agent 层 | `types.Conversation` | LLM 请求消息、token 预算管理 | `/compact` |
+
+命令执行时必须同步更新两层，避免 UI 显示和 Agent 实际状态不一致。
+
+### Cline 参考设计
+
+对比 Cline CLI (TypeScript) 的 slash 命令处理：
+
+**Cline 三层分类**:
+1. **local execution** (`execution: "local"`) — TUI 本地处理
+   - `/help`, `/exit`, `/settings`, `/clear`, `/q`
+   - 直接修改 TUI 状态，不发送到后端
+   
+2. **runtime execution** (`execution: "runtime"`) — 发送到后端处理
+   - `/newtask` → 在后端转换为 `<new_task>` 工具调用
+   - `/smol`, `/compact` → 在后端运行 condense 逻辑
+   
+3. **user-command execution** (`execution: "user-command"`) — 展开为提示词注入
+   - `/workflow-name` → 展开为 `<explicit_instructions>` 块
+   - `/skill-name` → 展开为对应的系统提示词
+
+**Cline 的 `parseSlashCommands()`**:
+```typescript
+// src/core/slash-commands/index.ts
+export async function parseSlashCommands(text, ...): Promise<...> {
+    // 1. 在 XML 标签内查找 /command
+    // 2. 默认命令 → 替换为对应的工具响应提示词
+    // 3. MCP 命令 → 获取 MCP prompt 内容
+    // 4. Workflow 命令 → 读取工作流文件内容
+    // 5. 返回处理后的文本 + 是否需要检查 clinerules
+}
+```
+
+### gline 当前实现
+
+**已实现** (与 Cline `execution: "local"` 等价):
+- `/clear` — 清空对话 (UI + Agent 双清空)
+- `/exit`, `/q` — 退出程序
+- `/help` — 显示帮助信息
+- `/newtask` — 开始新任务 (UI + Agent 双清空)
+- `/smol`, `/compact` — 压缩上下文 (调用 `TrimToMaxTokens()`)
+
+**待实现** (Cline 的 `execution: "runtime"/"user-command"`):
+- `/deep-planning` — 转换为深度规划提示词
+- `/explain-changes` — 需要 git diff 支持
+- `/reportbug` — 需要 GitHub issue 集成
+- Workflow/skill 命令 — 需要工作流系统
+
 ---
 
 ## 原始架构模式
