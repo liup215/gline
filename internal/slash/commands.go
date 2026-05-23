@@ -17,6 +17,7 @@ const (
 	ResultNewTask
 	ResultCompact
 	ResultShowHelp
+	ResultShowHistory
 )
 
 // CommandContext holds the dependencies needed by slash command handlers.
@@ -117,6 +118,17 @@ func DefaultCommands(ctx *CommandContext) []*types.SlashCommand {
 				return true, nil
 			},
 		},
+		{
+			Name:        "history",
+			Description: "Show conversation history and load previous tasks",
+			Section:     types.SectionDefault,
+			Handler: func(args string) (bool, error) {
+				if ctx != nil && ctx.OnResult != nil {
+					ctx.OnResult(ResultShowHistory, "")
+				}
+				return true, nil
+			},
+		},
 	}
 }
 
@@ -131,6 +143,7 @@ func buildHelpText() string {
 		{"/exit or /q", "Exit gline"},
 		{"/newtask [name]", "Start a new task (preserves system context)"},
 		{"/smol or /compact", "Compact conversation to save tokens"},
+		{"/history", "Show conversation history"},
 	}
 	for _, c := range commands {
 		b.WriteString(fmt.Sprintf("  %-18s %s\n", c.name, c.desc))
@@ -140,5 +153,6 @@ func buildHelpText() string {
 	b.WriteString("  Ctrl+L       Clear screen\n")
 	b.WriteString("  Ctrl+C       Quit\n")
 	b.WriteString("  Esc          Interrupt running task\n")
+	b.WriteString("  Ctrl+H       Show history\n")
 	return b.String()
 }

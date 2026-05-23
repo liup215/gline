@@ -3,6 +3,7 @@ package ui
 
 import (
 "context"
+"encoding/json"
 "fmt"
 "sync"
 "time"
@@ -13,6 +14,7 @@ import (
 tea "github.com/charmbracelet/bubbletea"
 "github.com/charmbracelet/lipgloss"
 	"strings"
+	"github.com/liup215/gline/internal/storage"
  
 "github.com/liup215/gline/internal/agent"
 	"github.com/liup215/gline/internal/slash"
@@ -22,6 +24,14 @@ tea "github.com/charmbracelet/bubbletea"
 	"github.com/liup215/gline/internal/ui/view"
 "github.com/liup215/gline/internal/ui/viewmodel"
 "github.com/liup215/gline/pkg/types"
+)
+
+// ScreenType represents the current TUI screen.
+type ScreenType int
+
+const (
+	ScreenChat ScreenType = iota
+	ScreenHistory
 )
 
 // Model represents the TUI state.
@@ -85,6 +95,17 @@ type Model struct {
 
 	// Slash command menu state
 	slashMenu        *SlashMenuState
+
+	// Screen navigation
+	screen            ScreenType
+
+	// History screen state (screen == ScreenHistory)
+	store             storage.Store
+	historyTasks      []storage.TaskRecord
+	historySelected   int
+	historyDetail     *storage.TaskRecord
+	historyMessages   []storage.MessageRecord
+	historyConfirmID  string
 }
 
 // New creates a new TUI model
@@ -136,6 +157,14 @@ func New(agentInstance *agent.BaseAgent) *Model {
 	m.slashMenu = NewSlashMenuState(slash.NewDefaultRegistry(conv, func(result slash.CommandResult, message string) {
 		handleSlashCommandResult(m, result, message)
 	}))
+
+	// Inject store from agent for history functionality
+	if agentInstance != nil {
+		if s := agentInstance.GetStore(); s != nil {
+			m.store = s
+		}
+	}
+
 	return m
 }
 
@@ -299,6 +328,20 @@ func (m *Model) View() string {
 		return "Loading..."
 	}
 
+	// Render history screen if active
+	if m.screen == ScreenHistory {
+		return view.RenderHistoryScreen(view.HistoryScreenData{
+			Tasks:         m.historyTasks,
+			SelectedIndex: m.historySelected,
+			ShowDetail:    m.historyDetail != nil,
+			DetailTask:    m.historyDetail,
+			DetailMsgs:    m.historyMessages,
+			ConfirmDelete: m.historyConfirmID,
+			Width:         m.width,
+			Height:        m.height,
+		})
+	}
+
 	// Render slash command menu if active
 	var menu string
 	if m.slashMenu != nil && m.slashMenu.Active && len(m.slashMenu.Filtered) > 0 {
@@ -384,6 +427,12 @@ func handleSlashCommandResult(m *Model, result slash.CommandResult, message stri
 			if conv := m.agentInstance.GetConversation(); conv != nil {
 				conv.Clear()
 			}
+			// Extract title from message ("Starting new task: Title" or "Starting new task")
+			title := strings.TrimPrefix(message, "Starting new task")
+			title = strings.TrimPrefix(title, ": ")
+			title = strings.TrimSpace(title)
+			m.agentInstance.SetTaskTitle(title)
+			m.agentInstance.ResetTask()
 		}
 		m.isProcessing = false
 		m.isStreaming = false
@@ -417,6 +466,8 @@ func handleSlashCommandResult(m *Model, result slash.CommandResult, message stri
 		})
 		m.convVM.MarkMessageDirty(idx)
 		m.updateViewport()
+	case slash.ResultShowHistory:
+		m.enterHistoryScreen()
 	}
 }
 
@@ -537,4 +588,151 @@ func calculateLayout(totalHeight int) (viewportH, toolH, inputH int) {
 	}
 
 	return viewportH, toolH, inputH
+}
+
+// ---------------------------------------------------------------------------
+// History screen helpers
+// ---------------------------------------------------------------------------
+
+// enterHistoryScreen loads history and switches to the history screen.
+func (m *Model) enterHistoryScreen() {
+	if m.store == nil {
+		m.addErrorMessage("History is not available (storage not initialized)")
+		m.updateViewport()
+		return
+	}
+	tasks, err := m.store.ListTasks(50, 0)
+	if err != nil {
+		m.addErrorMessage("Failed to load history: " + err.Error())
+		m.updateViewport()
+		return
+	}
+	m.historyTasks = tasks
+	m.historySelected = 0
+	m.historyDetail = nil
+	m.historyMessages = nil
+	m.historyConfirmID = ""
+	m.screen = ScreenHistory
+}
+
+// enterHistoryDetail shows the detail view for the selected task.
+func (m *Model) enterHistoryDetail() {
+	if m.historySelected < 0 || m.historySelected >= len(m.historyTasks) {
+		return
+	}
+	task := m.historyTasks[m.historySelected]
+	msgs, err := m.store.GetMessages(task.ID)
+	if err != nil {
+		return
+	}
+	m.historyDetail = &task
+	m.historyMessages = msgs
+}
+
+// loadHistoryTask loads a historical task into the chat and continues it.
+func (m *Model) loadHistoryTask() {
+	if m.historySelected < 0 || m.historySelected >= len(m.historyTasks) {
+		return
+	}
+	task := m.historyTasks[m.historySelected]
+
+	// Reset current conversation
+	m.conversation.Clear()
+	m.convVM.InvalidateCache()
+	if m.agentInstance != nil {
+		if conv := m.agentInstance.GetConversation(); conv != nil {
+			conv.Clear()
+		}
+	}
+
+	// Load messages from storage
+	msgs, err := m.store.GetMessages(task.ID)
+	if err != nil {
+		m.addErrorMessage("Failed to load messages: " + err.Error())
+		m.screen = ScreenChat
+		m.updateViewport()
+		return
+	}
+
+	// Convert storage messages to UI and agent conversations
+	for _, msg := range msgs {
+		role := types.Role(msg.Role)
+
+		var toolCalls []types.ToolCall
+		if msg.ToolCalls != "" {
+			_ = json.Unmarshal([]byte(msg.ToolCalls), &toolCalls)
+		}
+
+		// Build UI message
+		mtype := types.TypeNormal
+		if role == types.RoleTool {
+			mtype = types.TypeToolComplete
+		}
+		m.conversation.Messages = append(m.conversation.Messages, model.Message{
+			Role:      role,
+			Content:   msg.Content,
+			MsgType:   mtype,
+			Strategy:  types.StrategyPlain,
+			Timestamp: msg.CreatedAt,
+		})
+
+		// Build agent message
+		if m.agentInstance != nil {
+			m.agentInstance.GetConversation().AddMessage(types.Message{
+				Role:             role,
+				Content:          msg.Content,
+				ReasoningContent: msg.ReasoningContent,
+				ToolCalls:         toolCalls,
+				ToolCallID:        msg.ToolCallID,
+				Timestamp:         msg.CreatedAt,
+			})
+		}
+	}
+
+	// Sync task identity
+	if m.agentInstance != nil {
+		m.agentInstance.SetTaskID(task.ID)
+		m.agentInstance.SetTaskTitle(task.Title)
+	}
+
+	// Set mode
+	m.conversation.Mode = agent.ModeAct
+	if task.Mode == "plan" {
+		m.conversation.Mode = agent.ModePlan
+	}
+	if m.agentInstance != nil {
+		m.agentInstance.SetMode(m.conversation.Mode)
+	}
+
+	m.screen = ScreenChat
+	m.isProcessing = false
+	m.isStreaming = false
+	m.currentTool = ""
+	m.activeAssistantIndex = -1
+	m.textarea.Focus()
+	m.updateViewport()
+
+	// Add system message indicating continuation
+	idx := m.conversation.AppendMessage(model.Message{
+		Role:      types.RoleSystem,
+		Content:   "↺ Loaded task: " + task.Title,
+		MsgType:   types.TypeNormal,
+		Strategy:  types.StrategyPlain,
+		Timestamp: time.Now(),
+	})
+	m.convVM.MarkMessageDirty(idx)
+	m.updateViewport()
+}
+
+// deleteHistoryTask removes the selected task from storage.
+func (m *Model) deleteHistoryTask() {
+	if m.historySelected < 0 || m.historySelected >= len(m.historyTasks) {
+		return
+	}
+	task := m.historyTasks[m.historySelected]
+	if err := m.store.DeleteTask(task.ID); err != nil {
+		m.addErrorMessage("Failed to delete task: " + err.Error())
+		return
+	}
+	m.enterHistoryScreen()
 }

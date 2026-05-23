@@ -30,8 +30,8 @@ func TestSlashMenuState_EnterSlashMode(t *testing.T) {
 	if !state.Active {
 		t.Fatal("expected active after EnterSlashMode")
 	}
-	if len(state.Filtered) != 7 { // clear, help, exit, q, newtask, smol, compact
-		t.Fatalf("expected 7 commands, got %d", len(state.Filtered))
+	if len(state.Filtered) != 8 { // clear, compact, exit, help, history, newtask, q, smol
+		t.Fatalf("expected 8 commands, got %d", len(state.Filtered))
 	}
 }
 
@@ -95,15 +95,15 @@ func TestSlashMenuState_NextPrev(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		state.Next()
 	}
-	if state.Selected != 4 { // (1 + 10) % 7 = 4
-		t.Fatalf("expected wrap to 4, got %d", state.Selected)
+	if state.Selected != 3 { // (1 + 10) % 8 = 3
+		t.Fatalf("expected wrap to 3, got %d", state.Selected)
 	}
 
 	// Wrap around backward from 0
 	state.Selected = 0
 	state.Prev()
-	if state.Selected != 6 {
-		t.Fatalf("expected wrap to 6, got %d", state.Selected)
+	if state.Selected != 7 {
+		t.Fatalf("expected wrap to 7, got %d", state.Selected)
 	}
 }
 

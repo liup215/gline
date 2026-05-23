@@ -11,7 +11,7 @@
 | TUI | `github.com/charmbracelet/bubbletea` | v1.0+ | 交互式终端 UI |
 | 样式 | `github.com/charmbracelet/lipgloss` | v0.10+ | 终端样式 |
 | 进度条 | `github.com/charmbracelet/bubbles` | v0.18+ | UI 组件 |
-| 数据库 | `github.com/mattn/go-sqlite3` | v1.14+ | SQLite 绑定 |
+| 数据库 | `modernc.org/sqlite` | v1.50+ | 纯 Go SQLite（零 CGO） |
 | HTTP 客户端 | `github.com/go-resty/resty/v2` | v2.12+ | API 调用 |
 | 日志 | `github.com/rs/zerolog` | v1.32+ | 结构化日志 |
 | 文件监控 | `github.com/fsnotify/fsnotify` | v1.7+ | 配置热更新 |

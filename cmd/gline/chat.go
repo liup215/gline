@@ -9,6 +9,7 @@ import (
 	"github.com/liup215/gline/internal/api"
 	"github.com/liup215/gline/internal/log"
 	"github.com/liup215/gline/internal/prompts"
+	"github.com/liup215/gline/internal/storage"
 	"github.com/liup215/gline/internal/tools"
 	"github.com/liup215/gline/internal/ui"
 )
@@ -83,12 +84,20 @@ func initializeAgent() (*agent.BaseAgent, error) {
 		log.Info("Custom rules loaded successfully")
 	}
 
+	// Create persistent storage
+	store, err := storage.NewSQLiteStore("")
+	if err != nil {
+		log.Warnf("Failed to initialize storage: %v", err)
+		store = nil // Continue without storage
+	}
+
 	// Create agent options
 	opts := agent.Options{
 		Provider:     provider,
 		ToolRegistry: registry,
 		Mode:         agent.ModeAct,
 		CustomRules:  customRules,
+		Store:        store,
 	}
 
 	// Create agent

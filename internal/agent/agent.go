@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/liup215/gline/internal/log"
 	"github.com/liup215/gline/internal/prompts"
+	"github.com/liup215/gline/internal/storage"
 	"github.com/liup215/gline/internal/tools"
 	"github.com/liup215/gline/pkg/types"
 )
@@ -69,6 +71,12 @@ type Options struct {
 
 	// CustomRules is extra text appended to the system prompt
 	CustomRules string
+
+	// Store is the optional persistent storage for conversation history
+	Store storage.Store
+
+	// Title is the optional task title (used when creating a new task)
+	Title string
 }
 
 // BaseAgent implements the Agent interface
@@ -84,6 +92,10 @@ type BaseAgent struct {
 	maxConsecutiveMistakes int
 	consecutiveMistakes    int
 	customRules            string
+
+	store     storage.Store // persistent storage
+	taskID    string        // current task ID
+	taskTitle string        // current task title
 }
 
 // New creates a new Agent instance with the given options
@@ -114,6 +126,8 @@ func New(opts Options) (*BaseAgent, error) {
 		autoApprove:            opts.AutoApprove,
 		maxConsecutiveMistakes: maxMistakes,
 		customRules:            opts.CustomRules,
+		store:                  opts.Store,
+		taskTitle:              opts.Title,
 	}, nil
 }
 
@@ -146,6 +160,28 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 		Role:    types.RoleUser,
 		Content: prompt,
 	})
+
+	// --- Storage: create task and save user message ---
+	if a.store != nil {
+		if a.taskID == "" {
+			providerName := a.provider.GetProviderName()
+			model := a.provider.GetModel()
+			id, err := a.store.CreateTask(a.taskTitle, prompt, string(a.mode), providerName, model)
+			if err != nil {
+				log.Warnf("Failed to create task record: %v", err)
+			} else {
+				a.taskID = id
+				callback.OnTaskCreated(id)
+			}
+		}
+		if a.taskID != "" {
+			if lastMsg := a.conversation.GetLastMessage(); lastMsg != nil {
+				if err := a.store.SaveMessage(a.taskID, *lastMsg); err != nil {
+					log.Warnf("Failed to save user message: %v", err)
+				}
+			}
+		}
+	}
 
 	// Main conversation loop
 	for !a.abort {
@@ -187,8 +223,25 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 
 		// Process the stream
 		if err := a.processStream(ctx, streamChan, callback); err != nil {
+			if a.store != nil && a.taskID != "" {
+				if dbErr := a.store.FailTask(a.taskID, err.Error()); dbErr != nil {
+					log.Warnf("Failed to mark task as failed: %v", dbErr)
+				}
+			}
 			callback.OnError(err)
 			return err
+		}
+
+		// Save assistant message to storage
+		if a.store != nil && a.taskID != "" {
+			if msgs := a.conversation.GetMessages(); len(msgs) > 0 {
+				lastMsg := msgs[len(msgs)-1]
+				if lastMsg.Role == types.RoleAssistant {
+					if err := a.store.SaveMessage(a.taskID, lastMsg); err != nil {
+						log.Warnf("Failed to save assistant message: %v", err)
+					}
+				}
+			}
 		}
 
 		// Execute any tool calls from the last assistant message
@@ -221,6 +274,17 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 						Input: string(tc.Input),
 					})
 
+					// Record tool call start in storage
+					var callID int64
+					if a.store != nil && a.taskID != "" {
+						cid, err := a.store.StartToolCall(a.taskID, tc.Name, tc.Input)
+						if err != nil {
+							log.Warnf("Failed to record tool call start: %v", err)
+						} else {
+							callID = cid
+						}
+					}
+
 					// If this is the ask_followup_question tool and the callback supports AskFollowupQuestion,
 					// inject the TUI/Callback handler so the tool doesn't read directly from stdin.
 					if askTool, ok := tool.(*tools.AskFollowupQuestionTool); ok {
@@ -241,6 +305,26 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 						Content:    result,
 					})
 
+					// Save tool result message and complete tool call record
+					if a.store != nil && a.taskID != "" {
+						if lastMsg := a.conversation.GetLastMessage(); lastMsg != nil {
+							if dbErr := a.store.SaveMessage(a.taskID, *lastMsg); dbErr != nil {
+								log.Warnf("Failed to save tool result message: %v", dbErr)
+							}
+						}
+						if callID > 0 {
+							if err != nil {
+								if dbErr := a.store.FailToolCall(callID, err); dbErr != nil {
+									log.Warnf("Failed to record tool call failure: %v", dbErr)
+								}
+							} else {
+								if dbErr := a.store.CompleteToolCall(callID, result); dbErr != nil {
+									log.Warnf("Failed to record tool call completion: %v", dbErr)
+								}
+							}
+						}
+					}
+
 					// Notify callback that tool is complete
 					callback.OnToolCallComplete(ToolCall{
 						ID:    tc.ID,
@@ -252,13 +336,39 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 		}
 
 		// Check if conversation is complete
-		if a.conversation.IsComplete() {
+		if a.conversation.IsComplete() || a.abort {
+			if a.store != nil && a.taskID != "" {
+				status := "completed"
+				if a.abort {
+					status = "failed"
+				}
+				if status == "completed" {
+					if err := a.store.CompleteTask(a.taskID); err != nil {
+						log.Warnf("Failed to mark task as completed: %v", err)
+					}
+				} else {
+					if err := a.store.FailTask(a.taskID, "aborted"); err != nil {
+						log.Warnf("Failed to mark task as failed: %v", err)
+					}
+				}
+			}
 			break
 		}
 	}
 
 	callback.OnComplete()
 	return nil
+}
+
+// ResetTask clears the current task ID so the next RunWithCallback creates a new task.
+// This is called by /newtask slash command to start a fresh conversation.
+func (a *BaseAgent) ResetTask() {
+	a.taskID = ""
+}
+
+// SetTaskTitle sets the title for the next task to be created.
+func (a *BaseAgent) SetTaskTitle(title string) {
+	a.taskTitle = title
 }
 
 // processResponse handles the LLM response
@@ -387,6 +497,26 @@ func (a *BaseAgent) GetProvider() Provider {
 // GetToolRegistry returns the tool registry
 func (a *BaseAgent) GetToolRegistry() *tools.Registry {
 	return a.toolRegistry
+}
+
+// GetStore returns the persistent storage (may be nil).
+func (a *BaseAgent) GetStore() storage.Store {
+	return a.store
+}
+
+// SetStore sets the persistent storage.
+func (a *BaseAgent) SetStore(s storage.Store) {
+	a.store = s
+}
+
+// GetTaskID returns the current task ID.
+func (a *BaseAgent) GetTaskID() string {
+	return a.taskID
+}
+
+// SetTaskID sets the current task ID (used when resuming a task).
+func (a *BaseAgent) SetTaskID(id string) {
+	a.taskID = id
 }
 
 // processStream handles the streaming response from the LLM

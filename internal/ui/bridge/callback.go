@@ -73,6 +73,9 @@ func (b *TUIBridge) OnComplete() {
 	b.send(CompleteEvent{})
 }
 
+// OnTaskCreated is a no-op for the TUI bridge (task ID is managed by the agent layer).
+func (b *TUIBridge) OnTaskCreated(taskID string) {}
+
 // AskFollowupQuestion sends an AskQuestionEvent and blocks until the user
 // provides an answer via the Reply channel. This synchronous blocking is
 // intentional — the Agent goroutine waits for user input before continuing.

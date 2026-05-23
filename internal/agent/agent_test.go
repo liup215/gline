@@ -89,6 +89,10 @@ func (c *recordingCallback) OnComplete() {
 	c.completeCount++
 }
 
+func (c *recordingCallback) OnTaskCreated(taskID string) {
+	// no-op for tests
+}
+
 // TestRunWithCallbackToolCallsViaDedicatedCallbacks verifies that tool call information
 // is delivered via OnToolCallStart/OnToolCallComplete callbacks rather than being
 // injected into the content stream. This keeps LLM text and tool status visually

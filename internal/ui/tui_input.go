@@ -88,6 +88,11 @@ func handleKeyMsg(m *Model, msg tea.KeyMsg) []tea.Cmd {
 		}
 	}
 
+	// History screen keyboard handling takes precedence when active
+	if m.screen == ScreenHistory {
+		return handleHistoryKeyMsg(m, msg)
+	}
+
 	switch msg.Type {
 	case tea.KeyCtrlC:
 		// Quit the program
@@ -162,6 +167,73 @@ func handleKeyMsg(m *Model, msg tea.KeyMsg) []tea.Cmd {
 		// Clear screen
 		m.conversation.Clear()
 		m.updateViewport()
+
+	case tea.KeyCtrlH:
+		// Show history screen
+		m.enterHistoryScreen()
+	}
+
+	return cmds
+}
+
+// handleHistoryKeyMsg handles keyboard input when on the history screen.
+func handleHistoryKeyMsg(m *Model, msg tea.KeyMsg) []tea.Cmd {
+	var cmds []tea.Cmd
+
+	// Deletion confirmation
+	if m.historyConfirmID != "" {
+		switch msg.Type {
+		case tea.KeyRunes:
+			switch string(msg.Runes) {
+			case "y", "Y":
+				m.deleteHistoryTask()
+			}
+			m.historyConfirmID = ""
+		case tea.KeyEsc:
+			m.historyConfirmID = ""
+		}
+		return cmds
+	}
+
+	// Detail view
+	if m.historyDetail != nil {
+		switch msg.Type {
+		case tea.KeyEsc:
+			m.historyDetail = nil
+			m.historyMessages = nil
+		case tea.KeyEnter:
+			m.loadHistoryTask()
+		}
+		return cmds
+	}
+
+	// List view
+	switch msg.Type {
+	case tea.KeyEsc:
+		m.screen = ScreenChat
+		m.textarea.Focus()
+		cmds = append(cmds, textarea.Blink)
+
+	case tea.KeyUp:
+		if m.historySelected > 0 {
+			m.historySelected--
+		}
+
+	case tea.KeyDown:
+		if m.historySelected < len(m.historyTasks)-1 {
+			m.historySelected++
+		}
+
+	case tea.KeyEnter:
+		m.enterHistoryDetail()
+
+	case tea.KeyRunes:
+		switch string(msg.Runes) {
+		case "d", "D":
+			if m.historySelected >= 0 && m.historySelected < len(m.historyTasks) {
+				m.historyConfirmID = m.historyTasks[m.historySelected].ID
+			}
+		}
 	}
 
 	return cmds
