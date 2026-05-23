@@ -3,9 +3,10 @@ package ui
 
 import (
 "context"
+"fmt"
 "sync"
 "time"
- 
+  
 "github.com/charmbracelet/bubbles/spinner"
 "github.com/charmbracelet/bubbles/textarea"
 "github.com/charmbracelet/bubbles/viewport"
@@ -366,11 +367,20 @@ func handleSlashCommandResult(m *Model, result slash.CommandResult, message stri
 		m.convVM.MarkMessageDirty(idx)
 		m.updateViewport()
 	case slash.ResultCompact:
+		// Trim the agent conversation to fit within token budget.
+		if m.agentInstance != nil {
+			if conv := m.agentInstance.GetConversation(); conv != nil {
+				before := conv.MessageCount()
+				conv.TrimToMaxTokens()
+				after := conv.MessageCount()
+				message = fmt.Sprintf("Context compacted: %d messages removed, %d remaining.", before-after, after)
+			}
+		}
 		idx := m.conversation.AppendMessage(model.Message{
 			Role:      types.RoleSystem,
-			Content:   message + ": context compaction is not yet implemented.",
+			Content:   message,
 			MsgType:   types.TypeNormal,
-			Strategy: types.StrategyPlain,
+			Strategy:  types.StrategyPlain,
 			Timestamp: time.Now(),
 		})
 		m.convVM.MarkMessageDirty(idx)
@@ -452,21 +462,27 @@ func Run(agentInstance *agent.BaseAgent) error {
 }
 
 // calculateLayout calculates flexible height distribution for TUI components.
-// Uses proportional allocation with min/max constraints:
-// - input: 10% of height, min 3, max 5
-// - tool area: 10% of height, min 2, max 6
-// - viewport: remaining space, min 3
-// Also reserves space for compact bar (1) and help (1).
+// Fixed elements and their heights:
+//   - CompactBar: 1 line
+//   - Input box border (top + bottom): 2 lines
+//   - InputStatusBar: 1 line
+//   - Help: 1 line
+//   Total fixed overhead: 5 lines
+// Variable elements:
+//   - inputH: textarea content height (10% of total, min 3, max 5)
+//   - toolH: tool area height (10% of total, min 2, max 6, currently unused in layout)
+//   - viewportH: remaining space for message content, min 3
+//   - menuHeight: dynamically calculated when slash menu is active
 func calculateLayout(totalHeight int) (viewportH, toolH, inputH int) {
 	if totalHeight < 10 {
 		// Minimum viable layout for very small terminals
 		return 3, 2, 3
 	}
 
-	// Reserve space for compact bar (1) and help (1)
-	available := totalHeight - 2
+	// Fixed overhead: CompactBar(1) + InputBoxBorders(2) + InputStatusBar(1) + Help(1) = 5
+	fixedOverhead := 5
 
-	// Calculate proportional heights
+	// Calculate proportional heights for input
 	inputH = totalHeight / 10
 	if inputH < 3 {
 		inputH = 3
@@ -474,6 +490,7 @@ func calculateLayout(totalHeight int) (viewportH, toolH, inputH int) {
 		inputH = 5
 	}
 
+	// Tool area height (for future use, not currently rendered in layout)
 	toolH = totalHeight / 10
 	if toolH < 2 {
 		toolH = 2
@@ -481,7 +498,8 @@ func calculateLayout(totalHeight int) (viewportH, toolH, inputH int) {
 		toolH = 6
 	}
 
-	viewportH = available - inputH - toolH
+	// Viewport gets remaining space after subtracting fixed overhead and input content height
+	viewportH = totalHeight - fixedOverhead - inputH
 	if viewportH < 3 {
 		viewportH = 3
 	}

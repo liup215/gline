@@ -58,27 +58,17 @@ type LayoutData struct {
 }
 
 // RenderLayout assembles all sections into the final TUI output.
-// Content fills remaining space so menu appears directly above input.
+// The viewport component manages its own height and clipping, so we just
+// assemble all sections in order without applying additional height constraints.
 func RenderLayout(data LayoutData) string {
-	// Calculate menu height
-	menuHeight := 0
-	if data.Menu != "" {
-		menuHeight = 7 // approx menu height
-	}
-
-	// Calculate content height to fill remaining space
-	// Total: header(1) + content(flexible) + menu(? ) + input(data.InputHeight) + status(1) + help(1)
-	contentHeight := data.Height - 1 - menuHeight - data.InputHeight - 1 - 1 // -1 for header, -1 for status, -1 for help
-	if contentHeight < 3 {
-		contentHeight = 3
-	}
-
-	// Content fills remaining space (pushes menu+input+help to bottom)
-	contentWithHeight := lipgloss.NewStyle().Height(contentHeight).Render(data.Content)
-
+	// The viewport component (data.Content) is already pre-rendered with its
+	// assigned height and handles its own clipping/scrolling. We don't need to
+	// apply an additional Height() wrapper here - doing so can cause issues when
+	// the content exceeds the height, as lipgloss Height() sets minimum height
+	// but doesn't clip overflow. Just use the viewport's output directly.
 	sections := []string{
 		data.CompactBar,
-		contentWithHeight,
+		data.Content,
 	}
 
 	// Add menu if present (above input)
@@ -86,6 +76,9 @@ func RenderLayout(data LayoutData) string {
 		sections = append(sections, data.Menu)
 	}
 
+	// Render the input box. The InputBoxStyle includes borders which add 2 lines
+	// (top + bottom) to the textarea content height. We don't set an explicit
+	// Height here - the style and content height are already managed by the textarea.
 	sections = append(sections,
 		RenderInputBox(data.InputView),
 		data.InputStatusBar,

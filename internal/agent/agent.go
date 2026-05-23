@@ -126,7 +126,12 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 
 	a.running = true
 	a.abort = false
-	defer func() { a.running = false }()
+	// Ensure running is always reset, even on panic.
+	defer func() {
+		a.running = false
+		// Also clear the abort flag so subsequent runs start fresh.
+		a.abort = false
+	}()
 
 	// Each new user turn must reopen the conversation loop.
 	a.conversation.MarkIncomplete()
@@ -148,6 +153,9 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 			toolDescs = prompts.GetPlanModeToolDescriptions()
 		}
 		systemPrompt := prompts.GetSystemPrompt(string(a.mode), toolDescs)
+
+		// Trim conversation if it exceeds token budget before sending.
+		a.conversation.TrimToMaxTokens()
 
 		// Create LLM request
 		req := &MessageRequest{

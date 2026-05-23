@@ -4,9 +4,14 @@ package bridge
 
 import (
 	"context"
+	"time"
 
 	"github.com/liup215/gline/internal/agent"
 )
+
+// sendTimeout is the max time to wait for the event channel to accept an event.
+// If the TUI is blocked, we drop the event rather than stall the agent forever.
+const sendTimeout = 5 * time.Second
 
 // TUIBridge implements agent.StreamCallback by sending typed events over a channel.
 // This decouples Agent callbacks from the Bubbletea Program, allowing the bridge
@@ -21,40 +26,51 @@ func NewTUIBridge(eventCh chan<- AgentEvent) *TUIBridge {
 	return &TUIBridge{eventCh: eventCh}
 }
 
+// send attempts to send an event to the channel with a timeout.
+// If the channel is full or the TUI is not reading, the event is dropped
+// to prevent the agent goroutine from hanging indefinitely.
+func (b *TUIBridge) send(evt AgentEvent) {
+	select {
+	case b.eventCh <- evt:
+	case <-time.After(sendTimeout):
+		// Channel blocked; drop event to avoid stalling agent.
+	}
+}
+
 // OnStreamStart sends a StreamStartEvent.
 func (b *TUIBridge) OnStreamStart() {
-	b.eventCh <- StreamStartEvent{}
+	b.send(StreamStartEvent{})
 }
 
 // OnContent sends a ContentEvent with the incremental text delta.
 func (b *TUIBridge) OnContent(delta string) {
-	b.eventCh <- ContentEvent{Delta: delta}
+	b.send(ContentEvent{Delta: delta})
 }
 
 // OnToolCallStart sends a ToolStartEvent when a tool call begins.
 func (b *TUIBridge) OnToolCallStart(toolCall agent.ToolCall) {
-	b.eventCh <- ToolStartEvent{
+	b.send(ToolStartEvent{
 		Name:  toolCall.Name,
 		Input: toolCall.Input,
-	}
+	})
 }
 
 // OnToolCallComplete sends a ToolCompleteEvent when a tool call finishes.
 func (b *TUIBridge) OnToolCallComplete(toolCall agent.ToolCall, result string) {
-	b.eventCh <- ToolCompleteEvent{
+	b.send(ToolCompleteEvent{
 		Name:   toolCall.Name,
 		Result: result,
-	}
+	})
 }
 
 // OnError sends an ErrorEvent when an error occurs.
 func (b *TUIBridge) OnError(err error) {
-	b.eventCh <- ErrorEvent{Err: err}
+	b.send(ErrorEvent{Err: err})
 }
 
 // OnComplete sends a CompleteEvent when the agent finishes processing.
 func (b *TUIBridge) OnComplete() {
-	b.eventCh <- CompleteEvent{}
+	b.send(CompleteEvent{})
 }
 
 // AskFollowupQuestion sends an AskQuestionEvent and blocks until the user

@@ -22,6 +22,18 @@ func handleWindowSize(m *Model, msg tea.WindowSizeMsg) []tea.Cmd {
 	m.toolAreaHeight = toolH
 	m.inputHeight = inputH
 
+	// Reserve a small buffer for the slash menu (when it appears, it won't cause overflow).
+	// The slash menu typically shows ~5 items + borders = ~7-8 lines.
+	// We subtract this from viewport height so total layout stays within terminal height.
+	// Only reserve this buffer when slash menu is actually active; otherwise we leave
+	// the space for the input box + status bar + help to sit flush at the bottom.
+	if m.slashMenu != nil && m.slashMenu.Active {
+		menuBuffer := 8
+		if viewportH > menuBuffer+3 {
+			viewportH -= menuBuffer
+		}
+	}
+
 	// Set viewport height
 	m.viewport.Height = viewportH
 
@@ -216,7 +228,13 @@ func submitUserMessage(m *Model) []tea.Cmd {
 	input := strings.TrimSpace(m.textarea.Value())
 	if input != "" && !m.isProcessing {
 		m.sendMessage(input)
-		m.textarea.Reset()
+		// Clear the textarea value but keep the view rendered and at the
+		// configured height. Blur to indicate the input is temporarily
+		// disabled while the agent processes the message. Avoid calling
+		// Reset() here because in some terminal/styling combinations that
+		// can lead to the input box collapsing/vanishing visually.
+		m.textarea.SetValue("")
+		m.textarea.Placeholder = "Type your message..."
 		m.textarea.Blur()
 		// Start the agent with callback
 		cmds = append(cmds, m.startAgent())

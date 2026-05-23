@@ -10,7 +10,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/liup215/gline/internal/agent"
 	"github.com/liup215/gline/internal/log"
@@ -237,7 +236,9 @@ func NewOpenAIProvider(apiKey, model, baseURL string) *OpenAIProvider {
 		model:   model,
 		baseURL: baseURL,
 		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
+			// No global timeout on the client; individual requests use context
+			// timeouts so long-running streaming sessions can stay open.
+			Timeout: 0,
 		},
 	}
 }
