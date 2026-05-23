@@ -8,6 +8,7 @@ import (
 	"github.com/liup215/gline/internal/agent"
 	"github.com/liup215/gline/internal/api"
 	"github.com/liup215/gline/internal/log"
+	"github.com/liup215/gline/internal/prompts"
 	"github.com/liup215/gline/internal/tools"
 	"github.com/liup215/gline/internal/ui"
 )
@@ -74,11 +75,20 @@ func initializeAgent() (*agent.BaseAgent, error) {
 
 	log.Infof("Initialized %d tools", registry.Count())
 
+	// Load custom rules from global and workspace directories
+	customRules, err := prompts.LoadCustomRules()
+	if err != nil {
+		log.Warnf("Failed to load custom rules: %v", err)
+	} else if customRules != "" {
+		log.Info("Custom rules loaded successfully")
+	}
+
 	// Create agent options
 	opts := agent.Options{
 		Provider:     provider,
 		ToolRegistry: registry,
 		Mode:         agent.ModeAct,
+		CustomRules:  customRules,
 	}
 
 	// Create agent

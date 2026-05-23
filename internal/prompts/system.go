@@ -24,8 +24,9 @@ type SystemPrompt struct {
 	ToolDescriptions string
 }
 
-// GetSystemPrompt returns the appropriate system prompt for the given mode
-func GetSystemPrompt(mode string, tools []ToolDescription) string {
+// GetSystemPrompt returns the appropriate system prompt for the given mode.
+// If customRules is non-empty, it is appended at the end of the prompt.
+func GetSystemPrompt(mode string, tools []ToolDescription, customRules string) string {
 	var basePrompt string
 
 	switch mode {
@@ -40,7 +41,14 @@ func GetSystemPrompt(mode string, tools []ToolDescription) string {
 	// Add tool descriptions
 	toolSection := buildToolSection(tools)
 
-	return fmt.Sprintf("%s\n\n%s", basePrompt, toolSection)
+	result := fmt.Sprintf("%s\n\n%s", basePrompt, toolSection)
+
+	// Append custom rules if provided
+	if customRules != "" {
+		result += "\n\n# Custom Rules\n\n" + customRules
+	}
+
+	return result
 }
 
 // getPlanModePrompt returns the system prompt for plan mode

@@ -301,6 +301,39 @@ gline/
 2. **TUI 流式输出优化** ✅
 - [TRUNCATED FOR BREVITY — ORIGINAL CONTENT PRESERVED]
 
+### 2026-05-23 — 自定义规则 / 系统提示词扩展 ✅
+
+**功能**: 支持通过文件系统自动加载自定义规则并追加到系统提示词末尾。
+
+**实现内容**:
+1. **规则加载** (`internal/prompts/rules.go`)
+   - `LoadCustomRules()` — 同时加载全局和工作区规则
+   - `loadRulesFromDir()` — 扫描目录，按字母序合并 `.md`/`.txt` 文件
+   - 自动跳过子目录、不支持格式、空文件
+
+2. **Agent 集成**
+   - `Options.CustomRules` / `BaseAgent.customRules` 字段
+   - `GetSystemPrompt(mode, tools, customRules)` 支持追加 `# Custom Rules` 区块
+
+3. **规则存放**
+   - 全局: `~/.gline/rules/` — 所有项目共享
+   - 工作区: `.gline/rules/` — 仅当前项目
+   - 加载顺序: 全局在前 → 工作区在后
+
+4. **单元测试** (`internal/prompts/rules_test.go`)
+   - 覆盖空目录、单/多文件、排序、跳过非支持格式、子目录、空文件、读取容错
+
+5. **文档** (`README.md`)
+   - 新增"自定义规则 / 系统提示词"使用说明章节
+
+**修改文件**:
+- `internal/prompts/rules.go` — 新增
+- `internal/prompts/rules_test.go` — 新增
+- `cmd/gline/chat.go` — Agent 初始化调用 LoadCustomRules
+- `internal/agent/agent.go` — 添加 CustomRules 字段
+- `internal/prompts/system.go` — 支持追加自定义规则
+- `README.md` — 使用文档
+
 ## 最近变更
 
 ### 2026-05-14 — TUI 架构优化完成 ✅

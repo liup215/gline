@@ -66,6 +66,9 @@ type Options struct {
 
 	// MaxConsecutiveMistakes limits consecutive errors before stopping
 	MaxConsecutiveMistakes int
+
+	// CustomRules is extra text appended to the system prompt
+	CustomRules string
 }
 
 // BaseAgent implements the Agent interface
@@ -80,6 +83,7 @@ type BaseAgent struct {
 	autoApprove            bool
 	maxConsecutiveMistakes int
 	consecutiveMistakes    int
+	customRules            string
 }
 
 // New creates a new Agent instance with the given options
@@ -109,6 +113,7 @@ func New(opts Options) (*BaseAgent, error) {
 		conversation:           types.NewConversation(),
 		autoApprove:            opts.AutoApprove,
 		maxConsecutiveMistakes: maxMistakes,
+		customRules:            opts.CustomRules,
 	}, nil
 }
 
@@ -152,7 +157,7 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 		if a.mode == ModePlan {
 			toolDescs = prompts.GetPlanModeToolDescriptions()
 		}
-		systemPrompt := prompts.GetSystemPrompt(string(a.mode), toolDescs)
+		systemPrompt := prompts.GetSystemPrompt(string(a.mode), toolDescs, a.customRules)
 
 		// Trim conversation if it exceeds token budget before sending.
 		a.conversation.TrimToMaxTokens()
