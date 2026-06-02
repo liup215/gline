@@ -37,12 +37,9 @@ function App() {
   const handleSelectTask = async (taskID: string) => {
     const result = await tasks.handleSelectTask(taskID);
     if (!result) return;
-    const { messages, workingDir } = result;
-    chat.setMessages(messages);
-    if (!workingDir || workingDir === '') {
-      // task has no working directory, require user to select one
-      await appStatus.loadStatus();
-    }
+    chat.setMessages(result.messages);
+    // Always refresh status so cwd reflects the loaded task's workingDir
+    await appStatus.loadStatus();
   };
 
   const handleNewChat = () => {
