@@ -483,13 +483,28 @@ func (p *AnthropicProvider) CreateMessageStream(ctx context.Context, req *agent.
 					Delta struct {
 						StopReason string `json:"stop_reason"`
 					} `json:"delta"`
+					Usage struct {
+						InputTokens  int `json:"input_tokens"`
+						OutputTokens int `json:"output_tokens"`
+					} `json:"usage"`
 				}
-				if err := json.Unmarshal([]byte(data), &msgDelta); err == nil && msgDelta.Delta.StopReason != "" {
-					chunkChan <- agent.StreamChunk{
-						FinishReason: msgDelta.Delta.StopReason,
-						Done:         true,
+				if err := json.Unmarshal([]byte(data), &msgDelta); err == nil {
+					var usage agent.TokenUsage
+					if msgDelta.Usage.InputTokens > 0 || msgDelta.Usage.OutputTokens > 0 {
+						usage = agent.TokenUsage{
+							InputTokens:  msgDelta.Usage.InputTokens,
+							OutputTokens: msgDelta.Usage.OutputTokens,
+							TotalTokens:  msgDelta.Usage.InputTokens + msgDelta.Usage.OutputTokens,
+						}
 					}
-					return
+					if msgDelta.Delta.StopReason != "" {
+						chunkChan <- agent.StreamChunk{
+							FinishReason: msgDelta.Delta.StopReason,
+							Usage:        usage,
+							Done:         true,
+						}
+						return
+					}
 				}
 
 			case "message_stop":

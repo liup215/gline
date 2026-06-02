@@ -47,6 +47,9 @@ type ProviderSettings struct {
 
 	// Base URL for API (optional, for custom endpoints)
 	BaseURL string `mapstructure:"base_url"`
+
+	// Max context tokens for this provider/model (0 = use default based on model)
+	MaxContextTokens int `mapstructure:"max_context_tokens"`
 }
 
 // UIConfig holds UI-related settings
@@ -203,6 +206,9 @@ provider:
     api_key: ""
     # Model to use (claude-3-opus, claude-3-sonnet, claude-3-haiku)
     model: claude-3-sonnet
+    # Max context tokens (0 = default ~262K)
+    # Claude 3 Opus/Sonnet: ~200000 | Claude 3 Haiku: ~200000
+    max_context_tokens: 0
   
   # OpenAI settings
   # Supports OpenAI official API, OpenRouter, and any OpenAI-compatible endpoint
@@ -211,6 +217,9 @@ provider:
     api_key: ""
     # Model to use (gpt-4, gpt-4-turbo, gpt-3.5-turbo, etc.)
     model: gpt-4
+    # Max context tokens (0 = default ~262K)
+    # GPT-4: ~8192 | GPT-4-turbo: ~128000 | GPT-3.5-turbo: ~16000
+    max_context_tokens: 0
     # Base URL for API (optional, defaults to OpenAI official API)
     # Examples:
     #   OpenAI: https://api.openai.com/v1

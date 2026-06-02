@@ -3,6 +3,7 @@ package types
 
 import (
 	"encoding/json"
+	"sync"
 	"time"
 )
 
@@ -61,18 +62,50 @@ type Conversation struct {
 	// MaxTokens is the maximum number of tokens allowed
 	MaxTokens int
 
-	// CurrentTokens is the estimated current token count
+	// CurrentTokens is the estimated current token count (rough estimate)
 	CurrentTokens int
+
+	// actualInputTokens is the real input token count from API usage
+	actualInputTokens int
+
+	// actualOutputTokens is the real output token count from API usage
+	actualOutputTokens int
+
+	// mu protects actual token counters
+	mu sync.Mutex
 
 	// Complete indicates if the conversation is complete
 	Complete bool
+}
+
+// AddActualTokens adds real API token usage to the counters.
+func (c *Conversation) AddActualTokens(input, output int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.actualInputTokens += input
+	c.actualOutputTokens += output
+}
+
+// GetActualTokens returns the accumulated real token usage.
+func (c *Conversation) GetActualTokens() (input, output int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.actualInputTokens, c.actualOutputTokens
+}
+
+// ResetActualTokens resets the accumulated token counters.
+func (c *Conversation) ResetActualTokens() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.actualInputTokens = 0
+	c.actualOutputTokens = 0
 }
 
 // NewConversation creates a new conversation
 func NewConversation() *Conversation {
 	return &Conversation{
 		Messages:  make([]Message, 0),
-		MaxTokens: 128000, // Default to a reasonable limit
+		MaxTokens: 262000, // Default context window (~262K tokens)
 	}
 }
 
@@ -102,6 +135,7 @@ func (c *Conversation) GetLastMessage() *Message {
 func (c *Conversation) Clear() {
 	c.Messages = make([]Message, 0)
 	c.CurrentTokens = 0
+	c.ResetActualTokens()
 	c.Complete = false
 }
 
@@ -155,6 +189,49 @@ func (c *Conversation) TrimToMaxTokens() {
 		// Update token count
 		c.CurrentTokens -= (len(removed.Content) + len(string(removed.Role))) / 4
 	}
+}
+
+// GetTotalTokens returns the best estimate of total tokens used.
+// Uses actual API-reported tokens when available, falls back to estimation.
+func (c *Conversation) GetTotalTokens() int {
+	totalActual := c.actualInputTokens + c.actualOutputTokens
+	if totalActual > 0 {
+		return totalActual
+	}
+	return c.CurrentTokens
+}
+
+// AutoCompact removes oldest messages to keep usage under 80% of max.
+// It preserves the system prompt and the most recent conversation turns.
+func (c *Conversation) AutoCompact() {
+	keep := 4 // preserve last 2 turns (user+assistant)
+	startIdx := 0
+	if c.HasSystemPrompt() {
+		startIdx = 1
+	}
+	if len(c.Messages) <= startIdx+keep {
+		return
+	}
+	splitIdx := len(c.Messages) - keep
+	if splitIdx < startIdx {
+		splitIdx = startIdx
+	}
+	newMessages := make([]Message, 0, startIdx+keep)
+	if startIdx > 0 {
+		newMessages = append(newMessages, c.Messages[0]) // system prompt
+	}
+	newMessages = append(newMessages, c.Messages[splitIdx:]...)
+	c.Messages = newMessages
+	c.ResetActualTokens()
+	c.updateTokenCount()
+}
+
+// IsTokenAboveThreshold checks if current tokens exceed the given threshold percentage.
+func (c *Conversation) IsTokenAboveThreshold(percent int) bool {
+	if c.MaxTokens <= 0 {
+		return false
+	}
+	return c.GetTotalTokens() > c.MaxTokens*percent/100
 }
 
 // ToJSON returns the conversation as JSON

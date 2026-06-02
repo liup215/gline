@@ -4,12 +4,12 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                         gline CLI                          │
+│                    gline GUI (Wails v3)                     │
 ├─────────────────────────────────────────────────────────────┤
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
-│  │   Command   │  │     UI      │  │      Config       │  │
-│  │   Layer     │  │   Layer     │  │      Layer        │  │
-│  │  (cobra)    │  │ (bubbletea) │  │     (viper)       │  │
+│  │  Frontend   │  │   Backend   │  │      Config       │  │
+│  │  (Webview)  │  │ (ChatService│  │      Layer        │  │
+│  │             │  │  /Backend)  │  │     (viper)       │  │
 │  └──────┬──────┘  └──────┬──────┘  └─────────┬───────────┘  │
 │         │                │                   │              │
 │         └────────────────┴───────────────────┘              │
@@ -26,6 +26,8 @@
 │    │Registry │    │ Providers │    │  Layer  │        │
 │    └─────────┘    └───────────┘    └─────────┘        │
 └─────────────────────────────────────────────────────────────┘
+
+CLI 子命令 (保留): gline history / gline config / gline version
 ```
 
 ## 核心设计模式
@@ -211,7 +213,8 @@ gline/
 - 便于未来重构
 
 ### 2. 为什么分离 UI 层
-- 支持多种 UI 模式（TUI、纯文本）
+- 已全面迁移到 Wails GUI 桌面应用（取代 TUI）
+- 支持 GUI + CLI 双模式（GUI 日常使用，CLI 脚本自动化）
 - 便于测试（可以 mock UI）
 - 清晰的关注点分离
 
@@ -225,76 +228,69 @@ gline/
 - **Workspace State**: 项目特定设置（持久化）
 - **Session State**: 临时覆盖（非持久化）
 
-## TUI 架构设计
+## GUI 架构设计 (Wails v3)
 
-### 整体架构（MVVM + Bridge）
+### 整体架构
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                         TUI Layer                          │
+│                    gline GUI (Wails v3)                    │
 ├─────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐ │
-│  │    Model    │  │  ViewModel  │  │   tool.Registry   │ │
-│  │  (纯数据)   │  │ (派生状态)  │  │  (工具渲染器注册表) │ │
-│  └──────┬──────┘  └──────┬──────┘  └──────────┬──────────┘ │
-│         │                │                    │            │
-│         └────────────────┴────────────────────┘            │
-│                          │                                  │
-│                   ┌──────┴──────┐                          │
-│                   │   Bridge    │                          │
-│                   │  (事件转换)  │                          │
-│                   └──────┬──────┘                          │
-│                          │                                  │
-│         ┌────────────────┼────────────────┐                │
-│         │                │                │                │
-│    ┌────┴────┐    ┌─────┴─────┐    ┌────┴────┐           │
-│    │  Agent  │    │   LLM     │    │  Tools  │           │
-│    │  Core   │    │ Providers │    │ Registry│           │
-│    └─────────┘    └───────────┘    └─────────┘           │
+│  ┌─────────────────┐      ┌─────────────────────────────┐ │
+│  │   Frontend      │◄────►│      Backend (Go)           │ │
+│  │  (Webview)      │      │  ┌───────────────────────┐  │ │
+│  │  - Chat UI      │      │  │   ChatService         │  │ │
+│  │  - Settings     │      │  │   (Wails Service)     │  │ │
+│  │  - History      │      │  └───────────┬───────────┘  │ │
+│  │  - Markdown     │      │              │              │ │
+│  │    renderer     │      │  ┌─────────┴─────────┐    │ │
+│  └─────────────────┘      │  │     Agent Core      │    │ │
+│         HTML/CSS/JS       │  │  - Plan/Act 模式    │    │ │
+│                           │  │  - Tool 调用          │    │ │
+│                           │  │  - Conversation     │    │ │
+│                           │  └─────────┬───────────┘    │ │
+│                           │            │                │ │
+│                           │  ┌─────────┼─────────────┐  │ │
+│                           │  │         │             │  │ │
+│                           │ ┌┴┐      ┌─┴─┐       ┌──┴─┐│ │
+│                           │ │LLM│     │Tool│       │Store││
+│                           │ │Providers   │Registry   │(SQLite)│
+│                           └─┴──┴──────┴───┴───────┴────┘│
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ### 目录结构
 
 ```
-internal/ui/
-├── model/              # Domain Model（纯数据，零外部依赖）
-│   ├── message.go      # Message: Role, Content, MsgType, Strategy, Meta
-│   ├── meta.go         # ErrorMeta, ToolMeta + 辅助方法
-│   └── conversation.go # Conversation: Messages, ToolHistory
-│
-├── viewmodel/          # ViewModel（派生展示状态 + 渲染缓存）
-│   └── conversation_vm.go  # 格式化消息列表，增量渲染
-│
-├── view/               # View（纯渲染函数）
-│   ├── tool_area.go    # 工具状态区域渲染
-│   └── styles.go       # Lipgloss 样式定义
-│
-├── tool/               # 工具自描述渲染
-│   ├── render.go       # Renderer 接口
-│   ├── registry.go     # 工具注册表
-│   ├── attempt_completion.go
-│   ├── ask_followup_question.go
-│   ├── plan_mode_respond.go
-│   ├── read_file.go
-│   └── default.go      # 通用工具默认渲染器
-│
-├── bridge/             # Agent-TUI 桥接层（类型安全）
-│   ├── callback.go     # TUIBridge 实现 StreamCallback
-│   └── messages.go     # AgentEvent 接口定义
-│
-└── tui.go              # Bubbletea 薄壳（Init/Update/View）
+gui/
+├── main.go              # Wails 应用入口，窗口配置
+├── backend.go           # Backend 初始化（Config / Storage / Agent）
+├── chat_service.go      # ChatService（Wails Service，暴露给前端）
+├── frontend/            # 前端资源（Vite + React/Vue/Svelte）
+│   ├── dist/            # 构建产物（嵌入 Go 二进制）
+│   └── ...
+└── build/               # 构建脚本（Taskfile）
+
+internal/
+├── agent/               # Agent 核心（与 GUI/CLI 复用）
+├── api/                 # LLM Provider
+├── tools/               # 工具系统
+├── prompts/             # 提示词 + 自定义规则
+├── storage/             # SQLite 持久化
+├── config/              # 配置管理
+└── ui/                  # 已废弃 (原 Bubbletea TUI，现由 GUI 替代)
 ```
 
 ### 核心分层原则
 
 | 层级 | 职责 | 依赖 | 测试方式 |
 |------|------|------|----------|
-| Model | 纯数据、业务规则 | 无外部依赖 | 纯 Go 单元测试 |
-| ViewModel | 派生状态、格式化 | Model | 纯 Go 单元测试 |
-| View | 纯函数渲染 | ViewModel, lipgloss | 纯 Go 单元测试 |
-| Bridge | Agent 回调 → TUI 事件 | Agent 接口 | 纯 Go 单元测试（mock Agent）|
-| TUI Shell | Bubbletea 生命周期 | 以上全部 | 集成测试 |
+| Frontend | 用户界面（聊天、设置、历史） | Wails JS Runtime | 浏览器/集成测试 |
+| ChatService | Wails Service 绑定，事件转发 | Agent, Storage | Go 单元测试 |
+| Backend | 初始化、生命周期管理 | Config, Storage, Agent | Go 单元测试 |
+| Agent Core | 业务逻辑、模式、工具调用 | Provider, Tools, Storage | Go 单元测试 |
+| Provider | LLM API 通信 | HTTP 客户端 | Go 单元测试 |
+| Storage | SQLite 持久化 | modernc.org/sqlite | Go 单元测试 |
 
 ### Message 数据结构
 

@@ -50,6 +50,9 @@ type Agent interface {
 
 	// GetConversation returns the current conversation state
 	GetConversation() *types.Conversation
+
+	// Compact manually compacts the conversation history.
+	Compact() bool
 }
 
 // Options contains configuration options for creating an Agent
@@ -77,6 +80,9 @@ type Options struct {
 
 	// Title is the optional task title (used when creating a new task)
 	Title string
+
+	// MaxTokens is the maximum context tokens for the conversation (0 = default 128k)
+	MaxTokens int
 }
 
 // BaseAgent implements the Agent interface
@@ -118,11 +124,16 @@ func New(opts Options) (*BaseAgent, error) {
 		maxMistakes = 3
 	}
 
+	conv := types.NewConversation()
+	if opts.MaxTokens > 0 {
+		conv.MaxTokens = opts.MaxTokens
+	}
+
 	return &BaseAgent{
 		provider:               opts.Provider,
 		toolRegistry:           opts.ToolRegistry,
 		mode:                   mode,
-		conversation:           types.NewConversation(),
+		conversation:           conv,
 		autoApprove:            opts.AutoApprove,
 		maxConsecutiveMistakes: maxMistakes,
 		customRules:            opts.CustomRules,
@@ -197,6 +208,9 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 
 		// Trim conversation if it exceeds token budget before sending.
 		a.conversation.TrimToMaxTokens()
+
+		// Auto-compact if tokens exceed 80% of the max context
+		a.AutoCompact()
 
 		// Create LLM request
 		req := &MessageRequest{
@@ -371,6 +385,28 @@ func (a *BaseAgent) SetTaskTitle(title string) {
 	a.taskTitle = title
 }
 
+// Compact manually compacts the conversation by removing oldest messages,
+// keeping the system prompt and the most recent conversation turns.
+// Returns true if compaction actually occurred.
+func (a *BaseAgent) Compact() bool {
+	before := a.conversation.MessageCount()
+	a.conversation.AutoCompact()
+	after := a.conversation.MessageCount()
+	compacted := after < before
+	if compacted {
+		log.Infof("Compacted conversation: %d -> %d messages, %d tokens", before, after, a.conversation.GetTotalTokens())
+	}
+	return compacted
+}
+
+// AutoCompact checks whether current token usage exceeds 80% of the
+// max context window and, if so, triggers a compaction.
+func (a *BaseAgent) AutoCompact() {
+	if a.conversation.IsTokenAboveThreshold(80) {
+		a.Compact()
+	}
+}
+
 // processResponse handles the LLM response
 func (a *BaseAgent) processResponse(ctx context.Context, resp *MessageResponse, callback StreamCallback) error {
 	// Convert ToolCalls from agent format to types format
@@ -528,6 +564,11 @@ func (a *BaseAgent) processStream(ctx context.Context, streamChan <-chan StreamC
 	for chunk := range streamChan {
 		if chunk.Error != nil {
 			return chunk.Error
+		}
+
+		// Accumulate real token usage from the API whenever available
+		if chunk.Usage.TotalTokens > 0 {
+			a.conversation.AddActualTokens(chunk.Usage.InputTokens, chunk.Usage.OutputTokens)
 		}
 
 		if chunk.Done {

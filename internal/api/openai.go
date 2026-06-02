@@ -163,6 +163,7 @@ type OpenAIStreamResponse struct {
 	Created int64                `json:"created"`
 	Model   string               `json:"model"`
 	Choices []OpenAIStreamChoice `json:"choices"`
+	Usage   OpenAIUsage          `json:"usage,omitempty"`
 }
 
 // OpenAIStreamChoice represents a choice in the streaming response
@@ -680,6 +681,16 @@ func (p *OpenAIProvider) CreateMessageStream(ctx context.Context, req *agent.Mes
 			log.Debugf("Parsed stream response: ID=%s, Choices=%d", streamResp.ID, len(streamResp.Choices))
 
 			if len(streamResp.Choices) == 0 {
+				// Usage may appear in the final chunk with empty choices
+				if streamResp.Usage.TotalTokens > 0 {
+					chunkChan <- agent.StreamChunk{
+						Usage: agent.TokenUsage{
+							InputTokens:  streamResp.Usage.PromptTokens,
+							OutputTokens: streamResp.Usage.CompletionTokens,
+							TotalTokens:  streamResp.Usage.TotalTokens,
+						},
+					}
+				}
 				continue
 			}
 

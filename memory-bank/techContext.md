@@ -6,22 +6,18 @@
 
 | 组件 | 库 | 版本 | 用途 |
 |------|-----|------|------|
-| CLI 框架 | `github.com/spf13/cobra` | v1.8+ | 命令行解析 |
-| 配置管理 | `github.com/spf13/viper` | v1.18+ | 配置加载/管理 |
-| TUI | `github.com/charmbracelet/bubbletea` | v1.0+ | 交互式终端 UI |
-| 样式 | `github.com/charmbracelet/lipgloss` | v0.10+ | 终端样式 |
-| 进度条 | `github.com/charmbracelet/bubbles` | v0.18+ | UI 组件 |
+| GUI 框架 | `github.com/wailsapp/wails/v3` | v3.0-alpha | 跨平台桌面应用 |
+| CLI 框架 | `github.com/spf13/cobra` | v1.10+ | 命令行解析 |
+| 配置管理 | `github.com/spf13/viper` | v1.21+ | 配置加载/管理 |
 | 数据库 | `modernc.org/sqlite` | v1.50+ | 纯 Go SQLite（零 CGO） |
 | HTTP 客户端 | `github.com/go-resty/resty/v2` | v2.12+ | API 调用 |
-| 日志 | `github.com/rs/zerolog` | v1.32+ | 结构化日志 |
+| 日志 | `github.com/rs/zerolog` | v1.35+ | 结构化日志 |
 | 文件监控 | `github.com/fsnotify/fsnotify` | v1.7+ | 配置热更新 |
-| 校验 | `github.com/go-playground/validator/v10` | v10.19+ | 输入验证 |
-| 颜色输出 | `github.com/fatih/color` | v1.16+ | 终端颜色 |
 
 ### 开发工具
 
+- **构建**: `go task` (Taskfile) 替代 Makefile
 - **测试**: `go test` + `github.com/stretchr/testify`
-- **Mock**: `github.com/vektra/mockery/v2`
 - **Lint**: `golangci-lint`
 - **格式化**: `gofumpt`, `golines`
 
@@ -30,55 +26,54 @@
 ```
 gline/
 ├── cmd/
-│   └── gline/
-│       └── main.go              # 程序入口
+│   └── gline/                   # CLI 命令入口
+│       ├── main.go
+│       ├── root.go
+│       ├── chat.go
+│       └── history.go
 ├── internal/
 │   ├── agent/                   # Agent 核心逻辑
 │   │   ├── agent.go
-│   │   ├── mode.go
+│   │   ├── provider.go
 │   │   └── executor.go
 │   ├── api/                     # LLM 提供商
-│   │   ├── provider.go          # 接口定义
-│   │   ├── anthropic.go         # Claude API
-│   │   ├── openai.go            # OpenAI API
-│   │   ├── openrouter.go        # OpenRouter
-│   │   └── registry.go          # 提供商注册表
+│   │   ├── anthropic.go
+│   │   ├── openai.go
+│   │   └── registry.go
 │   ├── tools/                   # 工具系统
-│   │   ├── tool.go              # 接口定义
-│   │   ├── registry.go          # 工具注册表
-│   │   ├── file.go              # 文件工具
-│   │   ├── command.go           # 命令执行
-│   │   └── search.go            # 搜索工具
+│   │   ├── tool.go
+│   │   ├── registry.go
+│   │   ├── file.go
+│   │   ├── command.go
+│   │   └── search.go
 │   ├── prompts/                 # 提示词管理
-│   │   ├── system.go            # 系统提示词
-│   │   └── tools.go             # 工具定义 JSON
-│   ├── storage/                 # 状态管理
-│   │   ├── state.go             # 状态管理器
-│   │   ├── history.go           # 任务历史
-│   │   └── database.go          # 数据库连接
-│   ├── ui/                      # 用户界面
-│   │   ├── interface.go         # UI 接口
-│   │   ├── tui/                 # TUI 实现
-│   │   │   ├── app.go
-│   │   │   ├── chat.go
-│   │   │   └── welcome.go
-│   │   └── plain/               # 纯文本模式
-│   │       └── output.go
+│   │   ├── system.go
+│   │   ├── tools.go
+│   │   └── rules.go             # 自定义规则加载
+│   ├── storage/                 # 数据持久化
+│   │   ├── store.go
+│   │   ├── database.go
+│   │   ├── sqlite.go
+│   │   └── history.go
 │   ├── config/                  # 配置管理
 │   │   └── config.go
+│   ├── ui/                      # 已废弃 (Bubbletea TUI)
+│   ├── log/                     # 日志系统
 │   └── utils/                   # 工具函数
-│       ├── file.go
-│       └── string.go
 ├── pkg/
 │   └── types/                   # 共享类型
 │       ├── message.go
 │       ├── tool.go
 │       └── conversation.go
-├── docs/                        # 文档
-├── scripts/                     # 构建脚本
+├── gui/                         # Wails v3 GUI 应用
+│   ├── main.go                  # GUI 入口
+│   ├── backend.go               # 后端服务
+│   ├── chat_service.go          # 聊天服务
+│   ├── frontend/                # 前端资源 (Vite + React)
+│   ├── build/                   # 构建脚本
+│   └── Taskfile.yml             # GUI 构建任务
 ├── Makefile
 ├── go.mod
-├── go.sum
 └── README.md
 ```
 

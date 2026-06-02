@@ -13,45 +13,40 @@
 
 **gline** 提供：
 
-1. **纯 CLI 体验**: 无需 IDE，直接在终端中使用
-2. **轻量级**: 资源占用低，适合各种环境
-3. **可脚本化**: 支持管道、重定向，易于自动化
+1. **桌面 GUI 应用**: 基于 Wails v3 的跨平台桌面应用，脱离 IDE
+2. **轻量级**: 比完整 IDE 资源占用低
+3. **可脚本化**: 保留 CLI 子命令，支持管道、重定向，易于自动化
 4. **跨平台**: 支持 Windows、macOS、Linux
 
 ## 用户场景
 
-### 场景 1: 快速代码审查
-```bash
-gline task "Review this PR for potential bugs" --cwd ./my-project
-```
+### 场景 1: 快速代码审查（GUI）
+打开 gline GUI，输入 "Review this PR for potential bugs"，Agent 自动分析并给出建议。
 
-### 场景 2: 批量重构
+### 场景 2: 批量重构（CLI）
 ```bash
-gline task "Refactor all var declarations to const/let" --yolo
+gline chat "Refactor all var declarations to const/let"
 ```
 
 ### 场景 3: CI/CD 集成
 ```bash
-gline task "Check for security vulnerabilities in dependencies" --json > report.json
+gline history list
 ```
 
-### 场景 4: 远程服务器开发
-```bash
-# SSH 到远程服务器后直接使用
-gline task "Analyze nginx logs and suggest optimizations"
-```
+### 场景 4: 历史任务续接
+在 GUI 历史列表中选择之前的任务，点击续接继续对话。
 
 ## 用户体验目标
 
 ### 交互模式
-1. **TUI 模式**: 交互式终端界面，适合日常使用
-2. **纯文本模式**: 支持管道和重定向，适合脚本和自动化
+1. **GUI 模式**: 基于 Wails v3 的桌面应用，提供富文本聊天界面，适合日常使用
+2. **CLI 模式**: 保留命令行子命令，适合脚本和自动化
 
 ### 核心命令
-- `gline task <prompt>` - 执行新任务
-- `gline history` - 查看任务历史
+- `gline` - 启动 GUI 桌面应用
+- `gline history` - 查看任务历史（CLI）
 - `gline config` - 配置管理
-- `gline auth` - 认证设置
+- `gline version` - 版本信息
 
 ### 工作流
 1. 用户输入任务描述
@@ -68,5 +63,5 @@ gline task "Analyze nginx logs and suggest optimizations"
 | 资源占用低 | ✅ | ❌ |
 | 可脚本化 | ✅ | ❌ |
 | 远程服务器友好 | ✅ | ❌ |
-| 图形化编辑 | ❌ | ✅ |
-| 文件浏览器集成 | ❌ | ✅ |
+| 图形化编辑 | ✅ | ✅ |
+| 文件浏览器集成 | ✅ | ✅ |

@@ -4,7 +4,7 @@
 
 **当前阶段**: MVVM 重构全部完成 ✅
 
-**总体进度**: 75% - TUI MVVM 架构重构和优化已全部完成（Phase 1-10），测试覆盖 110+，全部通过。
+**总体进度**: 60% - 核心架构已完成（Agent、Provider、Tools、Storage），已迁移到 Wails GUI 桌面应用。前端界面待完善。
 ```
 
 ## 已完成工作
@@ -176,16 +176,14 @@ gline/
   - [x] Provider 接口扩展 - 添加 `CreateMessageStream` 方法
   - [x] OpenAI 流式响应支持 (SSE 解析)
   - [x] Anthropic 流式响应支持 (SSE 解析)
-- [x] TUI 交互式界面
-  - [x] Bubbletea TUI 框架实现 (`internal/ui/tui.go`)
-  - [x] 消息历史显示区域
-  - [x] 输入框组件
-  - [x] 状态栏 (显示 Provider/模型/模式)
-  - [x] Plan/Act 模式切换 (Tab 键)
-  - [x] 快捷键支持 (Ctrl+C 退出, Ctrl+L 清屏)
-- [x] CLI 命令集成
-  - [x] `gline` 命令默认启动 TUI 交互模式
-  - [x] `gline chat` 默认启动 TUI 交互模式
+- [x] GUI 桌面应用 (Wails v3)
+  - [x] Wails v3 框架集成 (`gui/`)
+  - [x] Backend 服务 (`gui/backend.go`)
+  - [x] ChatService 事件绑定 (`gui/chat_service.go`)
+  - [x] 前端资源嵌入 (`frontend/dist`)
+- [x] CLI 命令集成（保留）
+  - [x] `gline` 命令默认启动 GUI 桌面应用
+  - [x] `gline chat` 支持 CLI 对话模式
   - [x] `gline chat "message"` 单消息模式
   - [x] Agent 自动初始化
   - [x] 支持 OpenAI 和 Anthropic Provider
@@ -194,133 +192,93 @@ gline/
   - [x] 流式响应错误处理
   - [x] TUI 友好的错误显示
 
-### Phase 2: TUI 任务历史界面 ✅
+### Phase 2: GUI 历史任务界面 ✅
 
 **优先级**: 中
 **时间**: 2026-05-24
 **状态**: 已完成
 
-- [x] 历史列表页 (`internal/ui/view/history_screen.go`)
-  - 显示最近 50 条任务记录（状态图标、标题、模式/提供商/模型、时间）
-  - ↑/↓ 选择任务
-  - Enter 查看详情（消息记录预览）
-  - D 删除任务（Y/N 确认）
-  - Esc 返回聊天界面
-- [x] 续接历史任务 (`internal/ui/tui.go` → `loadHistoryTask()`)
-  - 从历史数据库加载全部消息到 UI 和 Agent 对话层
-  - 设置 agent.taskID 为新消息追加到同一任务
-  - 恢复任务的模式 (Plan/Act)
-  - 加载成功后显示 "↺ Loaded task: <title>" 系统消息
-- [x] 快捷键入口 (`Ctrl+H`)
-  - 从任意聊天界面一键进入历史列表
-  - 在详情页 Enter 加载并返回聊天
+- [x] 历史任务 Backend 接口 (`gui/backend.go`)
+  - `ListTasks(limit, offset)` — 分页查询任务历史
+  - `GetTaskSummary(id)` — 获取任务详情和消息记录
+  - `DeleteTask(id)` — 删除任务
+  - `LoadTask(id)` — 续接历史任务（加载消息到 Agent Conversation）
+- [x] 数据持久化
+  - 每次对话自动保存到 SQLite
+  - 工具调用记录完整追踪
+  - 任务状态自动管理（running → completed/failed）
 
 ### Phase 4: UI 层
 
 **优先级**: 中
 **预计时间**: 2-3 周
-**状态**: 已完成 (基础 TUI + 历史界面)
+**状态**: GUI 基础框架已完成，前端界面待完善
 
-- [x] TUI 基础框架
-- [x] 纯文本模式
-- [x] 交互式对话
-- [x] 任务历史界面 (Phase 2)
+- [x] Wails v3 GUI 框架
+- [x] Backend 服务与 Agent 集成
+- [x] 流式响应事件（SSE）
+- [x] 任务历史 Backend 接口
+- [ ] 前端聊天界面（Markdown 渲染、代码高亮）
+- [ ] 工具调用可视化
+- [ ] 设置页面（API Key、Provider、Model）
+- [ ] 历史任务浏览/续接 UI
 
 ### Phase 5: 高级功能
 
 **优先级**: 低
 **预计时间**: 2-4 周
 
-- [x] ~~任务历史管理~~ -> Phase 1 已完成 ✅
-- [ ] 配置管理界面
-- [ ] 多 Provider 支持
+- [x] 任务历史管理 ✅
+- [x] 自定义规则加载 ✅
+- [ ] GUI 配置管理界面
+- [ ] 规则热重载 (`/reload`)
+- [ ] MCP 支持
 - [ ] 性能优化
 
 ## 已知问题
 
-### 架构债务（已解决）✅
+### 架构演进（重大变更）
 
-**TUI 层架构混乱** — 通过 MVVM 重构已解决 ✅
-- **问题描述**: `internal/ui/` 下 TUI Model 是上帝对象，混合 UI 状态、业务状态、Agent 胶水代码
-- **影响**: 可测试性差、View 渲染性能差、添加新功能需改动 4-5 个文件
-- **解决方案**: 10 阶段渐进 MVVM 重构（Phase 1-5 架构重构 + Phase 6-10 优化）
-- **重构后架构**:
-  ```
-  internal/ui/
-  ├── model/         # Domain Model（纯数据，零依赖）
-  ├── viewmodel/     # ViewModel（派生状态 + 渲染缓存）
-  ├── view/          # View（纯渲染函数）
-  ├── bridge/        # Agent-TUI 桥接层（类型安全消息）
-  └── *.go           # Bubbletea 薄壳
-  ```
-- **当前状态**: 全部 10 Phase 已完成 ✅（2026-05-14）
-- **测试覆盖**: 110+ 测试全部通过
+**TUI → GUI 迁移** — Bubbletea TUI 已废弃，全面迁移到 Wails v3 GUI。旧 TUI MVVM 架构作为历史参考仍保留在 `memory-bank/archive/` 中。
 
-### TUI 优化进度汇总
-
-| Phase | 内容 | 状态 | 日期 |
-|-------|------|------|------|
-| Phase 1-5 | MVVM 架构重构 | ✅ 完成 | 2026-05-11 |
-| Phase 6-10 | 渲染性能/并发安全/架构完整性 | ✅ 完成 | 2026-05-14 |
-
-**详细技术文档**: 见 `memory-bank/tui-mvvm-refactor.md` 和 `memory-bank/tui-optimization-plan.md`
+- **原 TUI 架构**: `internal/ui/` 下 Bubbletea MVVM + Bridge 分层设计
+- **新 GUI 架构**: `gui/` 下 Wails v3，Go Backend + Web Frontend
+- **原因**: GUI 提供更丰富交互（Markdown 渲染、代码高亮、鼠标操作），Wails 包体积更小
 
 ### 已修复问题 ✅
 
-1. **TUI 模式下工具调用卡死** ✅
-   - **问题**: 
-     - TUI 模式下发送工具调用后界面卡死
-     - 工具调用只被显示但没有被执行
-     - TUI 直接调用 Provider API，绕过了 Agent 的 `Run` 方法
-   - **修复**: 
-     - 重构架构：TUI 和 CLI 模式都通过 `Agent.RunWithCallback()` 运行
-     - 添加 `StreamCallback` 接口，Agent 通过回调通知 UI 更新
-     - 在 `processStream()` 中统一处理流式响应和工具执行
-     - TUI 大幅简化，只负责显示回调内容
-   - **文件**: `internal/agent/agent.go`, `internal/agent/provider.go`, `internal/ui/tui.go`
+1. **Agent 流式回调架构** ✅
+   - **实现**:
+     - `Agent.RunWithCallback()` 统一处理流式响应和工具执行
+     - `StreamCallback` 接口通知 UI 层（OnContent, OnToolCallStart, OnToolCallComplete, OnTaskCreated）
+     - `processStream()` 统一处理 LLM 流式响应
+     - GUI 通过 `ChatService` 接收事件并转发给前端
+   - **文件**: `internal/agent/agent.go`, `gui/chat_service.go`
 
-2. **TUI 和 Chat 模式响应不一致** ✅
-   - **问题**:
-     - TUI 模式发送消息后界面无响应（工具调用被禁用debug模式）
-     - Chat 模式有正常响应，能显示工具调用信息
-     - 两种模式理论上走相同的 Agent.RunWithCallback 路径
-   - **根本原因** (对比Cline源码发现):
-     - 工具文本发送时机太晚：在流结束后才发送，LLM只返回tool_call时TUI看到空响应
-     - 工具调用信息被清空：`typesToolCalls = nil` 导致信息丢失
-     - TUI缺少实时反馈：Cline立即通过say发送，gline只在最后发送
-   - **修复**:
-     - 在 `processStream()` 接收到完整工具调用时立即发送工具文本
-     - 保留 `typesToolCalls` 信息，不再清空
-     - 统一TUI和Chat模式的体验，都能实时看到工具意图
+2. **工具调用实时通知** ✅
+   - **实现**:
+     - 在 `processStream()` 接收到完整工具调用时立即发送回调
+     - `OnToolCallStart` / `OnToolCallComplete` 让 GUI 实时显示工具执行状态
+     - 工具执行结果自动追加到对话上下文
    - **文件**: `internal/agent/agent.go`
    - **日期**: 2026-05-09
 
-3. **工具调用参数重复累积问题** ✅
-   - **问题**:
-     - OpenAI provider发送工具调用时使用指针引用
-     - agent.go的processStream又对同一指针累积参数
-     - 导致参数被重复累加（如`{"{"path{"{"path":...`）
+3. **工具调用参数重复累积修复** ✅
    - **修复**:
-     - 在 `openai.go` 发送partial chunk时创建tool call的副本
+     - 在 `openai.go` 发送 partial chunk 时创建 tool call 的副本
      - `toolCallCopy := *toolCalls[tc.Index]` 避免指针共享
-     - 简化agent.go的processStream，不再二次累积
    - **文件**: `internal/api/openai.go`, `internal/agent/agent.go`
    - **日期**: 2026-05-09
 
-4. **工具执行被禁用问题** ✅
-   - **问题**:
-     - processStream直接调用SetComplete()阻止工具执行
-     - 工具调用逻辑在processResponse中但该方法未被调用
+4. **工具执行流程修复** ✅
    - **修复**:
-     - 在agent loop中添加工具执行逻辑
-     - processStream后检查并执行工具调用
-     - 只有无工具调用时才SetComplete()
-     - 添加OnToolCallStart和OnToolCallComplete回调通知
+     - 在 agent loop 中添加工具执行逻辑
+     - processStream 后检查并执行工具调用
+     - 只有无工具调用时才 SetComplete()
    - **文件**: `internal/agent/agent.go`
    - **日期**: 2026-05-09
 
-2. **TUI 流式输出优化** ✅
-- [TRUNCATED FOR BREVITY — ORIGINAL CONTENT PRESERVED]
+5. **TUI 流式输出优化** ✅ (历史记录)
 
 ### 2026-05-23 — 自定义规则 / 系统提示词扩展 ✅
 
@@ -355,49 +313,69 @@ gline/
 - `internal/prompts/system.go` — 支持追加自定义规则
 - `README.md` — 使用文档
 
-### 2025-06-20 — Slash 命令功能修复 ✅
+### 2025-06-20 — Slash 命令功能修复 ✅ (TUI 历史记录)
+
+> TUI 已废弃。此功能仅作为历史记录保留。
 
 **功能**: 修复 TUI slash 命令"有 UI 无后台"的关键缺陷。
 
-**根因分析** (4 个关键缺陷):
-1. **`OnResult` 回调为 `nil`** — `New()` 中 `slash.NewDefaultRegistry(conv, nil)` 传入了 nil，所有 handler 的 `ctx.OnResult()` 调用无效
-2. **`handleSlashCommandResult` 从未被调用** — 已完整实现所有结果处理逻辑，但因 OnResult 为 nil 从未执行
-3. **`quitting` 标志未处理** — `ResultQuit` 设置了 `m.quitting = true`，但 `Update()` 没有检查该标志来触发 `tea.Quit`
-4. **Agent 层状态未同步** — `/clear`、`/newtask` 只清空了 UI 层 `model.Conversation`，没有清空后台 Agent 的 `types.Conversation`
-
 **修复内容**:
-1. **修复 `New()` 初始化** — 将 `slashMenu` 初始化移到 `Model` 创建之后，传入真正引用 `m` 的 `OnResult` 闭包
-2. **修复 `Update()` 退出逻辑** — 在 return 前检查 `m.quitting`，若为 true 则追加 `tea.Quit`
-3. **增强 `handleSlashCommandResult`** — 所有结果处理都同步 Agent 层状态
+- `internal/ui/tui.go` 中修复 `OnResult` 回调为 `nil` 的问题
+- 增强 `handleSlashCommandResult` 同步 Agent 层状态
 
-**支持的 Slash 命令**:
-- `/clear` — 清空当前对话（UI + Agent 双清空，abort 运行中任务）
+**支持的 Slash 命令** (TUI 时期):
+- `/clear` — 清空当前对话
 - `/exit` 或 `/q` — 退出 gline
 - `/help` — 显示帮助信息
-- `/newtask [name]` — 开始新任务（UI + Agent 双清空，保留系统上下文）
-- `/smol` 或 `/compact` — 压缩对话上下文（调用 TrimToMaxTokens）
+- `/newtask [name]` — 开始新任务
+- `/smol` 或 `/compact` — 压缩对话上下文
 
-**验证结果**:
-- ✅ `go build ./...` 编译通过
-- ✅ `go vet ./...` 无静态分析错误
-- ✅ `go test ./internal/slash/...` 通过
-- ✅ `go test ./internal/ui/...` 全部通过
-
-**修改文件**:
-- `internal/ui/tui.go` — 3 处修改（New、Update、handleSlashCommandResult）
-
-**参考研究** (Cline CLI 源码分析):
-- Cline CLI 的 slash 命令通过 `SlashCommandRegistry` 管理，分为三类：
-  - `execution: "local"` — TUI 本地处理（如 /help, /exit, /clear）
-  - `execution: "runtime"` — 发送到后端 Agent 处理（如 /newtask → 转换为 new_task 工具调用）
-  - `execution: "user-command"` — 展开为提示词注入（如 workflow/skill 命令）
-- `parseSlashCommands()` 在 `src/core/slash-commands/index.ts` 中将命令替换为对应的系统提示词
+> GUI 后续将以按钮/菜单形式替代这些 slash 命令。
 
 ## 最近变更
 
-### 2026-05-14 — TUI 架构优化完成 ✅
+### 2026-06-02 — GUI Token 追踪与上下文压缩 ✅
 
-TUI MVVM 架构重构和优化已全部完成。
+**Token 实时追踪**
+- `pkg/types/message.go`: `actualInputTokens`/`actualOutputTokens` 字段 + `AddActualTokens()`/`GetActualTokens()`/`ResetActualTokens()` 方法
+- `internal/agent/agent.go`: `processStream()` 从流式响应的 usage chunk 累加真实 token
+- `internal/api/openai.go`: 解析 SSE 中 `choices == 0` 的 usage 终结 chunk
+- `internal/api/anthropic.go`: 解析 `message_delta.usage` 并附带 `Done: true`
+- `gui/chat_service.go`: `GetStatus()` 优先返回真实 token，fallback 到估算值
+- `gui/frontend/src/App.tsx`: 状态栏显示模型名 + token进度条
+
+**最大上下文配置**
+- `internal/config/config.go`: `ProviderSettings` 新增 `MaxContextTokens`
+- 设置面板支持 per-provider `Max Context Tokens` 输入
+- 默认值从 128000 上调为 262000
+- `gui/backend.go`: 用配置的 `MaxContextTokens` 初始化 Agent，变更时自动重初始化
+
+**自动上下文压缩**
+- `pkg/types/message.go`: `GetTotalTokens()` 获取最优 token 估算；`AutoCompact()` 滑动窗口压缩（保留 system prompt + 最近 2 轮 = 4 条消息）；`IsTokenAboveThreshold(percent)` 阈值检测
+- `internal/agent/agent.go`: `BaseAgent.Compact()` 手动压缩；`BaseAgent.AutoCompact()` 自动检测 80% 阈值并压缩；`Agent` 接口新增 `Compact() bool`
+- `gui/chat_service.go`: `CompactConversation()` 暴露给前端（未来可作为 slash 命令/按钮调用）
+- 每次 `RunWithCallback` 发送 LLM 请求前自动检查并压缩
+- 参考 Cline 的 `ContextManager` 截断策略（保留开头锚点 + 按比例截断），但我们的实现更简化：直接保留 system + 最近 2 轮
+
+**修改文件**:
+- `pkg/types/message.go`
+- `internal/config/config.go`
+- `internal/agent/agent.go`
+- `internal/api/openai.go`
+- `internal/api/anthropic.go`
+- `gui/backend.go`
+- `gui/chat_service.go`
+- `gui/frontend/src/App.tsx`
+
+### 2026-06-02 — 迁移到 Wails GUI ✅
+
+项目已全面从 Bubbletea TUI 迁移到 Wails v3 GUI 桌面应用。
+
+**变更内容**:
+- 新增 `gui/` 目录，包含 Wails v3 应用入口、Backend、ChatService
+- `gline` 命令默认启动 GUI 桌面应用
+- 保留 CLI 子命令 `history`, `config`, `version`
+- 废弃 `internal/ui/` Bubbletea TUI（代码保留但不维护）
 
 ### 2026-05-09 — TUI 交互式问答功能完成 ✅
 

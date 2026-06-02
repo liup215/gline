@@ -1,0 +1,206 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/liup215/gline/internal/agent"
+	"github.com/liup215/gline/internal/api"
+	"github.com/liup215/gline/internal/config"
+	"github.com/liup215/gline/internal/storage"
+	"github.com/liup215/gline/internal/tools"
+	"github.com/liup215/gline/pkg/types"
+)
+
+var backendInstance *Backend
+
+func initBackend() error {
+	backendInstance = &Backend{}
+	if err := backendInstance.initConfig(); err != nil {
+		return fmt.Errorf("init config: %w", err)
+	}
+	if err := backendInstance.initStorage(); err != nil {
+		return fmt.Errorf("init storage: %w", err)
+	}
+	if err := backendInstance.initAgent(); err != nil {
+		return fmt.Errorf("init agent: %w", err)
+	}
+	return nil
+}
+
+// Backend exposes the gline core to Wails frontend
+type Backend struct {
+	cfg   *config.Manager
+	store storage.Store
+	ag    agent.Agent
+}
+
+func (b *Backend) initConfig() error {
+	b.cfg = config.NewManager()
+	return b.cfg.Load()
+}
+
+func (b *Backend) initStorage() error {
+	dir := getGlobalConfigDir()
+	dbPath := filepath.Join(dir, "gline.db")
+	store, err := storage.NewSQLiteStore(dbPath)
+	if err != nil {
+		return err
+	}
+	b.store = store
+	return nil
+}
+
+func getGlobalConfigDir() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return ".gline"
+	}
+	return filepath.Join(homeDir, ".gline")
+}
+
+func (b *Backend) initAgent() error {
+	cfg := b.cfg.Get()
+	providerName := cfg.Provider.Default
+	if providerName == "" {
+		providerName = "anthropic"
+	}
+
+	var provider agent.Provider
+	var maxTokens int
+	switch providerName {
+	case "anthropic":
+		s := cfg.Provider.Anthropic
+		provider = api.NewAnthropicProvider(s.APIKey, s.Model)
+		maxTokens = s.MaxContextTokens
+	case "openai":
+		s := cfg.Provider.OpenAI
+		provider = api.NewOpenAIProvider(s.APIKey, s.Model, s.BaseURL)
+		maxTokens = s.MaxContextTokens
+	default:
+		return fmt.Errorf("unknown provider: %s", providerName)
+	}
+
+	customRules := loadCustomRules()
+	registry := tools.InitDefaultRegistry()
+
+	ag, err := agent.New(agent.Options{
+		Provider:     provider,
+		ToolRegistry: registry,
+		Mode:         agent.ModeAct,
+		AutoApprove:  false,
+		CustomRules:  customRules,
+		Store:        b.store,
+		MaxTokens:    maxTokens,
+	})
+	if err != nil {
+		return err
+	}
+	b.ag = ag
+	return nil
+}
+
+func loadCustomRules() string {
+	homeDir, _ := os.UserHomeDir()
+	var content string
+
+	globalRulesDir := filepath.Join(homeDir, ".gline", "rules")
+	content += loadRulesFromDir(globalRulesDir)
+
+	workspaceRulesDir := filepath.Join(".gline", "rules")
+	content += loadRulesFromDir(workspaceRulesDir)
+
+	return content
+}
+
+func loadRulesFromDir(dir string) string {
+	var result string
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if filepath.Ext(name) != ".md" && filepath.Ext(name) != ".txt" {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil || len(data) == 0 {
+			continue
+		}
+		result += string(data) + "\n"
+	}
+	return result
+}
+
+// GetConfig returns the current configuration as JSON
+func (b *Backend) GetConfig() (string, error) {
+	cfg := b.cfg.Get()
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// UpdateConfig updates a config key
+func (b *Backend) UpdateConfig(key string, value string) error {
+	b.cfg.Set(key, value)
+	b.cfg.Save()
+
+	if key == "provider.default" ||
+		key == "provider.anthropic.max_context_tokens" ||
+		key == "provider.openai.max_context_tokens" {
+		if err := b.initAgent(); err != nil {
+			return fmt.Errorf("reinit agent: %w", err)
+		}
+	}
+	return nil
+}
+
+// ListTasks returns conversation history
+func (b *Backend) ListTasks(limit int, offset int) ([]storage.TaskRecord, error) {
+	return b.store.ListTasks(limit, offset)
+}
+
+// GetTaskSummary returns a task with its messages
+func (b *Backend) GetTaskSummary(taskID string) (*storage.TaskRecord, []storage.MessageRecord, error) {
+	return b.store.GetTaskSummary(taskID)
+}
+
+// DeleteTask deletes a task and its messages
+func (b *Backend) DeleteTask(taskID string) error {
+	return b.store.DeleteTask(taskID)
+}
+
+// LoadTask restores the agent's state for an existing task by setting its taskID
+// and loading messages back into the conversation.
+func (b *Backend) LoadTask(taskID string) error {
+	if b.ag == nil {
+		return fmt.Errorf("agent not initialised")
+	}
+	baseAg, ok := b.ag.(*agent.BaseAgent)
+	if !ok {
+		return fmt.Errorf("agent type mismatch")
+	}
+	// Set task ID so responses are stored under the same task
+	baseAg.SetTaskID(taskID)
+	// Load messages from storage into the conversation
+	_, msgs, err := b.store.GetTaskSummary(taskID)
+	if err != nil {
+		return fmt.Errorf("load messages: %w", err)
+	}
+	b.ag.GetConversation().Clear()
+	for _, m := range msgs {
+		b.ag.GetConversation().AddMessage(types.Message{
+			Role:    types.Role(m.Role),
+			Content: m.Content,
+		})
+	}
+	return nil
+}
