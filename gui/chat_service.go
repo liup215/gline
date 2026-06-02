@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/liup215/gline/internal/agent"
+	"github.com/liup215/gline/internal/log"
 	"github.com/liup215/gline/internal/slash"
 	"github.com/liup215/gline/internal/storage"
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -36,22 +37,39 @@ func (c *ChatService) pickProjectDir() (string, error) {
 		return "", fmt.Errorf("failed to change directory: %w", err)
 	}
 	c.workingDir = selected
+	// Sync to agent so CreateTask stores the correct working directory
+	if c.backend.ag != nil {
+		c.backend.ag.(*agent.BaseAgent).SetWorkingDir(selected)
+	}
 	return selected, nil
 }
 
 // StartNewConversation resets the conversation and clears the selected project directory.
-// The frontend will show the welcome screen so the user can pick a directory.
 func (c *ChatService) StartNewConversation() {
 	c.workingDir = ""
 	if c.backend.ag != nil {
 		c.backend.ag.(*agent.BaseAgent).ResetTask()
+		c.backend.ag.(*agent.BaseAgent).SetWorkingDir("")
 		c.backend.ag.GetConversation().Clear()
 	}
 }
 
 // SelectProjectDir opens a directory picker and sets the working directory without resetting conversation.
+// If a task is currently active, it also updates the task's working_dir in the database.
 func (c *ChatService) SelectProjectDir() (string, error) {
-	return c.pickProjectDir()
+	dir, err := c.pickProjectDir()
+	if err != nil || dir == "" {
+		return dir, err
+	}
+	// Update the database record if a task is loaded
+	if c.backend.ag != nil {
+		if taskID := c.backend.ag.(*agent.BaseAgent).GetTaskID(); taskID != "" {
+			if err := c.backend.store.UpdateTaskWorkingDir(taskID, dir); err != nil {
+				log.Warnf("Failed to update task working_dir: %v", err)
+			}
+		}
+	}
+	return dir, nil
 }
 
 // ChatService exposes chat operations to the Wails front-end.

@@ -166,6 +166,7 @@ export function ParseSlashCommand(text: string): $CancellablePromise<[string, st
 
 /**
  * SelectProjectDir opens a directory picker and sets the working directory without resetting conversation.
+ * If a task is currently active, it also updates the task's working_dir in the database.
  */
 export function SelectProjectDir(): $CancellablePromise<string> {
     return $Call.ByID(623065575);
@@ -191,7 +192,6 @@ export function SetMode(mode: string): $CancellablePromise<void> {
 
 /**
  * StartNewConversation resets the conversation and clears the selected project directory.
- * The frontend will show the welcome screen so the user can pick a directory.
  */
 export function StartNewConversation(): $CancellablePromise<void> {
     return $Call.ByID(262799438);

@@ -9,6 +9,7 @@ import (
 	"github.com/liup215/gline/internal/agent"
 	"github.com/liup215/gline/internal/api"
 	"github.com/liup215/gline/internal/config"
+	"github.com/liup215/gline/internal/log"
 	"github.com/liup215/gline/internal/storage"
 	"github.com/liup215/gline/internal/tools"
 	"github.com/liup215/gline/pkg/types"
@@ -193,11 +194,15 @@ func (b *Backend) LoadTask(taskID string) (*storage.TaskRecord, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load task summary: %w", err)
 	}
+	if task != nil && task.WorkingDir != "" {
+		if err := os.Chdir(task.WorkingDir); err == nil {
+			baseAg.SetWorkingDir(task.WorkingDir)
+		} else {
+			log.Warnf("Failed to chdir to %s: %v", task.WorkingDir, err)
+		}
+	}
 	// Set task ID so responses are stored under the same task
 	baseAg.SetTaskID(taskID)
-	if task != nil {
-		baseAg.SetWorkingDir(task.WorkingDir)
-	}
 	// Load messages from storage into the conversation
 	b.ag.GetConversation().Clear()
 	for _, m := range msgs {
