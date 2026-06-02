@@ -74,7 +74,7 @@ export function InputArea({
       <div style={{
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'center',
+        justifyContent: 'flex-start',
         gap: '6px',
         marginTop: '8px',
         fontSize: '0.72rem',
