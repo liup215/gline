@@ -70,6 +70,19 @@ export function InputArea({
         </button>
       </form>
 
+      {/* Hint Row */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '6px',
+        marginTop: '8px',
+        fontSize: '0.72rem',
+        color: '#636e7b',
+      }}>
+        Type <span style={{ color: '#8B5CF6', fontWeight: 600 }}>/</span> for slash commands · Use <span style={{ color: '#8B5CF6', fontWeight: 600 }}>@</span> to add files
+      </div>
+
       {/* Status Bar */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '10px', padding: '0 2px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '0.75rem', color: THEME.textDim }}>
