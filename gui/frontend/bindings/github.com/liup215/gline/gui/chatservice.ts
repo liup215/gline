@@ -17,11 +17,22 @@ import * as storage$0 from "../internal/storage/models.js";
 // @ts-ignore: Unused imports
 import * as application$0 from "../../../wailsapp/wails/v3/pkg/application/models.js";
 
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as $models from "./models.js";
+
 /**
  * AnswerFollowupQuestion sends the user's answer back to a pending AskFollowupQuestion call.
  */
 export function AnswerFollowupQuestion(answer: string): $CancellablePromise<void> {
     return $Call.ByID(1944089549, answer);
+}
+
+/**
+ * BuildHelpText returns formatted help for slash commands.
+ */
+export function BuildHelpText(): $CancellablePromise<string> {
+    return $Call.ByID(711945389);
 }
 
 /**
@@ -36,6 +47,24 @@ export function CompactConversation(): $CancellablePromise<boolean> {
  */
 export function DeleteTask(taskID: string): $CancellablePromise<void> {
     return $Call.ByID(2653465909, taskID);
+}
+
+/**
+ * ExecuteSlashCommand runs a slash command and returns the result.
+ */
+export function ExecuteSlashCommand(name: string, args: string): $CancellablePromise<$models.SlashActionResult | null> {
+    return $Call.ByID(2115491496, name, args).then(($result: any) => {
+        return $$createType1($result);
+    });
+}
+
+/**
+ * FilterSlashCommands returns commands matching the given prefix.
+ */
+export function FilterSlashCommands(prefix: string): $CancellablePromise<$models.SlashCommandInfo[]> {
+    return $Call.ByID(1206819056, prefix).then(($result: any) => {
+        return $$createType3($result);
+    });
 }
 
 /**
@@ -60,11 +89,20 @@ export function GetMode(): $CancellablePromise<string> {
 }
 
 /**
+ * GetSlashCommands returns all available slash commands.
+ */
+export function GetSlashCommands(): $CancellablePromise<$models.SlashCommandInfo[]> {
+    return $Call.ByID(2712373680).then(($result: any) => {
+        return $$createType3($result);
+    });
+}
+
+/**
  * GetStatus returns current provider, model, working directory, mode and token usage.
  */
 export function GetStatus(): $CancellablePromise<{ [_ in string]?: string }> {
     return $Call.ByID(4059966519).then(($result: any) => {
-        return $$createType0($result);
+        return $$createType4($result);
     });
 }
 
@@ -73,10 +111,24 @@ export function GetStatus(): $CancellablePromise<{ [_ in string]?: string }> {
  */
 export function GetTaskSummary(taskID: string): $CancellablePromise<[storage$0.TaskRecord | null, storage$0.MessageRecord[]]> {
     return $Call.ByID(3884067532, taskID).then(($result: any) => {
-        $result[0] = $$createType2($result[0]);
-        $result[1] = $$createType4($result[1]);
+        $result[0] = $$createType6($result[0]);
+        $result[1] = $$createType8($result[1]);
         return $result;
     });
+}
+
+/**
+ * InitSlashRegistry initialises the slash command registry for this service.
+ */
+export function InitSlashRegistry(): $CancellablePromise<void> {
+    return $Call.ByID(1139163529);
+}
+
+/**
+ * IsSlashCommand checks if text is a standalone slash command.
+ */
+export function IsSlashCommand(text: string): $CancellablePromise<boolean> {
+    return $Call.ByID(4200936369, text);
 }
 
 /**
@@ -84,7 +136,7 @@ export function GetTaskSummary(taskID: string): $CancellablePromise<[storage$0.T
  */
 export function ListTasks(limit: number, offset: number): $CancellablePromise<storage$0.TaskRecord[]> {
     return $Call.ByID(2917519979, limit, offset).then(($result: any) => {
-        return $$createType5($result);
+        return $$createType9($result);
     });
 }
 
@@ -100,6 +152,13 @@ export function LoadTask(taskID: string): $CancellablePromise<void> {
  */
 export function NewConversation(): $CancellablePromise<void> {
     return $Call.ByID(1999326860);
+}
+
+/**
+ * ParseSlashCommand extracts name and args from slash text.
+ */
+export function ParseSlashCommand(text: string): $CancellablePromise<[string, string]> {
+    return $Call.ByID(34237656, text);
 }
 
 export function SendMessage(prompt: string): $CancellablePromise<void> {
@@ -135,9 +194,13 @@ export function UpdateConfig(key: string, value: string): $CancellablePromise<vo
 }
 
 // Private type creation functions
-const $$createType0 = $Create.Map($Create.Any, $Create.Any);
-const $$createType1 = storage$0.TaskRecord.createFrom;
-const $$createType2 = $Create.Nullable($$createType1);
-const $$createType3 = storage$0.MessageRecord.createFrom;
-const $$createType4 = $Create.Array($$createType3);
-const $$createType5 = $Create.Array($$createType1);
+const $$createType0 = $models.SlashActionResult.createFrom;
+const $$createType1 = $Create.Nullable($$createType0);
+const $$createType2 = $models.SlashCommandInfo.createFrom;
+const $$createType3 = $Create.Array($$createType2);
+const $$createType4 = $Create.Map($Create.Any, $Create.Any);
+const $$createType5 = storage$0.TaskRecord.createFrom;
+const $$createType6 = $Create.Nullable($$createType5);
+const $$createType7 = storage$0.MessageRecord.createFrom;
+const $$createType8 = $Create.Array($$createType7);
+const $$createType9 = $Create.Array($$createType5);

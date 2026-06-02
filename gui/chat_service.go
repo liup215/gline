@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/liup215/gline/internal/agent"
+	"github.com/liup215/gline/internal/slash"
 	"github.com/liup215/gline/internal/storage"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -17,14 +19,145 @@ import (
 type ChatService struct {
 	app        *application.App
 	backend    *Backend
+	cmdReg     *slash.Registry
 	cancelFn   context.CancelFunc
 	followupCh chan string
 	mu         sync.Mutex
 }
 
+// InitSlashRegistry initialises the slash command registry for this service.
+func (c *ChatService) InitSlashRegistry() {
+	c.cmdReg = slash.NewRegistry()
+	for _, cmd := range slash.DefaultCommands(nil) {
+		c.cmdReg.Register(cmd)
+	}
+}
+
 // SetApp sets the application reference (called after app creation).
 func (c *ChatService) SetApp(app *application.App) {
 	c.app = app
+}
+
+// GetSlashCommands returns all available slash commands.
+func (c *ChatService) GetSlashCommands() []SlashCommandInfo {
+	if c.cmdReg == nil {
+		return nil
+	}
+	cmds := c.cmdReg.GetAll()
+	result := make([]SlashCommandInfo, 0, len(cmds))
+	for _, cmd := range cmds {
+		result = append(result, SlashCommandInfo{
+			Name:        cmd.Name,
+			Description: cmd.Description,
+			Section:     string(cmd.Section),
+		})
+	}
+	return result
+}
+
+// ExecuteSlashCommand runs a slash command and returns the result.
+func (c *ChatService) ExecuteSlashCommand(name string, args string) (*SlashActionResult, error) {
+	if c.cmdReg == nil {
+		return nil, fmt.Errorf("slash commands not initialised")
+	}
+	_, ok := c.cmdReg.Get(name)
+	if !ok {
+		return nil, fmt.Errorf("unknown command: /%s", name)
+	}
+
+	var capturedAction slash.CommandResult
+	var capturedMessage string
+
+	ctx := &slash.CommandContext{
+		OnResult: func(result slash.CommandResult, message string) {
+			capturedAction = result
+			capturedMessage = message
+		},
+	}
+
+	// Re-register commands with fresh context to capture result
+	reg := slash.NewRegistry()
+	for _, c := range slash.DefaultCommands(ctx) {
+		reg.Register(c)
+	}
+	freshCmd, ok := reg.Get(name)
+	if !ok {
+		return nil, fmt.Errorf("command not found: /%s", name)
+	}
+
+	_, err := freshCmd.Handler(args)
+	if err != nil {
+		return nil, err
+	}
+
+	actionStr := commandResultToString(capturedAction)
+	return &SlashActionResult{
+		Action:  actionStr,
+		Message: capturedMessage,
+	}, nil
+}
+
+// FilterSlashCommands returns commands matching the given prefix.
+func (c *ChatService) FilterSlashCommands(prefix string) []SlashCommandInfo {
+	if c.cmdReg == nil {
+		return nil
+	}
+	filtered := c.cmdReg.Filter(prefix)
+	result := make([]SlashCommandInfo, 0, len(filtered))
+	for _, cmd := range filtered {
+		result = append(result, SlashCommandInfo{
+			Name:        cmd.Name,
+			Description: cmd.Description,
+			Section:     string(cmd.Section),
+		})
+	}
+	return result
+}
+
+// IsSlashCommand checks if text is a standalone slash command.
+func (c *ChatService) IsSlashCommand(text string) bool {
+	return slash.IsStandaloneCommand(text)
+}
+
+// ParseSlashCommand extracts name and args from slash text.
+func (c *ChatService) ParseSlashCommand(text string) (string, string) {
+	return slash.ParseCommand(text)
+}
+
+// BuildHelpText returns formatted help for slash commands.
+func (c *ChatService) BuildHelpText() string {
+	if c.cmdReg == nil {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("Available slash commands:\n\n")
+	for _, cmd := range c.cmdReg.GetAll() {
+		b.WriteString(fmt.Sprintf("  /%-18s %s\n", cmd.Name, cmd.Description))
+	}
+	b.WriteString("\nShortcuts:\n")
+	b.WriteString("  Ctrl+N       New conversation\n")
+	b.WriteString("  Ctrl+K       Focus input\n")
+	b.WriteString("  Ctrl+B       Toggle sidebar\n")
+	return b.String()
+}
+
+func commandResultToString(r slash.CommandResult) string {
+	switch r {
+	case slash.ResultClearScreen:
+		return "clear"
+	case slash.ResultNewTask:
+		return "newtask"
+	case slash.ResultCompact:
+		return "compact"
+	case slash.ResultShowHelp:
+		return "help"
+	case slash.ResultShowHistory:
+		return "history"
+	case slash.ResultQuit:
+		return "quit"
+	default:
+		return "none"
+	}
 }
 
 // GetConfig returns the current configuration

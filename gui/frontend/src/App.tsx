@@ -7,6 +7,7 @@ import 'katex/dist/katex.min.css';
 import { Events, WML } from "@wailsio/runtime";
 import { ChatService } from "../bindings/github.com/liup215/gline/gui";
 import { TaskRecord, MessageRecord } from "../bindings/github.com/liup215/gline/internal/storage/models";
+import { useSlashCommands, SlashMenu } from "./slash";
 
 interface Message {
   role: 'user' | 'assistant' | 'tool' | 'system';
@@ -54,6 +55,7 @@ function App() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatInputRef = useRef<HTMLInputElement>(null);
 
   const [history, setHistory] = useState<TaskRecord[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -65,6 +67,8 @@ function App() {
   const [followup, setFollowup] = useState<{ question: string; options: string[] } | null>(null);
   const [mode, setMode] = useState<'plan' | 'act'>('act');
   const [status, setStatus] = useState<{ provider: string; model: string; cwd: string; currentTokens: string; maxTokens: string }>({ provider: '', model: '', cwd: '', currentTokens: '0', maxTokens: '0' });
+
+  const { menuState, handleInputChange, handleKeyDown, selectCommand, closeMenu } = useSlashCommands();
 
   useHighlightCode();
 
@@ -201,11 +205,88 @@ function App() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  const executeSlashCommand = async (name: string, args: string) => {
+    try {
+      const result: any = await ChatService.ExecuteSlashCommand(name, args);
+      const action = result?.action || 'none';
+      const msg = result?.message || '';
+
+      switch (action) {
+        case 'clear': {
+          ChatService.NewConversation();
+          setMessages([]);
+          setInput('');
+          setIsLoading(false);
+          setActiveTaskID(null);
+          ChatService.SetMode('act').then(() => setMode('act')).catch(() => {});
+          if (msg) {
+            setMessages(prev => [...prev, { role: 'system', content: msg }]);
+          }
+          break;
+        }
+        case 'newtask': {
+          handleNewConversation();
+          if (msg) {
+            setMessages(prev => [...prev, { role: 'system', content: msg }]);
+          }
+          break;
+        }
+        case 'compact': {
+          const compacted = await ChatService.CompactConversation();
+          if (compacted) {
+            setMessages(prev => [...prev, { role: 'system', content: msg || 'Conversation compacted' }]);
+          }
+          loadStatus();
+          break;
+        }
+        case 'help': {
+          const helpText = await ChatService.BuildHelpText();
+          setMessages(prev => [...prev, { role: 'system', content: helpText || msg || 'Help available' }]);
+          break;
+        }
+        case 'history': {
+          setSidebarOpen(true);
+          if (msg) {
+            setMessages(prev => [...prev, { role: 'system', content: msg }]);
+          }
+          break;
+        }
+        case 'quit': {
+          // Signal backend quit; frontend can close window if Wails exposes it
+          if (msg) {
+            setMessages(prev => [...prev, { role: 'system', content: msg }]);
+          }
+          break;
+        }
+        default: {
+          if (msg) {
+            setMessages(prev => [...prev, { role: 'system', content: msg }]);
+          }
+          break;
+        }
+      }
+    } catch (err: any) {
+      setMessages(prev => [...prev, { role: 'system', content: `Slash command error: ${err}` }]);
+    }
+  };
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
 
     const prompt = input.trim();
+
+    // Check if this is a standalone slash command
+    const isSlash = await ChatService.IsSlashCommand(prompt);
+    if (isSlash) {
+      setInput('');
+      const [name, args] = await ChatService.ParseSlashCommand(prompt);
+      if (name) {
+        await executeSlashCommand(name, args);
+        return;
+      }
+    }
+
     setInput('');
     setMessages(prev => [...prev, { role: 'user', content: prompt }]);
 
@@ -519,23 +600,44 @@ function App() {
         </div>
 
         {/* Input */}
-        <div style={{ padding: '14px 24px 20px', borderTop: `1px solid ${THEME.border}`, background: THEME.bg }}>
+        <div style={{ padding: '14px 24px 20px', borderTop: `1px solid ${THEME.border}`, background: THEME.bg, position: 'relative' }}>
           <form style={{ display: 'flex', gap: '12px' }} onSubmit={handleSubmit}>
-            <input
-              style={{ flex: 1, padding: '12px 16px', borderRadius: '10px', border: `1px solid ${THEME.border}`, background: '#1e293b', color: THEME.text, fontSize: '0.95rem', outline: 'none', transition: 'border-color 0.2s' }}
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSubmit(e as any);
-                }
-              }}
-              placeholder={isLoading ? 'AI is thinking...' : 'Ask gline anything... (Ctrl+N new chat, Ctrl+K focus, Ctrl+B toggle sidebar)'}
-              disabled={isLoading}
-              onFocus={e => e.currentTarget.style.borderColor = THEME.accent}
-              onBlur={e => e.currentTarget.style.borderColor = THEME.border}
-            />
+            <div style={{ flex: 1, position: 'relative' }}>
+              <SlashMenu
+                active={menuState.active}
+                filtered={menuState.filtered}
+                selectedIndex={menuState.selectedIndex}
+                onSelect={(cmd) => selectCommand(cmd, setInput, chatInputRef.current)}
+                inputRef={chatInputRef}
+              />
+              <input
+                ref={chatInputRef}
+                style={{ width: '100%', padding: '12px 16px', borderRadius: '10px', border: `1px solid ${THEME.border}`, background: '#1e293b', color: THEME.text, fontSize: '0.95rem', outline: 'none', transition: 'border-color 0.2s', boxSizing: 'border-box' }}
+                value={input}
+                onChange={e => {
+                  setInput(e.target.value);
+                  handleInputChange(e.target.value, e.target.selectionStart || 0, setInput, e.target);
+                }}
+                onKeyDown={e => {
+                  const { handled } = handleKeyDown(e, setInput);
+                  if (!handled && e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSubmit(e as any);
+                  }
+                }}
+                onClick={e => {
+                  handleInputChange(input, e.currentTarget.selectionStart || 0, setInput, e.currentTarget);
+                }}
+                placeholder={isLoading ? 'AI is thinking...' : 'Ask gline anything... Type / for commands (Ctrl+N new chat, Ctrl+K focus, Ctrl+B toggle sidebar)'}
+                disabled={isLoading}
+                onFocus={e => e.currentTarget.style.borderColor = THEME.accent}
+                onBlur={e => {
+                  e.currentTarget.style.borderColor = THEME.border;
+                  // Small delay to allow menu clicks to register before closing
+                  setTimeout(() => closeMenu(), 200);
+                }}
+              />
+            </div>
             <button
               type="submit"
               style={{ padding: '12px 20px', borderRadius: '10px', border: 'none', background: isLoading || !input.trim() ? '#334155' : THEME.accent, color: '#fff', cursor: isLoading || !input.trim() ? 'not-allowed' : 'pointer', fontSize: '0.95rem', fontWeight: 500, transition: 'background 0.2s' }}

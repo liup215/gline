@@ -5,3 +5,8 @@ import * as ChatService from "./chatservice.js";
 export {
     ChatService
 };
+
+export {
+    SlashActionResult,
+    SlashCommandInfo
+} from "./models.js";

@@ -4,7 +4,7 @@
 
 **当前阶段**: MVVM 重构全部完成 ✅
 
-**总体进度**: 60% - 核心架构已完成（Agent、Provider、Tools、Storage），已迁移到 Wails GUI 桌面应用。前端界面待完善。
+**总体进度**: 65% - 核心架构已完成（Agent、Provider、Tools、Storage），已迁移到 Wails GUI 桌面应用。前端核心功能基本完成。
 ```
 
 ## 已完成工作
@@ -218,10 +218,11 @@ gline/
 - [x] Backend 服务与 Agent 集成
 - [x] 流式响应事件（SSE）
 - [x] 任务历史 Backend 接口
-- [ ] 前端聊天界面（Markdown 渲染、代码高亮）
-- [ ] 工具调用可视化
-- [ ] 设置页面（API Key、Provider、Model）
-- [ ] 历史任务浏览/续接 UI
+- [x] 前端聊天界面（Markdown 渲染、代码高亮）
+- [x] 工具调用可视化
+- [x] 设置页面（API Key、Provider、Model）
+- [x] 历史任务浏览/续接 UI
+- [x] Slash 命令（弹出菜单，复用 internal/slash）
 
 ### Phase 5: 高级功能
 
@@ -366,6 +367,22 @@ gline/
 - `gui/backend.go`
 - `gui/chat_service.go`
 - `gui/frontend/src/App.tsx`
+
+### 2026-06-02 — GUI Slash 命令功能完成 ✅
+
+在 Wails GUI 中实现了 slash 命令弹出菜单，复用 `internal/slash/` 的 registry 和命令定义。
+
+**变更内容**:
+- `gui/chat_service.go`: 集成 `slash.Registry`，新增 `InitSlashRegistry()`、`GetSlashCommands()`、`ExecuteSlashCommand()`、`FilterSlashCommands()`、`IsSlashCommand()`、`ParseSlashCommand()`、`BuildHelpText()`
+- `gui/slash_service.go`: 序列化类型 `SlashCommandInfo` 和 `SlashActionResult`
+- `gui/main.go`: 初始化后调用 `chatService.InitSlashRegistry()`
+- `gui/frontend/src/slash/use-slash-commands.ts`: Hook 管理菜单状态、命令过滤、键盘导航 (↑/↓/Enter/Tab/Esc)
+- `gui/frontend/src/slash/slash-menu.tsx`: 深色主题弹出命令选择器
+- `gui/frontend/src/App.tsx`: 集成菜单到输入框，处理 `/` 触发和 action 分发
+
+**支持命令**: `/clear`、`/newtask`、`/smol`、`/compact`、`/history`、`/help`、`/exit`、`/q`
+
+**Wails 绑定坑**: `SlashService` 若同时注册为 `application.Service` 和作为 exported struct 被引用，Wails 生成 bindings 时会产生重复的 `SlashService` 导出（module + model class），导致 TypeScript 编译失败。解决办法是将 slash 逻辑内嵌到 `ChatService` 中，不单独注册为 service。
 
 ### 2026-06-02 — 迁移到 Wails GUI ✅
 

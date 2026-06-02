@@ -15,9 +15,11 @@
 | 任务历史管理 | ✅ | `gline history list/show/delete`，GUI 中可续接 |
 | Backend 服务 (Wails) | ✅ | `gui/backend.go`，暴露 Config/History/Agent 给前端 |
 | ChatService | ✅ | `gui/chat_service.go`，Stream + SSE 事件 |
+| GUI Slash 命令 | ✅ | 输入 `/` 弹出命令菜单，支持内置命令（/clear、/help 等） |
 | Token 实时追踪 | ✅ | API usage 累加 + 估算 fallback，显示在状态栏 |
 | 自动上下文压缩 | ✅ | 超过 80% 阈值时自动滑动窗口压缩（保留 system + 最近 2 轮） |
 | Plan/Act 模式切换 | ✅ | GUI 底部按钮切换，实时生效 |
+| Slash 命令 | ✅ | `gui/frontend/src/slash/`，复用 `internal/slash`，支持 /clear、/newtask、/smol、/compact、/history、/help、/exit、/q |
 
 ---
 
@@ -47,6 +49,7 @@
 | W1.5 模式切换 | Plan/Act 模式在 GUI 中可切换，底部按钮 | 0.5 天 | ✅ |
 | W1.6 Token 追踪 | 状态栏显示模型、当前/最大 token、进度条 | 0.5 天 | ✅ |
 | W1.7 上下文压缩 | 超过 80% 自动压缩，保留 system + 最近 2 轮 | 0.5 天 | ✅ |
+| W1.8 Slash 命令 | 输入 `/` 弹出命令菜单，支持内置命令 | 0.5 天 | ✅ |
 
 ### Phase W2: 规则热重载 & 易用性（中优先级）
 

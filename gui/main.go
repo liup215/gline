@@ -17,6 +17,7 @@ func main() {
 	}
 
 	chatService := &ChatService{backend: backendInstance}
+	chatService.InitSlashRegistry()
 
 	app := application.New(application.Options{
 		Name:        "gline",
