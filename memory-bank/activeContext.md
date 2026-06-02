@@ -20,7 +20,7 @@
 | 自动上下文压缩 | ✅ | 超过 80% 阈值时自动滑动窗口压缩（保留 system + 最近 2 轮） |
 | Plan/Act 模式切换 | ✅ | GUI 底部按钮切换，实时生效 |
 | Slash 命令 | ✅ | `gui/frontend/src/slash/`，复用 `internal/slash`，支持 /clear、/newtask、/smol、/compact、/history、/help、/exit、/q |
-| GUI 新建会话选择目录 | ✅ | 2026-06-02，新建会话时弹出目录选择器，切换工作目录并重置 agent |
+| GUI 新建会话选择目录 | ✅ | 2026-06-02，使用独立 `workingDir` 字段记录项目目录，不依赖 `os.Getwd()`。新建会话/ /clear 重置并显示欢迎页，由用户在欢迎页主动选择目录。 |
 | Tab 切换 Plan/Act 模式 | ✅ | 2026-06-02，Tab 键快速切换模式 |
 | Help 文本格式化 | ✅ | 2026-06-02，SystemMessage 列表化渲染帮助文本 |
 | 输入框提示 | ✅ | 2026-06-02，左对齐提示 slash commands 和 @ add files |

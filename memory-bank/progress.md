@@ -348,6 +348,15 @@ gline/
 - `gui/frontend/src/components/InputArea.tsx`: `canChat` prop 控制禁用状态和占位文字（"Please select a project directory first"）
 - `gui/frontend/src/components/ChatArea.tsx`: 传递 `onSelectProjectDir` 和 `canChat`
 
+### 2026-06-02 — 重构：使用 workingDir 字段替代 os.Getwd() ✅
+
+移除了启动时 `os.Getwd()` 自动赋值给 `cwd` 的问题。改为后端 `ChatService` 上独立的 `workingDir` 字段，只有用户通过对话框选择目录后才会被赋值。
+
+- `GetStatus()` 不再调用 `os.Getwd()`，返回 `workingDir`（初始为空）
+- `/clear`、新建会话不再弹窗，而是重置会话并清空 `workingDir`，让前端回到欢迎页
+- 欢迎页"📁 Select Project Directory"按钮只在 `status.cwd === ''` 时显示
+- `canChat = status.cwd !== '' || messages.length > 0`
+
 ### 2026-06-02 — GUI 新建会话时选择项目目录 ✅
 
 新建会话（New Chat、Ctrl+N、/clear、/newtask）时，弹出目录选择对话框让用户选择项目目录。
