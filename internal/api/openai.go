@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/liup215/gline/internal/agent"
 	"github.com/liup215/gline/internal/log"
@@ -237,9 +238,15 @@ func NewOpenAIProvider(apiKey, model, baseURL string) *OpenAIProvider {
 		model:   model,
 		baseURL: baseURL,
 		httpClient: &http.Client{
-			// No global timeout on the client; individual requests use context
-			// timeouts so long-running streaming sessions can stay open.
-			Timeout: 0,
+			// Leave global timeout at 0 for long-running streaming sessions.
+			// Safety comes from Transport timeouts + per-read idle timeout
+			// inside the SSE loop.
+			Transport: &http.Transport{
+				ResponseHeaderTimeout: 60 * time.Second,
+				IdleConnTimeout:       90 * time.Second,
+				TLSHandshakeTimeout:   10 * time.Second,
+				ExpectContinueTimeout: 1 * time.Second,
+			},
 		},
 	}
 }
@@ -638,9 +645,32 @@ func (p *OpenAIProvider) CreateMessageStream(ctx context.Context, req *agent.Mes
 
 		log.Debugf("Starting SSE stream parsing from %s", fullURL)
 
+		const sseIdleTimeout = 120 * time.Second
+		idleTimer := time.NewTimer(sseIdleTimeout)
+		defer idleTimer.Stop()
+
 		for {
+			select {
+			case <-idleTimer.C:
+				chunkChan <- agent.StreamChunk{
+					Error: fmt.Errorf("stream idle timeout after %v of inactivity", sseIdleTimeout),
+					Done:  true,
+				}
+				return
+			default:
+			}
+
+			// Set a per-read deadline so ReadString cannot block forever.
+			// This is a best-effort; resp.Body is an http.bodyReadCloser which
+			// wraps a net.Conn that supports SetReadDeadline.
+			if rc, ok := resp.Body.(interface{ SetReadDeadline(t time.Time) error }); ok {
+				_ = rc.SetReadDeadline(time.Now().Add(30 * time.Second))
+			}
+
 			line, err := reader.ReadString('\n')
-			if err != nil {
+			if err == nil {
+				idleTimer.Reset(sseIdleTimeout)
+			} else {
 				if err != io.EOF {
 					log.Debugf("Error reading stream: %v", err)
 					chunkChan <- agent.StreamChunk{Error: fmt.Errorf("error reading stream: %w", err), Done: true}
@@ -799,7 +829,7 @@ func (p *OpenAIProvider) CreateMessageStream(ctx context.Context, req *agent.Mes
 				Done:         true,
 			}
 			break
-		}
+			}
 		}
 	}()
 

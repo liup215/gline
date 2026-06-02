@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/liup215/gline/internal/agent"
 	"github.com/liup215/gline/pkg/types"
@@ -96,9 +97,15 @@ func NewAnthropicProvider(apiKey, model string) *AnthropicProvider {
 		model:   model,
 		baseURL: anthropicAPIURL,
 		httpClient: &http.Client{
-			// No global timeout on the client; individual requests use context
-			// timeouts so long-running streaming sessions can stay open.
-			Timeout: 0,
+			// Leave global timeout at 0 for long-running streaming sessions.
+			// Safety comes from Transport timeouts + per-read idle timeout
+			// inside the SSE loop.
+			Transport: &http.Transport{
+				ResponseHeaderTimeout: 60 * time.Second,
+				IdleConnTimeout:       90 * time.Second,
+				TLSHandshakeTimeout:   10 * time.Second,
+				ExpectContinueTimeout: 1 * time.Second,
+			},
 		},
 	}
 }
@@ -410,7 +417,32 @@ func (p *AnthropicProvider) CreateMessageStream(ctx context.Context, req *agent.
 		reader := bufio.NewReader(resp.Body)
 		var currentToolCall *agent.ToolCall
 
+		const sseIdleTimeout = 120 * time.Second
+		idleTimer := time.NewTimer(sseIdleTimeout)
+		defer idleTimer.Stop()
+
 		for {
+			select {
+			case <-idleTimer.C:
+				chunkChan <- agent.StreamChunk{
+					Error: fmt.Errorf("stream idle timeout after %v of inactivity", sseIdleTimeout),
+					Done:  true,
+				}
+				return
+			case <-ctx.Done():
+				chunkChan <- agent.StreamChunk{
+					Error: fmt.Errorf("stream cancelled: %w", ctx.Err()),
+					Done:  true,
+				}
+				return
+			default:
+			}
+
+			// Set a per-read deadline so ReadString cannot block forever.
+			if rc, ok := resp.Body.(interface{ SetReadDeadline(t time.Time) error }); ok {
+				_ = rc.SetReadDeadline(time.Now().Add(30 * time.Second))
+			}
+
 			line, err := reader.ReadString('\n')
 			if err != nil {
 				if err != io.EOF {
@@ -418,6 +450,7 @@ func (p *AnthropicProvider) CreateMessageStream(ctx context.Context, req *agent.
 				}
 				break
 			}
+			idleTimer.Reset(sseIdleTimeout)
 
 			line = strings.TrimSpace(line)
 			if line == "" || !strings.HasPrefix(line, "event: ") {
@@ -427,11 +460,14 @@ func (p *AnthropicProvider) CreateMessageStream(ctx context.Context, req *agent.
 			// Get event type
 			eventType := strings.TrimPrefix(line, "event: ")
 
-			// Read data line
+			// Reset idle timer and read data line
+			idleTimer.Reset(sseIdleTimeout)
+
 			dataLine, err := reader.ReadString('\n')
 			if err != nil {
 				break
 			}
+			idleTimer.Reset(sseIdleTimeout)
 			dataLine = strings.TrimSpace(dataLine)
 			if !strings.HasPrefix(dataLine, "data: ") {
 				continue

@@ -184,6 +184,13 @@ export function useChat(onLoadHistory: () => void, onLoadStatus: () => void) {
       onLoadHistory();
     });
 
+    Events.On('chat:systemMessage', (data: any) => {
+      const content = data?.data?.content ?? data?.data ?? '';
+      if (content) {
+        setMessages(prev => [...prev, { role: 'system', content } as Message]);
+      }
+    });
+
     Events.On('chat:followupQuestion', (data: any) => {
       const q = data?.data?.question ?? '';
       const opts = (data?.data?.options as string[]) || [];

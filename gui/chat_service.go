@@ -81,6 +81,7 @@ type ChatService struct {
 	followupCh  chan string
 	mu          sync.Mutex
 	workingDir  string // user-selected project directory; empty means not selected yet
+	agentDone   chan struct{} // closed when the agent goroutine exits
 }
 
 // InitSlashRegistry initialises the slash command registry for this service.
@@ -252,10 +253,23 @@ func (c *ChatService) SendMessage(prompt string) error {
 	}
 
 	c.mu.Lock()
-	// Cancel any previous run
+	// Cancel any previous run first.
 	if c.cancelFn != nil {
 		c.cancelFn()
 	}
+	// Wait for the previous goroutine to really exit so that
+	// agent.running is cleared.
+	if c.agentDone != nil {
+		c.mu.Unlock()
+		select {
+		case <-c.agentDone:
+		// exited cleanly
+		case <-time.After(5 * time.Second):
+			// forced continue — old goroutine may still be stuck on I/O
+		}
+		c.mu.Lock()
+	}
+
 	// Drain old followup channel
 	if c.followupCh != nil {
 		select {
@@ -266,17 +280,19 @@ func (c *ChatService) SendMessage(prompt string) error {
 	c.followupCh = make(chan string, 1)
 	ctx, cancel := context.WithCancel(context.Background())
 	c.cancelFn = cancel
+	c.agentDone = make(chan struct{})
 	c.mu.Unlock()
 
 	cb := &guiStreamCallback{app: c.app, svc: c}
 
-	go func() {
+	go func(done chan struct{}) {
+		defer close(done)
 		if err := c.backend.ag.RunWithCallback(ctx, prompt, cb); err != nil {
 			if ctx.Err() != context.Canceled {
 				c.app.Event.Emit("chat:error", err.Error())
 			}
 		}
-	}()
+	}(c.agentDone)
 
 	return nil
 }
@@ -307,6 +323,18 @@ func (c *ChatService) StopMessage() {
 	c.mu.Unlock()
 	if c.backend.ag != nil {
 		c.backend.ag.Abort()
+	}
+	// Wait briefly for agent goroutine to finish so that subsequent
+	// SendMessage does not trip the "already running" guard.
+	c.mu.Lock()
+	if c.agentDone != nil {
+		c.mu.Unlock()
+		select {
+		case <-c.agentDone:
+		case <-time.After(5 * time.Second):
+		}
+	} else {
+		c.mu.Unlock()
 	}
 }
 
@@ -450,6 +478,13 @@ func (g *guiStreamCallback) OnToolCallComplete(toolCall agent.ToolCall, result s
 		"name":   toolCall.Name,
 		"result": result,
 	})
+	// plan_mode_respond should be visible to the user (it contains the plan).
+	if toolCall.Name == "plan_mode_respond" && result != "" {
+		g.app.Event.Emit("chat:systemMessage", map[string]interface{}{
+			"role":    "system",
+			"content": result,
+		})
+	}
 }
 
 func (g *guiStreamCallback) AskFollowupQuestion(question string, options []string) (string, error) {
