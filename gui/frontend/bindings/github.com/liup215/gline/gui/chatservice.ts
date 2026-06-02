@@ -161,6 +161,13 @@ export function ParseSlashCommand(text: string): $CancellablePromise<[string, st
     return $Call.ByID(34237656, text);
 }
 
+/**
+ * SelectProjectDir opens a directory picker and sets the working directory without resetting conversation.
+ */
+export function SelectProjectDir(): $CancellablePromise<string> {
+    return $Call.ByID(623065575);
+}
+
 export function SendMessage(prompt: string): $CancellablePromise<void> {
     return $Call.ByID(1063940756, prompt);
 }

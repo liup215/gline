@@ -336,6 +336,26 @@ gline/
 
 ## 最近变更
 
+### 2026-06-02 — GUI 新建会话时选择项目目录 ✅
+
+新建会话（New Chat、Ctrl+N、/clear、/newtask）时，弹出目录选择对话框让用户选择项目目录。
+
+**变更内容**:
+- `gui/chat_service.go`: 新增 `StartNewConversation()`，使用 Wails v3 `Dialog.OpenFile()` + `CanChooseDirectories(true)` + `CanChooseFiles(false)` 选择目录，成功后 `os.Chdir()` 并 reset agent/conversation
+- `gui/frontend/src/hooks/useChat.ts`: `handleNewChat()` 和 slash 命令 `/clear`、`/newtask` 改为 `async`，`await StartNewConversation()`，用户取消时不清空消息
+
+**Wails v3 对话框坑**: 没有 `OpenDirectoryDialog`，必须使用 `Dialog.OpenFile()` 然后链式调用 `.CanChooseDirectories(true).CanChooseFiles(false)`
+
+---
+
+### 2026-06-02 — Tab 切换 Plan/Act 模式、帮助文本格式化、输入框提示 ✅
+
+- Tab 键切换 Plan/Act 模式：`InputArea` 拦截 Tab（slash 菜单未激活时）调用 `onToggleMode`
+- Help 文本列表化渲染：`SystemMessage` 按标题/命令+说明的结构解析并列表化展示
+- 输入框提示：底部左对齐显示 "Type / for slash commands · Use @ to add files"
+
+---
+
 ### 2026-06-02 — GUI 前端模块化拆分 ✅
 
 将 `gui/frontend/src/App.tsx`（1234 行/52KB）按关注点拆分为多个独立模块，解决单文件膨胀问题。

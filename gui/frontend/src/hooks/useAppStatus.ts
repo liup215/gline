@@ -18,15 +18,18 @@ export function useAppStatus() {
   const loadStatus = useCallback(async () => {
     try {
       const s = await ChatService.GetStatus();
-      setStatus({
+      const status = {
         provider: s.provider || '',
         model: s.model || '',
         cwd: s.cwd || '',
         currentTokens: s.currentTokens || '0',
         maxTokens: s.maxTokens || '0',
-      });
+      };
+      setStatus(status);
+      return status;
     } catch (err) {
       console.error('Failed to load status:', err);
+      return null;
     }
   }, []);
 

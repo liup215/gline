@@ -99,13 +99,22 @@ export function useChat(onLoadHistory: () => void, onLoadStatus: () => void) {
   const handleNewChat = useCallback(async () => {
     const dir = await ChatService.StartNewConversation();
     if (dir === '') { // user cancelled
-      return;
+      return '';
     }
     setMessages([]);
     setInput('');
     setIsLoading(false);
     ChatService.SetMode('act').catch(() => {});
     onLoadStatus(); // refresh cwd in status bar
+    return dir;
+  }, [onLoadStatus]);
+
+  const selectProjectDir = useCallback(async () => {
+    const dir = await ChatService.SelectProjectDir();
+    if (dir) {
+      onLoadStatus();
+    }
+    return dir;
   }, [onLoadStatus]);
 
   const handleFollowupAnswer = useCallback(async (answer: string) => {
@@ -197,6 +206,7 @@ export function useChat(onLoadHistory: () => void, onLoadStatus: () => void) {
     followup,
     handleSubmit,
     handleNewChat,
+    selectProjectDir,
     handleFollowupAnswer,
     stopMessage,
     setupEventListeners,

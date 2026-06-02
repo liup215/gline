@@ -24,6 +24,8 @@ interface ChatAreaProps {
   mode: 'plan' | 'act';
   onToggleMode: () => void;
   chatInputRef: React.MutableRefObject<HTMLInputElement | null>;
+  onSelectProjectDir?: () => void;
+  canChat?: boolean;
 }
 
 export function ChatArea(props: ChatAreaProps) {
@@ -37,7 +39,7 @@ export function ChatArea(props: ChatAreaProps) {
         isLoading={props.isLoading}
         onStop={props.onStop}
       />
-      <MessageList messages={props.messages} />
+      <MessageList messages={props.messages} onSelectProjectDir={props.onSelectProjectDir} />
       <InputArea
         input={props.input}
         setInput={props.setInput}
@@ -52,6 +54,7 @@ export function ChatArea(props: ChatAreaProps) {
         mode={props.mode}
         onToggleMode={props.onToggleMode}
         chatInputRef={props.chatInputRef}
+        canChat={props.canChat}
       />
     </div>
   );

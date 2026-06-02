@@ -13,6 +13,7 @@ import { FollowupModal } from './components/FollowupModal';
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [projectDir, setProjectDir] = useState<string>('');
   const chatInputRef = useRef<HTMLInputElement | null>(null);
 
   const appStatus = useAppStatus();
@@ -21,10 +22,19 @@ function App() {
   const chat = useChat(tasks.loadHistory, appStatus.loadStatus);
   const slash = useSlashCommands();
 
+  // Check if a project directory has been selected
+  const hasProjectDir = projectDir !== '';
+  // Also treat existing messages as having a project (already working)
+  const canChat = hasProjectDir || chat.messages.length > 0;
+
   useEffect(() => {
     tasks.loadHistory();
     appStatus.loadMode();
-    appStatus.loadStatus();
+    appStatus.loadStatus().then((status) => {
+      if (status?.cwd) {
+        setProjectDir(status.cwd);
+      }
+    });
   }, []);
 
   useEffect(() => {
@@ -33,12 +43,20 @@ function App() {
 
   const handleSelectTask = async (taskID: string) => {
     const msgs = await tasks.handleSelectTask(taskID);
-    if (msgs) chat.setMessages(msgs);
+    if (msgs) {
+      chat.setMessages(msgs);
+    }
   };
 
-  const handleNewChat = () => {
-    chat.handleNewChat();
+  const handleNewChat = async () => {
+    const dir = await chat.handleNewChat();
+    if (dir) setProjectDir(dir);
     tasks.setActiveTaskID(null);
+  };
+
+  const handleSelectProjectDir = async () => {
+    const dir = await chat.selectProjectDir();
+    if (dir) setProjectDir(dir);
   };
 
   const handleDeleteTask = async (e: React.MouseEvent, taskID: string) => {
@@ -101,6 +119,8 @@ function App() {
         mode={appStatus.mode}
         onToggleMode={appStatus.toggleMode}
         chatInputRef={chatInputRef}
+        onSelectProjectDir={handleSelectProjectDir}
+        canChat={canChat}
       />
       {settings.showSettings && (
         <SettingsPanel

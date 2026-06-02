@@ -16,12 +16,13 @@ interface InputAreaProps {
   mode: 'plan' | 'act';
   onToggleMode: () => void;
   chatInputRef: React.MutableRefObject<HTMLInputElement | null>;
+  canChat?: boolean;
 }
 
 export function InputArea({
   input, setInput, isLoading, onSubmit,
   menuState, handleInputChange, handleKeyDown, selectCommand, closeMenu,
-  status, mode, onToggleMode, chatInputRef,
+  status, mode, onToggleMode, chatInputRef, canChat = true,
 }: InputAreaProps) {
   return (
     <div style={{ padding: '14px 24px 20px', borderTop: `1px solid ${THEME.border}`, background: THEME.bg, position: 'relative' }}>
@@ -58,8 +59,8 @@ export function InputArea({
             onClick={e => {
               handleInputChange(input, e.currentTarget.selectionStart || 0, setInput, e.currentTarget);
             }}
-            placeholder={isLoading ? 'AI is thinking...' : 'Ask gline anything... Type / for commands (Ctrl+N new chat, Ctrl+K focus, Ctrl+B toggle sidebar)'}
-            disabled={isLoading}
+            placeholder={!canChat ? 'Please select a project directory first' : isLoading ? 'AI is thinking...' : 'Ask gline anything... Type / for commands (Ctrl+N new chat, Ctrl+K focus, Ctrl+B toggle sidebar)'}
+            disabled={isLoading || !canChat}
             onFocus={e => e.currentTarget.style.borderColor = THEME.accent}
             onBlur={e => {
               e.currentTarget.style.borderColor = THEME.border;
@@ -69,10 +70,10 @@ export function InputArea({
         </div>
         <button
           type="submit"
-          style={{ padding: '12px 20px', borderRadius: '10px', border: 'none', background: isLoading || !input.trim() ? '#334155' : THEME.accent, color: '#fff', cursor: isLoading || !input.trim() ? 'not-allowed' : 'pointer', fontSize: '0.95rem', fontWeight: 500, transition: 'background 0.2s' }}
-          disabled={isLoading || !input.trim()}
+          style={{ padding: '12px 20px', borderRadius: '10px', border: 'none', background: isLoading || !input.trim() || !canChat ? '#334155' : THEME.accent, color: '#fff', cursor: isLoading || !input.trim() || !canChat ? 'not-allowed' : 'pointer', fontSize: '0.95rem', fontWeight: 500, transition: 'background 0.2s' }}
+          disabled={isLoading || !input.trim() || !canChat}
         >
-          {isLoading ? '⏳' : 'Send'}
+          {isLoading ? '⏳' : (!canChat ? 'Select Folder' : 'Send')}
         </button>
       </form>
 
