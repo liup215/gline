@@ -24,7 +24,9 @@
 | Tab 切换 Plan/Act 模式 | ✅ | 2026-06-02，Tab 键快速切换模式 |
 | Help 文本格式化 | ✅ | 2026-06-02，SystemMessage 列表化渲染帮助文本 |
 | 输入框提示 | ✅ | 2026-06-02，左对齐提示 slash commands 和 @ add files |
-| GUI 前端模块化拆分 | ✅ | 2026-06-02，App.tsx 从 1234 行/52KB 拆分为 18+ 独立模块（theme、types、utils、hooks、components） |
+| GUI 前端模块化拆分 | ✅ | 2026-06-02，App.tsx 从 1234 行/52KB 拆分为 18+ 独立模块 |
+| workingDir 历史持久化 | ✅ | 2026-06-02，数据库添加 `working_dir` 列，加载历史会话恢复目录 |
+| 空工具调用消息过滤 | ✅ | 2026-06-03，不渲染 `content` 为空、仅有 `tool_calls` 的助手消息 |
 
 ---
 

@@ -22,6 +22,10 @@ export function MessageList({ messages, showSelectDir, onSelectProjectDir }: Mes
   }, [messages]);
 
   const renderMessage = (msg: Message, idx: number) => {
+    // Skip assistant messages that have no content and are pure tool-call prompts
+    if (msg.role === 'assistant' && msg.content.trim() === '') {
+      return null;
+    }
     if (msg.role === 'user') {
       return <UserMessage key={idx} content={msg.content} />;
     }

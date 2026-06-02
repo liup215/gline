@@ -169,6 +169,9 @@ export function useChat(onLoadHistory: () => void, onLoadStatus: () => void) {
       setMessages(prev => {
         const last = prev[prev.length - 1];
         if (last && last.role === 'assistant' && last.streaming) {
+          if (!last.content.trim()) {
+            return prev.slice(0, -1);
+          }
           return [...prev.slice(0, -1), { ...last, streaming: false }];
         }
         return prev;

@@ -44,17 +44,25 @@ export function useTaskHistory() {
       });
 
       // Step 2: map messages, enriching tool results with name/input
-      const displayMessages: Message[] = (msgs || []).map((m: MessageRecord) => {
-        const base: Message = { role: m.Role as any, content: m.Content };
-        if (m.Role === 'tool' && m.ToolCallID && toolInfoMap[m.ToolCallID]) {
-          const info = toolInfoMap[m.ToolCallID];
-          base.id = m.ToolCallID;
-          base.toolName = info.name;
-          base.toolInput = info.input;
-          base.toolResult = m.Content;
-        }
-        return base;
-      });
+      const displayMessages: Message[] = (msgs || [])
+        .filter((m: MessageRecord) => {
+          // Skip assistant messages with empty content that are pure tool-call prompts
+          if (m.Role === 'assistant' && m.Content === '' && m.ToolCalls && m.ToolCalls.trim() !== '') {
+            return false;
+          }
+          return true;
+        })
+        .map((m: MessageRecord) => {
+          const base: Message = { role: m.Role as any, content: m.Content };
+          if (m.Role === 'tool' && m.ToolCallID && toolInfoMap[m.ToolCallID]) {
+            const info = toolInfoMap[m.ToolCallID];
+            base.id = m.ToolCallID;
+            base.toolName = info.name;
+            base.toolInput = info.input;
+            base.toolResult = m.Content;
+          }
+          return base;
+        });
 
       return { messages: displayMessages, workingDir: (task as any).WorkingDir || '' };
     } catch (err) {

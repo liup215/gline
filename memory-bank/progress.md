@@ -651,3 +651,35 @@ internal/ui/tool/
 - **日期**: 2026-05-09
 
 ## 里程碑
+### 2026-06-02 — GUI 前端模块化拆分 & 项目目录重构 (已完成)
+- **拆分**: App.tsx 从 ~1234 行/52KB 拆分为 18+ 独立模块（theme、types、utils、hooks、components）
+- **目录选择重构**: 移除 `os.Getwd()` 依赖，使用独立 `workingDir` 字段记录项目目录
+  - 新会话/`/clear` 重置并显示欢迎页，需用户在欢迎页主动选择目录
+  - `projectDir` 只能通过选择指定，不自动使用当前目录
+  - `Chdir()` 保证 Agent 工具操作在正确的项目目录下执行
+- **workingDir 历史持久化**: v2 DB 迁移添加 `working_dir` 列，加载历史自动恢复目录（经过 3 轮修复）
+- **新增辅助功能**:
+  - Tab 键切换 Plan/Act 模式
+  - 输入框左下角提示 "Type / for slash commands - Use @ to add files"
+  - Help 文本列表化渲染
+- **修改文件**:
+  - gui/frontend/src/App.tsx, theme.ts, types.ts
+  - gui/frontend/src/utils/format.ts
+  - gui/frontend/src/hooks/useChat.ts, useTaskHistory.ts, useAppStatus.ts, useSettings.ts, useKeyboardShortcuts.ts
+  - gui/frontend/src/components/UserMessage.tsx, AssistantMessage.tsx, ToolMessage.tsx, SystemMessage.tsx, Sidebar.tsx, Header.tsx, MessageList.tsx, InputArea.tsx, ChatArea.tsx, SettingsPanel.tsx, FollowupModal.tsx
+  - gui/chat_service.go, gui/backend.go
+  - internal/storage/store.go, sqlite.go, database.go, database_test.go
+  - internal/agent/agent.go
+- **日期**: 2026-06-02
+
+### 2026-06-03 — 空工具调用消息过滤 (已完成)
+- **问题**: 聊天界面显示空白气泡，发生在：1) 加载历史会话时，DB 中 `content=""` 但 `tool_calls` 非空的助手消息；2) 实时流式过程中，纯工具调用无助理回复内容的消息。
+- **修复**:
+  - `useTaskHistory.ts`: 加载历史时过滤掉 `role==='assistant' && content==='' && toolCalls` 非空的消息
+  - `useChat.ts`: `chat:complete` 事件中，若最后一个流式助手消息 content 为空，直接从消息列表移除
+  - `MessageList.tsx`: 渲染层兜底过滤，任何 `content.trim()===''` 的助手消息都不渲染
+- **修改文件**:
+  - gui/frontend/src/hooks/useTaskHistory.ts
+  - gui/frontend/src/hooks/useChat.ts
+  - gui/frontend/src/components/MessageList.tsx
+- **日期**: 2026-06-03
