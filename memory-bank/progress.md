@@ -336,6 +336,18 @@ gline/
 
 ## 最近变更
 
+### 2026-06-02 — GUI 首页强制选择项目目录 ✅
+
+首次进入（welcome 页面无历史消息）时，用户必须先选择项目目录才能开始对话。欢迎页增加"📁 Select Project Directory"按钮，未选择前输入框和发送按钮禁用。
+
+**变更内容**:
+- `gui/chat_service.go`: 提取 `pickProjectDir()` 通用方法；新增 `SelectProjectDir()` 前端可调用绑定（不重置 conversation，仅切换目录）
+- `gui/frontend/src/hooks/useChat.ts`: 新增 `selectProjectDir()`，导出到 hook 返回值
+- `gui/frontend/src/App.tsx`: `projectDir` 状态，`canChat` = `projectDir !== '' || messages.length > 0`，启动时读取 `cwd` 初始化
+- `gui/frontend/src/components/MessageList.tsx`: 消息为空时显示"📁 Select Project Directory"按钮
+- `gui/frontend/src/components/InputArea.tsx`: `canChat` prop 控制禁用状态和占位文字（"Please select a project directory first"）
+- `gui/frontend/src/components/ChatArea.tsx`: 传递 `onSelectProjectDir` 和 `canChat`
+
 ### 2026-06-02 — GUI 新建会话时选择项目目录 ✅
 
 新建会话（New Chat、Ctrl+N、/clear、/newtask）时，弹出目录选择对话框让用户选择项目目录。

@@ -13,7 +13,7 @@ import { FollowupModal } from './components/FollowupModal';
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [projectDir, setProjectDir] = useState<string>('');
+  const [hasSelectedDir, setHasSelectedDir] = useState(false);
   const chatInputRef = useRef<HTMLInputElement | null>(null);
 
   const appStatus = useAppStatus();
@@ -22,19 +22,13 @@ function App() {
   const chat = useChat(tasks.loadHistory, appStatus.loadStatus);
   const slash = useSlashCommands();
 
-  // Check if a project directory has been selected
-  const hasProjectDir = projectDir !== '';
-  // Also treat existing messages as having a project (already working)
-  const canChat = hasProjectDir || chat.messages.length > 0;
+  // User can chat if they have explicitly selected a directory or have messages (e.g. history)
+  const canChat = hasSelectedDir || chat.messages.length > 0;
 
   useEffect(() => {
     tasks.loadHistory();
     appStatus.loadMode();
-    appStatus.loadStatus().then((status) => {
-      if (status?.cwd) {
-        setProjectDir(status.cwd);
-      }
-    });
+    appStatus.loadStatus();
   }, []);
 
   useEffect(() => {
@@ -45,18 +39,23 @@ function App() {
     const msgs = await tasks.handleSelectTask(taskID);
     if (msgs) {
       chat.setMessages(msgs);
+      setHasSelectedDir(true);
     }
   };
 
   const handleNewChat = async () => {
     const dir = await chat.handleNewChat();
-    if (dir) setProjectDir(dir);
+    if (dir) {
+      setHasSelectedDir(true);
+    }
     tasks.setActiveTaskID(null);
   };
 
   const handleSelectProjectDir = async () => {
     const dir = await chat.selectProjectDir();
-    if (dir) setProjectDir(dir);
+    if (dir) {
+      setHasSelectedDir(true);
+    }
   };
 
   const handleDeleteTask = async (e: React.MouseEvent, taskID: string) => {
@@ -67,6 +66,7 @@ function App() {
       if (tasks.activeTaskID === taskID) {
         chat.setMessages([]);
         tasks.setActiveTaskID(null);
+        setHasSelectedDir(false);
       }
     } catch (err) {
       console.error('Failed to delete task:', err);
