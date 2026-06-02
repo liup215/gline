@@ -1,0 +1,15 @@
+export const THEME = {
+  bg: '#0b1220',
+  bgSidebar: '#0f172a',
+  bgChat: '#0b1220',
+  border: '#1e293b',
+  accent: '#3b82f6',
+  accentHover: '#2563eb',
+  text: '#e2e8f0',
+  textMuted: '#94a3b8',
+  textDim: '#64748b',
+  assistantBg: '#111827',
+  userBg: '#1e40af',
+  toolBg: '#111827',
+  codeBg: '#1e1e2e',
+} as const;

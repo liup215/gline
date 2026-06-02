@@ -20,6 +20,7 @@
 | 自动上下文压缩 | ✅ | 超过 80% 阈值时自动滑动窗口压缩（保留 system + 最近 2 轮） |
 | Plan/Act 模式切换 | ✅ | GUI 底部按钮切换，实时生效 |
 | Slash 命令 | ✅ | `gui/frontend/src/slash/`，复用 `internal/slash`，支持 /clear、/newtask、/smol、/compact、/history、/help、/exit、/q |
+| GUI 前端模块化拆分 | ✅ | 2026-06-02，App.tsx 从 1234 行/52KB 拆分为 18+ 独立模块（theme、types、utils、hooks、components） |
 
 ---
 

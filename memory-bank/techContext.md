@@ -21,6 +21,18 @@
 - **Lint**: `golangci-lint`
 - **格式化**: `gofumpt`, `golines`
 
+## 前端技术栈
+
+| 技术 | 用途 | 说明 |
+|------|------|------|
+| React 19 | UI 框架 | 函数组件 + Hooks |
+| TypeScript | 类型安全 | React.RefObject 与 MutableRefObject 兼容性需注意 |
+| Vite | 构建工具 | wails3 serve / npm run build |
+| Marked | Markdown 渲染 | 自定义 token 渲染器支持代码块复制、脚注 |
+| KaTeX | 数学公式 | 行内 `$$...$$` 和块级 `$$...$$` |
+| Highlight.js | 代码高亮 | 自动语言检测 + 常见语言支持 |
+| Inline Style | CSS-in-JS | 所有组件使用 `style={{...}}`，无 CSS 模块 |
+
 ## 项目结构
 
 ```

@@ -1,0 +1,46 @@
+import { useEffect, useRef } from 'react';
+import { Message } from '../types';
+import { UserMessage } from './UserMessage';
+import { AssistantMessage } from './AssistantMessage';
+import { ToolMessage } from './ToolMessage';
+import { SystemMessage } from './SystemMessage';
+import { useHighlightCode } from '../utils/format';
+
+export function MessageList({ messages }: { messages: Message[] }) {
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useHighlightCode();
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  const renderMessage = (msg: Message, idx: number) => {
+    if (msg.role === 'user') {
+      return <UserMessage key={idx} content={msg.content} />;
+    }
+    if (msg.role === 'assistant') {
+      return <AssistantMessage key={idx} content={msg.content} streaming={msg.streaming} isLast={idx === messages.length - 1} />;
+    }
+    if (msg.role === 'tool') {
+      return <ToolMessage key={idx} toolName={msg.toolName} toolInput={msg.toolInput} toolResult={msg.toolResult} />;
+    }
+    if (msg.role === 'system') {
+      return <SystemMessage key={idx} content={msg.content} />;
+    }
+    return null;
+  };
+
+  return (
+    <div style={{ flex: 1, overflowY: 'auto', padding: '20px 0', display: 'flex', flexDirection: 'column' }}>
+      {messages.length === 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, color: '#64748b' }}>
+          <h2 style={{ margin: '0 0 8px', fontWeight: 400, fontSize: '1.5rem' }}>Welcome to gline</h2>
+          <p style={{ margin: 0, fontSize: '0.9rem' }}>AI Programming Assistant powered by Go</p>
+        </div>
+      )}
+      {messages.map((msg, idx) => renderMessage(msg, idx))}
+      <div ref={messagesEndRef} />
+    </div>
+  );
+}

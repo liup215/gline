@@ -231,6 +231,7 @@ gline/
 
 - [x] 任务历史管理 ✅
 - [x] 自定义规则加载 ✅
+- [x] GUI 前端模块化拆分 ✅ (2026-06-02)
 - [ ] GUI 配置管理界面
 - [ ] 规则热重载 (`/reload`)
 - [ ] MCP 支持
@@ -334,6 +335,24 @@ gline/
 > GUI 后续将以按钮/菜单形式替代这些 slash 命令。
 
 ## 最近变更
+
+### 2026-06-02 — GUI 前端模块化拆分 ✅
+
+将 `gui/frontend/src/App.tsx`（1234 行/52KB）按关注点拆分为多个独立模块，解决单文件膨胀问题。
+
+**拆分结构**:
+| 层次 | 文件 | 职责 |
+|------|------|------|
+| 共享 | `theme.ts` `types.ts` `utils/format.ts` | THEME 常量、类型定义、formatContent/代码高亮/数学公式/工具提示 |
+| Hooks | `useChat.ts` `useTaskHistory.ts` `useAppStatus.ts` `useSettings.ts` `useKeyboardShortcuts.ts` | 聊天状态、历史任务、应用状态、设置、键盘快捷键 |
+| 基础组件 | `UserMessage` `AssistantMessage` `ToolMessage` `SystemMessage` | 消息类型渲染 |
+| 复合组件 | `Sidebar` `Header` `MessageList` `InputArea` `ChatArea` | 侧边栏、顶栏、消息列表、输入区、主聊天容器 |
+| 弹窗 | `SettingsPanel` `FollowupModal` | 设置弹窗、追问弹窗 |
+| 入口 | `App.tsx` | 仅剩约 93 行组合逻辑 |
+
+**验证**: `npm run build`（TypeScript+Vite）✅；`wails3 build`（完整编译）✅ 生成 `bin/gline.exe`
+
+---
 
 ### 2026-06-02 — GUI Token 追踪与上下文压缩 ✅
 

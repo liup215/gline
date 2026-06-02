@@ -34,6 +34,41 @@ CLI 子命令 (保留): gline history / gline config / gline version
 
 ### 1. 模块化架构
 
+#### 1.1 GUI 前端模块化 (2026-06-02)
+
+前端代码按 **共享层 → Hooks 层 → 基础组件 → 复合组件 → 入口层** 分层拆分：
+
+```
+gui/frontend/src/
+├── theme.ts               # THEME 常量
+├── types.ts               # Message、AppStatus 等类型
+├── utils/
+│   └── format.ts          # formatContent、useHighlightCode、代码复制
+├── hooks/
+│   ├── useChat.ts           # 聊天状态 + 事件监听 + slash/追问
+│   ├── useTaskHistory.ts    # 历史任务加载/选择/删除
+│   ├── useAppStatus.ts      # mode/status 管理
+│   ├── useSettings.ts       # 设置弹窗状态
+│   └── useKeyboardShortcuts.ts  # 全局快捷键
+├── components/
+│   ├── UserMessage.tsx      # 用户消息气泡
+│   ├── AssistantMessage.tsx # AI 消息 + streaming 光标
+│   ├── ToolMessage.tsx      # 工具调用消息
+│   ├── SystemMessage.tsx    # 系统/错误消息
+│   ├── Sidebar.tsx          # 侧边栏
+│   ├── Header.tsx           # 顶部栏
+│   ├── MessageList.tsx      # 消息列表容器（自动滚动、代码高亮）
+│   ├── InputArea.tsx        # 输入区（含 SlashMenu）
+│   ├── ChatArea.tsx         # 主聊天区域组合
+│   ├── SettingsPanel.tsx    # 设置弹窗
+│   └── FollowupModal.tsx    # 追问弹窗
+└── App.tsx                 # ~93 行入口组合层
+```
+
+**设计原则**: 每个文件职责单一；Props 自上而下传递；Hooks 封装业务逻辑；保持 inline style（不引入新样式系统）。
+
+#### 1.2 后端模块化
+
 每个功能模块独立，通过接口通信：
 
 ```go
