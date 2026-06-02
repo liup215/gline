@@ -78,7 +78,7 @@ export function useTaskHistory() {
   }, [activeTaskID, loadHistory]);
 
   const handleNewConversation = useCallback((onReset: () => void) => {
-    ChatService.NewConversation();
+    ChatService.StartNewConversation();
     setActiveTaskID(null);
     onReset();
   }, []);

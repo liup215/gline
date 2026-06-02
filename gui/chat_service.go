@@ -35,24 +35,18 @@ func (c *ChatService) pickProjectDir() (string, error) {
 	if err := os.Chdir(selected); err != nil {
 		return "", fmt.Errorf("failed to change directory: %w", err)
 	}
+	c.workingDir = selected
 	return selected, nil
 }
 
-// StartNewConversation opens a directory dialog and resets the conversation.
-// Returns the selected directory path; empty string means cancelled.
-func (c *ChatService) StartNewConversation() (string, error) {
-	selected, err := c.pickProjectDir()
-	if err != nil {
-		return "", err
-	}
-	if selected == "" {
-		return "", nil
-	}
+// StartNewConversation resets the conversation and clears the selected project directory.
+// The frontend will show the welcome screen so the user can pick a directory.
+func (c *ChatService) StartNewConversation() {
+	c.workingDir = ""
 	if c.backend.ag != nil {
 		c.backend.ag.(*agent.BaseAgent).ResetTask()
 		c.backend.ag.GetConversation().Clear()
 	}
-	return selected, nil
 }
 
 // SelectProjectDir opens a directory picker and sets the working directory without resetting conversation.
@@ -62,12 +56,13 @@ func (c *ChatService) SelectProjectDir() (string, error) {
 
 // ChatService exposes chat operations to the Wails front-end.
 type ChatService struct {
-	app        *application.App
-	backend    *Backend
-	cmdReg     *slash.Registry
-	cancelFn   context.CancelFunc
-	followupCh chan string
-	mu         sync.Mutex
+	app         *application.App
+	backend     *Backend
+	cmdReg      *slash.Registry
+	cancelFn    context.CancelFunc
+	followupCh  chan string
+	mu          sync.Mutex
+	workingDir  string // user-selected project directory; empty means not selected yet
 }
 
 // InitSlashRegistry initialises the slash command registry for this service.
@@ -298,7 +293,9 @@ func (c *ChatService) StopMessage() {
 }
 
 // NewConversation resets the agent for a new conversation.
+// Reset the conversation (used by frontend when user clicks New Chat), no dialog.
 func (c *ChatService) NewConversation() {
+	c.workingDir = ""
 	if c.backend.ag != nil {
 		c.backend.ag.(*agent.BaseAgent).ResetTask()
 		c.backend.ag.GetConversation().Clear()
@@ -357,7 +354,7 @@ func (c *ChatService) GetStatus() (map[string]string, error) {
 		model = cfg.Provider.OpenAI.Model
 		maxTokens = cfg.Provider.OpenAI.MaxContextTokens
 	}
-	cwd, _ := os.Getwd()
+	cwd := c.workingDir
 	mode := "act"
 	currentTokens := "0"
 	maxTokensStr := fmt.Sprintf("%d", maxTokens)

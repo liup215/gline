@@ -26,6 +26,7 @@ interface ChatAreaProps {
   chatInputRef: React.MutableRefObject<HTMLInputElement | null>;
   onSelectProjectDir?: () => void;
   canChat?: boolean;
+  showSelectDir?: boolean;
 }
 
 export function ChatArea(props: ChatAreaProps) {
@@ -39,7 +40,7 @@ export function ChatArea(props: ChatAreaProps) {
         isLoading={props.isLoading}
         onStop={props.onStop}
       />
-      <MessageList messages={props.messages} onSelectProjectDir={props.onSelectProjectDir} />
+      <MessageList messages={props.messages} onSelectProjectDir={props.onSelectProjectDir} showSelectDir={props.showSelectDir} />
       <InputArea
         input={props.input}
         setInput={props.setInput}

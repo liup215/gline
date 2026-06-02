@@ -176,6 +176,7 @@ export function LoadTask(taskID) {
 
 /**
  * NewConversation resets the agent for a new conversation.
+ * Reset the conversation (used by frontend when user clicks New Chat), no dialog.
  * @returns {$CancellablePromise<void>}
  */
 export function NewConversation() {
@@ -226,9 +227,9 @@ export function SetMode(mode) {
 }
 
 /**
- * StartNewConversation opens a directory dialog and resets the conversation.
- * Returns the selected directory path; empty string means cancelled.
- * @returns {$CancellablePromise<string>}
+ * StartNewConversation resets the conversation and clears the selected project directory.
+ * The frontend will show the welcome screen so the user can pick a directory.
+ * @returns {$CancellablePromise<void>}
  */
 export function StartNewConversation() {
     return $Call.ByID(262799438);

@@ -19,8 +19,7 @@ export function useChat(onLoadHistory: () => void, onLoadStatus: () => void) {
 
       switch (action) {
         case 'clear': {
-          const dir = await ChatService.StartNewConversation();
-          if (dir === '') break;
+          ChatService.StartNewConversation();
           setMessages([]);
           setInput('');
           setIsLoading(false);
@@ -30,8 +29,7 @@ export function useChat(onLoadHistory: () => void, onLoadStatus: () => void) {
           break;
         }
         case 'newtask': {
-          const dir2 = await ChatService.StartNewConversation();
-          if (dir2 === '') break;
+          ChatService.StartNewConversation();
           setMessages([]);
           setInput('');
           setIsLoading(false);
@@ -97,16 +95,12 @@ export function useChat(onLoadHistory: () => void, onLoadStatus: () => void) {
   }, [input, isLoading, executeSlashCommand]);
 
   const handleNewChat = useCallback(async () => {
-    const dir = await ChatService.StartNewConversation();
-    if (dir === '') { // user cancelled
-      return '';
-    }
+    ChatService.StartNewConversation();
     setMessages([]);
     setInput('');
     setIsLoading(false);
     ChatService.SetMode('act').catch(() => {});
-    onLoadStatus(); // refresh cwd in status bar
-    return dir;
+    onLoadStatus();
   }, [onLoadStatus]);
 
   const selectProjectDir = useCallback(async () => {

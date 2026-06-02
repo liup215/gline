@@ -8,10 +8,11 @@ import { useHighlightCode } from '../utils/format';
 
 interface MessageListProps {
   messages: Message[];
+  showSelectDir?: boolean;
   onSelectProjectDir?: () => void;
 }
 
-export function MessageList({ messages, onSelectProjectDir }: MessageListProps) {
+export function MessageList({ messages, showSelectDir, onSelectProjectDir }: MessageListProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useHighlightCode();
@@ -44,7 +45,7 @@ export function MessageList({ messages, onSelectProjectDir }: MessageListProps) 
             <h2 style={{ margin: '0 0 8px', fontWeight: 400, fontSize: '1.5rem', color: '#94a3b8' }}>Welcome to gline</h2>
             <p style={{ margin: 0, fontSize: '0.9rem' }}>AI Programming Assistant powered by Go</p>
           </div>
-          {onSelectProjectDir && (
+          {showSelectDir && onSelectProjectDir && (
             <button
               onClick={onSelectProjectDir}
               style={{
