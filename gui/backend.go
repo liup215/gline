@@ -180,21 +180,25 @@ func (b *Backend) DeleteTask(taskID string) error {
 
 // LoadTask restores the agent's state for an existing task by setting its taskID
 // and loading messages back into the conversation.
-func (b *Backend) LoadTask(taskID string) error {
+func (b *Backend) LoadTask(taskID string) (*storage.TaskRecord, error) {
 	if b.ag == nil {
-		return fmt.Errorf("agent not initialised")
+		return nil, fmt.Errorf("agent not initialised")
 	}
 	baseAg, ok := b.ag.(*agent.BaseAgent)
 	if !ok {
-		return fmt.Errorf("agent type mismatch")
+		return nil, fmt.Errorf("agent type mismatch")
+	}
+	// Load task metadata and messages from storage
+	task, msgs, err := b.store.GetTaskSummary(taskID)
+	if err != nil {
+		return nil, fmt.Errorf("load task summary: %w", err)
 	}
 	// Set task ID so responses are stored under the same task
 	baseAg.SetTaskID(taskID)
-	// Load messages from storage into the conversation
-	_, msgs, err := b.store.GetTaskSummary(taskID)
-	if err != nil {
-		return fmt.Errorf("load messages: %w", err)
+	if task != nil {
+		baseAg.SetWorkingDir(task.WorkingDir)
 	}
+	// Load messages from storage into the conversation
 	b.ag.GetConversation().Clear()
 	for _, m := range msgs {
 		b.ag.GetConversation().AddMessage(types.Message{
@@ -202,5 +206,5 @@ func (b *Backend) LoadTask(taskID string) error {
 			Content: m.Content,
 		})
 	}
-	return nil
+	return task, nil
 }

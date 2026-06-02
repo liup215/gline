@@ -56,7 +56,7 @@ export function useTaskHistory() {
         return base;
       });
 
-      return displayMessages;
+      return { messages: displayMessages, workingDir: (task as any).WorkingDir || '' };
     } catch (err) {
       console.error('Failed to load task:', err);
       return null;

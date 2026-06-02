@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"database/sql"
@@ -95,6 +96,16 @@ func migrate(db *sql.DB) error {
 		return fmt.Errorf("failed to enable foreign keys: %w", err)
 	}
 
+	// Version 2: Add working_dir column to tasks
+	if v < 2 {
+		if err := applyV2(db); err != nil {
+			return err
+		}
+		if _, err := db.Exec("INSERT INTO migrations (version) VALUES (2)"); err != nil {
+			return fmt.Errorf("failed to record v2 migration: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -145,6 +156,17 @@ func applyV1(db *sql.DB) error {
 		}
 	}
 
+	return nil
+}
+
+func applyV2(db *sql.DB) error {
+	_, err := db.Exec(`ALTER TABLE tasks ADD COLUMN working_dir TEXT DEFAULT ''`)
+	if err != nil {
+		// Column may already exist; ignore that specific error
+		if !strings.Contains(err.Error(), "duplicate column name") && !strings.Contains(err.Error(), "already exists") {
+			return fmt.Errorf("failed to apply v2 migration: %w", err)
+		}
+	}
 	return nil
 }
 

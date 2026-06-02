@@ -14,10 +14,13 @@ type Store interface {
 	// === Task lifecycle ===
 
 	// CreateTask creates a new task record and returns its UUID.
-	CreateTask(title, prompt, mode, provider, model string) (taskID string, err error)
+	CreateTask(title, prompt, mode, provider, model, workingDir string) (taskID string, err error)
 
 	// UpdateTaskStatus updates the task status.
 	UpdateTaskStatus(taskID, status string) error
+
+	// UpdateTaskWorkingDir updates the working directory for a task.
+	UpdateTaskWorkingDir(taskID, workingDir string) error
 
 	// CompleteTask marks the task as completed.
 	CompleteTask(taskID string) error
@@ -71,6 +74,7 @@ type TaskRecord struct {
 	Provider    string
 	Model       string
 	Status      string
+	WorkingDir  string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 	CompletedAt *time.Time

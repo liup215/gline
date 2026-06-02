@@ -76,6 +76,7 @@ export class TaskRecord {
     "Provider": string;
     "Model": string;
     "Status": string;
+    "WorkingDir": string;
     "CreatedAt": time$0.Time;
     "UpdatedAt": time$0.Time;
     "CompletedAt": time$0.Time | null;
@@ -102,6 +103,9 @@ export class TaskRecord {
         }
         if (!("Status" in $$source)) {
             this["Status"] = "";
+        }
+        if (!("WorkingDir" in $$source)) {
+            this["WorkingDir"] = "";
         }
         if (!("CreatedAt" in $$source)) {
             this["CreatedAt"] = null;

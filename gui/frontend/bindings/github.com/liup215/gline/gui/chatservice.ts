@@ -143,8 +143,10 @@ export function ListTasks(limit: number, offset: number): $CancellablePromise<st
 /**
  * LoadTask restores agent state for an existing task.
  */
-export function LoadTask(taskID: string): $CancellablePromise<void> {
-    return $Call.ByID(3581714498, taskID);
+export function LoadTask(taskID: string): $CancellablePromise<storage$0.TaskRecord | null> {
+    return $Call.ByID(3581714498, taskID).then(($result: any) => {
+        return $$createType6($result);
+    });
 }
 
 /**

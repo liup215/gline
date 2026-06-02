@@ -45,7 +45,7 @@ func NewSQLiteStoreInMemory() (*SQLiteStore, error) {
 }
 
 // CreateTask creates a new task record.
-func (s *SQLiteStore) CreateTask(title, prompt, mode, provider, model string) (taskID string, err error) {
+func (s *SQLiteStore) CreateTask(title, prompt, mode, provider, model, workingDir string) (taskID string, err error) {
 	uuid, err := generateUUID()
 	if err != nil {
 		return "", fmt.Errorf("failed to generate task ID: %w", err)
@@ -57,9 +57,9 @@ func (s *SQLiteStore) CreateTask(title, prompt, mode, provider, model string) (t
 	}
 
 	_, err = s.db.Exec(`
-		INSERT INTO tasks (id, title, prompt, mode, provider, model, status, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, 'running', ?, ?)
-	`, uuid, title, prompt, mode, provider, model, now(), now())
+		INSERT INTO tasks (id, title, prompt, mode, provider, model, status, working_dir, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, 'running', ?, ?, ?)
+	`, uuid, title, prompt, mode, provider, model, workingDir, now(), now())
 	if err != nil {
 		return "", fmt.Errorf("failed to create task: %w", err)
 	}
@@ -205,6 +205,18 @@ func (s *SQLiteStore) FailToolCall(callID int64, err error) error {
 
 // === History queries ===
 
+// UpdateTaskWorkingDir updates the working directory for a task.
+func (s *SQLiteStore) UpdateTaskWorkingDir(taskID, workingDir string) error {
+	_, err := s.db.Exec(
+		"UPDATE tasks SET working_dir = ?, updated_at = ? WHERE id = ?",
+		workingDir, now(), taskID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update task working directory: %w", err)
+	}
+	return nil
+}
+
 // ListTasks returns tasks ordered by most recent first.
 func (s *SQLiteStore) ListTasks(limit, offset int) ([]TaskRecord, error) {
 	if limit <= 0 {
@@ -215,7 +227,7 @@ func (s *SQLiteStore) ListTasks(limit, offset int) ([]TaskRecord, error) {
 	}
 
 	rows, err := s.db.Query(`
-		SELECT id, title, prompt, mode, provider, model, status, created_at, updated_at, completed_at
+		SELECT id, title, prompt, mode, provider, model, status, working_dir, created_at, updated_at, completed_at
 		FROM tasks
 		ORDER BY created_at DESC
 		LIMIT ? OFFSET ?
@@ -229,7 +241,7 @@ func (s *SQLiteStore) ListTasks(limit, offset int) ([]TaskRecord, error) {
 	for rows.Next() {
 		var t TaskRecord
 		var completedAt sql.NullTime
-		if err := rows.Scan(&t.ID, &t.Title, &t.Prompt, &t.Mode, &t.Provider, &t.Model, &t.Status, &t.CreatedAt, &t.UpdatedAt, &completedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.Title, &t.Prompt, &t.Mode, &t.Provider, &t.Model, &t.Status, &t.WorkingDir, &t.CreatedAt, &t.UpdatedAt, &completedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan task: %w", err)
 		}
 		if completedAt.Valid {
@@ -248,10 +260,10 @@ func (s *SQLiteStore) GetTaskByID(id string) (*TaskRecord, error) {
 	var t TaskRecord
 	var completedAt sql.NullTime
 	row := s.db.QueryRow(`
-		SELECT id, title, prompt, mode, provider, model, status, created_at, updated_at, completed_at
+		SELECT id, title, prompt, mode, provider, model, status, working_dir, created_at, updated_at, completed_at
 		FROM tasks WHERE id = ?
 	`, id)
-	err := row.Scan(&t.ID, &t.Title, &t.Prompt, &t.Mode, &t.Provider, &t.Model, &t.Status, &t.CreatedAt, &t.UpdatedAt, &completedAt)
+	err := row.Scan(&t.ID, &t.Title, &t.Prompt, &t.Mode, &t.Provider, &t.Model, &t.Status, &t.WorkingDir, &t.CreatedAt, &t.UpdatedAt, &completedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

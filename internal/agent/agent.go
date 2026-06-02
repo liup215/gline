@@ -102,6 +102,7 @@ type BaseAgent struct {
 	store     storage.Store // persistent storage
 	taskID    string        // current task ID
 	taskTitle string        // current task title
+	workingDir string      // project working directory
 }
 
 // New creates a new Agent instance with the given options
@@ -177,7 +178,7 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 		if a.taskID == "" {
 			providerName := a.provider.GetProviderName()
 			model := a.provider.GetModel()
-			id, err := a.store.CreateTask(a.taskTitle, prompt, string(a.mode), providerName, model)
+			id, err := a.store.CreateTask(a.taskTitle, prompt, string(a.mode), providerName, model, a.workingDir)
 			if err != nil {
 				log.Warnf("Failed to create task record: %v", err)
 			} else {
@@ -553,6 +554,16 @@ func (a *BaseAgent) GetTaskID() string {
 // SetTaskID sets the current task ID (used when resuming a task).
 func (a *BaseAgent) SetTaskID(id string) {
 	a.taskID = id
+}
+
+// GetWorkingDir returns the current working directory.
+func (a *BaseAgent) GetWorkingDir() string {
+	return a.workingDir
+}
+
+// SetWorkingDir sets the working directory.
+func (a *BaseAgent) SetWorkingDir(dir string) {
+	a.workingDir = dir
 }
 
 // processStream handles the streaming response from the LLM

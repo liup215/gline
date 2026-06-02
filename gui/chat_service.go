@@ -303,8 +303,12 @@ func (c *ChatService) NewConversation() {
 }
 
 // LoadTask restores agent state for an existing task.
-func (c *ChatService) LoadTask(taskID string) error {
-	return c.backend.LoadTask(taskID)
+func (c *ChatService) LoadTask(taskID string) (*storage.TaskRecord, error) {
+	task, err := c.backend.LoadTask(taskID)
+	if err != nil {
+		return nil, err
+	}
+	return task, nil
 }
 
 // GetMode returns the current agent mode ("plan" or "act").
