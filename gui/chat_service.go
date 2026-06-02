@@ -15,6 +15,33 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
+// StartNewConversation opens a directory dialog and resets the conversation.
+// Returns the selected directory path; empty string means cancelled.
+func (c *ChatService) StartNewConversation() (string, error) {
+	if c.app == nil {
+		return "", fmt.Errorf("app not ready")
+	}
+	selected, err := c.app.Dialog.OpenFile().
+		CanChooseDirectories(true).
+		CanChooseFiles(false).
+		SetTitle("Select project directory").
+		PromptForSingleSelection()
+	if err != nil {
+		return "", err
+	}
+	if selected == "" {
+		return "", nil
+	}
+	if err := os.Chdir(selected); err != nil {
+		return "", fmt.Errorf("failed to change directory: %w", err)
+	}
+	if c.backend.ag != nil {
+		c.backend.ag.(*agent.BaseAgent).ResetTask()
+		c.backend.ag.GetConversation().Clear()
+	}
+	return selected, nil
+}
+
 // ChatService exposes chat operations to the Wails front-end.
 type ChatService struct {
 	app        *application.App

@@ -19,19 +19,23 @@ export function useChat(onLoadHistory: () => void, onLoadStatus: () => void) {
 
       switch (action) {
         case 'clear': {
-          ChatService.NewConversation();
+          const dir = await ChatService.StartNewConversation();
+          if (dir === '') break;
           setMessages([]);
           setInput('');
           setIsLoading(false);
           ChatService.SetMode('act').catch(() => {});
+          onLoadStatus();
           if (msg) setMessages(prev => [...prev, { role: 'system', content: msg }]);
           break;
         }
         case 'newtask': {
-          ChatService.NewConversation();
+          const dir2 = await ChatService.StartNewConversation();
+          if (dir2 === '') break;
           setMessages([]);
           setInput('');
           setIsLoading(false);
+          onLoadStatus();
           if (msg) setMessages(prev => [...prev, { role: 'system', content: msg }]);
           break;
         }
@@ -92,13 +96,17 @@ export function useChat(onLoadHistory: () => void, onLoadStatus: () => void) {
     }
   }, [input, isLoading, executeSlashCommand]);
 
-  const handleNewChat = useCallback(() => {
-    ChatService.NewConversation();
+  const handleNewChat = useCallback(async () => {
+    const dir = await ChatService.StartNewConversation();
+    if (dir === '') { // user cancelled
+      return;
+    }
     setMessages([]);
     setInput('');
     setIsLoading(false);
     ChatService.SetMode('act').catch(() => {});
-  }, []);
+    onLoadStatus(); // refresh cwd in status bar
+  }, [onLoadStatus]);
 
   const handleFollowupAnswer = useCallback(async (answer: string) => {
     setFollowup(null);

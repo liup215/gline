@@ -180,6 +180,14 @@ export function SetMode(mode: string): $CancellablePromise<void> {
 }
 
 /**
+ * StartNewConversation opens a directory dialog and resets the conversation.
+ * Returns the selected directory path; empty string means cancelled.
+ */
+export function StartNewConversation(): $CancellablePromise<string> {
+    return $Call.ByID(262799438);
+}
+
+/**
  * StopMessage aborts the current agent run.
  */
 export function StopMessage(): $CancellablePromise<void> {
