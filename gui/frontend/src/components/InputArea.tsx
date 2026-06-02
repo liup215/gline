@@ -44,7 +44,13 @@ export function InputArea({
             }}
             onKeyDown={e => {
               const { handled } = handleKeyDown(e, setInput);
-              if (!handled && e.key === 'Enter' && !e.shiftKey) {
+              if (handled) return;
+              if (e.key === 'Tab' && !e.shiftKey) {
+                e.preventDefault();
+                onToggleMode();
+                return;
+              }
+              if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 onSubmit(e as any);
               }

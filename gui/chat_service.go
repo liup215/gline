@@ -135,6 +135,7 @@ func (c *ChatService) BuildHelpText() string {
 		b.WriteString(fmt.Sprintf("  /%-18s %s\n", cmd.Name, cmd.Description))
 	}
 	b.WriteString("\nShortcuts:\n")
+	b.WriteString("  Tab          Toggle Plan/Act mode\n")
 	b.WriteString("  Ctrl+N       New conversation\n")
 	b.WriteString("  Ctrl+K       Focus input\n")
 	b.WriteString("  Ctrl+B       Toggle sidebar\n")
