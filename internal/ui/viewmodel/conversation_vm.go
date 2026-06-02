@@ -115,7 +115,7 @@ func (vm *ConversationViewModel) Refresh(conv *model.Conversation, width int, to
 				rendered:  rendered,
 			}
 		}
-		vm.content = content.String()
+		vm.content = strings.TrimRight(content.String(), "\n")
 	} else {
 		// Incremental: only re-render dirty messages, reuse cache for others.
 		var content strings.Builder
@@ -133,7 +133,7 @@ func (vm *ConversationViewModel) Refresh(conv *model.Conversation, width int, to
 				content.WriteString(vm.messageCache[i].rendered)
 			}
 		}
-		vm.content = content.String()
+		vm.content = strings.TrimRight(content.String(), "\n")
 	}
 
 	vm.toolAreaContent = vm.renderToolArea(conv, width, toolAreaHeight)

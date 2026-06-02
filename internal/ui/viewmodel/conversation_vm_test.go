@@ -410,6 +410,36 @@ func TestIncrementalRefreshReusesCache(t *testing.T) {
 	}
 }
 
+func TestRefreshTrimsTrailingNewlines(t *testing.T) {
+	vm := NewConversationViewModel()
+	conv := model.NewConversation()
+	conv.AppendMessage(model.Message{
+		Role:      types.RoleUser,
+		Content:   "hello",
+		Timestamp: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
+	})
+	vm.Refresh(conv, 80, 3, false, -1)
+
+	content := vm.Content()
+	if strings.HasSuffix(content, "\n") {
+		t.Errorf("Content should not have trailing newlines, got: %q", content)
+	}
+
+	// Also verify after appending another message (incremental path)
+	conv.AppendMessage(model.Message{
+		Role:      types.RoleUser,
+		Content:   "world",
+		Timestamp: time.Date(2024, 1, 1, 12, 1, 0, 0, time.UTC),
+	})
+	vm.MarkMessageDirty(1)
+	vm.Refresh(conv, 80, 3, false, -1)
+
+	content = vm.Content()
+	if strings.HasSuffix(content, "\n") {
+		t.Errorf("Content should not have trailing newlines after incremental refresh, got: %q", content)
+	}
+}
+
 func TestIncrementalRefreshWithContentChange(t *testing.T) {
 	vm := NewConversationViewModel()
 	conv := model.NewConversation()
