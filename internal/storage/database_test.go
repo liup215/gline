@@ -23,7 +23,7 @@ func TestSQLiteStore_CreateTask(t *testing.T) {
 	s := newTestStore(t)
 
 	t.Run("create basic task", func(t *testing.T) {
-		id, err := s.CreateTask("", "hello world", "act", "openai", "gpt-4")
+		id, err := s.CreateTask("", "hello world", "act", "openai", "gpt-4", "")
 		require.NoError(t, err)
 		assert.NotEmpty(t, id)
 
@@ -38,7 +38,7 @@ func TestSQLiteStore_CreateTask(t *testing.T) {
 	})
 
 	t.Run("create task with title", func(t *testing.T) {
-		id, err := s.CreateTask("My Bug Fix", "fix the bug", "plan", "anthropic", "claude-3")
+		id, err := s.CreateTask("My Bug Fix", "fix the bug", "plan", "anthropic", "claude-3", "")
 		require.NoError(t, err)
 
 		task, err := s.GetTaskByID(id)
@@ -48,7 +48,7 @@ func TestSQLiteStore_CreateTask(t *testing.T) {
 
 	t.Run("long prompt generates truncated title", func(t *testing.T) {
 		longPrompt := "this is a very long prompt that should be truncated when used as a title because it exceeds the fifty character limit"
-		id, err := s.CreateTask("", longPrompt, "act", "openai", "gpt-4")
+		id, err := s.CreateTask("", longPrompt, "act", "openai", "gpt-4", "")
 		require.NoError(t, err)
 
 		task, err := s.GetTaskByID(id)
@@ -60,7 +60,7 @@ func TestSQLiteStore_CreateTask(t *testing.T) {
 func TestSQLiteStore_TaskLifecycle(t *testing.T) {
 	s := newTestStore(t)
 
-	id, err := s.CreateTask("", "test", "act", "openai", "gpt-4")
+	id, err := s.CreateTask("", "test", "act", "openai", "gpt-4", "")
 	require.NoError(t, err)
 
 	t.Run("complete task", func(t *testing.T) {
@@ -74,7 +74,7 @@ func TestSQLiteStore_TaskLifecycle(t *testing.T) {
 	})
 
 	t.Run("fail task", func(t *testing.T) {
-		id2, err := s.CreateTask("", "test2", "act", "openai", "gpt-4")
+		id2, err := s.CreateTask("", "test2", "act", "openai", "gpt-4", "")
 		require.NoError(t, err)
 
 		err = s.FailTask(id2, "something went wrong")
@@ -89,7 +89,7 @@ func TestSQLiteStore_TaskLifecycle(t *testing.T) {
 func TestSQLiteStore_Messages(t *testing.T) {
 	s := newTestStore(t)
 
-	id, err := s.CreateTask("", "test", "act", "openai", "gpt-4")
+	id, err := s.CreateTask("", "test", "act", "openai", "gpt-4", "")
 	require.NoError(t, err)
 
 	t.Run("save and retrieve messages", func(t *testing.T) {
@@ -144,7 +144,7 @@ func TestSQLiteStore_Messages(t *testing.T) {
 func TestSQLiteStore_ToolCalls(t *testing.T) {
 	s := newTestStore(t)
 
-	id, err := s.CreateTask("", "test", "act", "openai", "gpt-4")
+	id, err := s.CreateTask("", "test", "act", "openai", "gpt-4", "")
 	require.NoError(t, err)
 
 	t.Run("start and complete tool call", func(t *testing.T) {
@@ -170,7 +170,7 @@ func TestSQLiteStore_ListTasks(t *testing.T) {
 
 	// Create multiple tasks
 	for i := 0; i < 5; i++ {
-		_, err := s.CreateTask("", "task", "act", "openai", "gpt-4")
+		_, err := s.CreateTask("", "task", "act", "openai", "gpt-4", "")
 		require.NoError(t, err)
 		time.Sleep(10 * time.Millisecond) // ensure different timestamps
 	}
@@ -205,7 +205,7 @@ func TestSQLiteStore_ListTasks(t *testing.T) {
 func TestSQLiteStore_DeleteTask(t *testing.T) {
 	s := newTestStore(t)
 
-	id, err := s.CreateTask("", "test", "act", "openai", "gpt-4")
+	id, err := s.CreateTask("", "test", "act", "openai", "gpt-4", "")
 	require.NoError(t, err)
 
 	// Save a message

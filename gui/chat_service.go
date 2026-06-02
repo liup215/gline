@@ -308,6 +308,9 @@ func (c *ChatService) LoadTask(taskID string) (*storage.TaskRecord, error) {
 	if err != nil {
 		return nil, err
 	}
+	if task != nil {
+		c.workingDir = task.WorkingDir
+	}
 	return task, nil
 }
 
