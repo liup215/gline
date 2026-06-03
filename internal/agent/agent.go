@@ -270,6 +270,22 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 						break
 					}
 
+					// Check if tool is allowed in current mode
+					if !a.toolRegistry.IsAllowed(string(a.mode), tc.Name) {
+						errorMsg := fmt.Sprintf("Error: Tool '%s' is not allowed in %s mode.", tc.Name, a.mode)
+						a.conversation.AddMessage(types.Message{
+							Role:       types.RoleTool,
+							ToolCallID: tc.ID,
+							Content:    errorMsg,
+						})
+						callback.OnToolCallComplete(ToolCall{
+							ID:    tc.ID,
+							Name:  tc.Name,
+							Input: string(tc.Input),
+						}, errorMsg)
+						continue
+					}
+
 					// Get the tool from registry
 					tool, err := a.toolRegistry.Get(tc.Name)
 					if err != nil {
