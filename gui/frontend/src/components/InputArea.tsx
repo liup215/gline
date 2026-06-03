@@ -87,7 +87,7 @@ export function InputArea({
         fontSize: '0.72rem',
         color: '#636e7b',
       }}>
-        Type <span style={{ color: '#8B5CF6', fontWeight: 600 }}>/</span> for slash commands · Use <span style={{ color: '#8B5CF6', fontWeight: 600 }}>@</span> to add files
+        Type <span style={{ color: '#8B5CF6', fontWeight: 600 }}>/</span> for slash commands
       </div>
 
       {/* Status Bar */}

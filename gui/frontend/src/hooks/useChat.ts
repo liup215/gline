@@ -54,6 +54,10 @@ export function useChat(onLoadHistory: () => void, onLoadStatus: () => void) {
           if (msg) setMessages(prev => [...prev, { role: 'system', content: msg }]);
           break;
         }
+        case 'reload': {
+          if (msg) setMessages(prev => [...prev, { role: 'system', content: msg }]);
+          break;
+        }
         case 'quit': {
           if (msg) setMessages(prev => [...prev, { role: 'system', content: msg }]);
           break;
@@ -153,8 +157,19 @@ export function useChat(onLoadHistory: () => void, onLoadStatus: () => void) {
     });
 
     Events.On('chat:toolComplete', (data: any) => {
-      const { id, result } = data?.data ?? {};
-      setMessages(prev => prev.map(m => (m.id === id ? { ...m, toolResult: result } : m)));
+      const { id, name, result } = data?.data ?? {};
+      setMessages(prev => {
+        const updated = prev.map(m => (m.id === id ? { ...m, toolResult: result } : m));
+        // For attempt_completion, also insert the result as an assistant message
+        // so the user can see the final summary without expanding tool details.
+        if (name === 'attempt_completion' && result) {
+          return [...updated, { role: 'assistant', content: result }];
+        }
+        return updated;
+      });
+      if (name === 'attempt_completion') {
+        setIsLoading(false);
+      }
       onLoadStatus();
     });
 

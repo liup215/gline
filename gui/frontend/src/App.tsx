@@ -122,6 +122,13 @@ function App() {
           onClose={() => { settings.setShowSettings(false); settings.setSaveMessage(''); }}
           onSave={settings.saveSettings}
           saveMessage={settings.saveMessage}
+          rules={settings.rules}
+          rulesMessage={settings.rulesMessage}
+          loadingRules={settings.loadingRules}
+          onLoadRules={settings.loadRules}
+          onReloadRules={settings.reloadRules}
+          formatFileSize={settings.formatFileSize}
+          formatModTime={settings.formatModTime}
         />
       )}
       {chat.followup && (

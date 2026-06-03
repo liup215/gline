@@ -106,11 +106,6 @@ func CreateDefault(name string, config ProviderConfig) (agent.Provider, error) {
 
 // InitDefaultRegistry initializes the default registry with built-in providers
 func InitDefaultRegistry() {
-	// Register Anthropic provider
-	RegisterDefault("anthropic", func(config ProviderConfig) (agent.Provider, error) {
-		return NewAnthropicProvider(config.APIKey, config.Model), nil
-	})
-
 	// Register OpenAI-compatible provider
 	// Supports OpenAI, OpenRouter, and any OpenAI-compatible API
 	RegisterDefault("openai", func(config ProviderConfig) (agent.Provider, error) {

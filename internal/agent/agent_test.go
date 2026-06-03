@@ -68,6 +68,10 @@ func (c *recordingCallback) OnContent(delta string) {
 	c.content.WriteString(delta)
 }
 
+func (c *recordingCallback) OnReasoning(delta string) {
+	// no-op for tests
+}
+
 func (c *recordingCallback) OnStreamStart() {
 	c.streamStarts++
 }

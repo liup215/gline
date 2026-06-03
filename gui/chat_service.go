@@ -11,6 +11,7 @@ import (
 
 	"github.com/liup215/gline/internal/agent"
 	"github.com/liup215/gline/internal/log"
+	"github.com/liup215/gline/internal/prompts"
 	"github.com/liup215/gline/internal/slash"
 	"github.com/liup215/gline/internal/storage"
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -87,7 +88,23 @@ type ChatService struct {
 // InitSlashRegistry initialises the slash command registry for this service.
 func (c *ChatService) InitSlashRegistry() {
 	c.cmdReg = slash.NewRegistry()
-	for _, cmd := range slash.DefaultCommands(nil) {
+	ctx := &slash.CommandContext{
+		ReloadRules: func() (int, string, error) {
+			if c.backend.ag == nil {
+				return 0, "", fmt.Errorf("agent not initialised")
+			}
+			baseAg, ok := c.backend.ag.(*agent.BaseAgent)
+			if !ok {
+				return 0, "", fmt.Errorf("agent type mismatch")
+			}
+			_, infos, err := baseAg.ReloadCustomRules()
+			if err != nil {
+				return 0, "", err
+			}
+			return len(infos), prompts.FormatRulesInfo(infos), nil
+		},
+	}
+	for _, cmd := range slash.DefaultCommands(ctx) {
 		c.cmdReg.Register(cmd)
 	}
 }
@@ -131,6 +148,20 @@ func (c *ChatService) ExecuteSlashCommand(name string, args string) (*SlashActio
 		OnResult: func(result slash.CommandResult, message string) {
 			capturedAction = result
 			capturedMessage = message
+		},
+		ReloadRules: func() (int, string, error) {
+			if c.backend.ag == nil {
+				return 0, "", fmt.Errorf("agent not initialised")
+			}
+			baseAg, ok := c.backend.ag.(*agent.BaseAgent)
+			if !ok {
+				return 0, "", fmt.Errorf("agent type mismatch")
+			}
+			_, infos, err := baseAg.ReloadCustomRules()
+			if err != nil {
+				return 0, "", err
+			}
+			return len(infos), prompts.FormatRulesInfo(infos), nil
 		},
 	}
 
@@ -217,11 +248,35 @@ func commandResultToString(r slash.CommandResult) string {
 		return "help"
 	case slash.ResultShowHistory:
 		return "history"
+	case slash.ResultReloadRules:
+		return "reload"
 	case slash.ResultQuit:
 		return "quit"
 	default:
 		return "none"
 	}
+}
+
+// ReloadRules reloads custom rules from disk and updates the agent.
+// Returns the number of rule files loaded and a formatted description.
+func (c *ChatService) ReloadRules() (int, string, error) {
+	if c.backend.ag == nil {
+		return 0, "", fmt.Errorf("agent not initialised")
+	}
+	baseAg, ok := c.backend.ag.(*agent.BaseAgent)
+	if !ok {
+		return 0, "", fmt.Errorf("agent type mismatch")
+	}
+	_, infos, err := baseAg.ReloadCustomRules()
+	if err != nil {
+		return 0, "", err
+	}
+	return len(infos), prompts.FormatRulesInfo(infos), nil
+}
+
+// GetRulesInfo returns metadata about available custom rule files.
+func (c *ChatService) GetRulesInfo() ([]prompts.RuleFileInfo, error) {
+	return prompts.GetCustomRulesInfo()
 }
 
 // GetConfig returns the current configuration
@@ -399,14 +454,11 @@ func (c *ChatService) GetStatus() (map[string]string, error) {
 	cfg := c.backend.cfg.Get()
 	provider := cfg.Provider.Default
 	if provider == "" {
-		provider = "anthropic"
+		provider = "openai"
 	}
 	model := ""
 	maxTokens := 0
 	switch provider {
-	case "anthropic":
-		model = cfg.Provider.Anthropic.Model
-		maxTokens = cfg.Provider.Anthropic.MaxContextTokens
 	case "openai":
 		model = cfg.Provider.OpenAI.Model
 		maxTokens = cfg.Provider.OpenAI.MaxContextTokens
@@ -464,6 +516,10 @@ func (g *guiStreamCallback) OnContent(delta string) {
 	g.app.Event.Emit("chat:content", delta)
 }
 
+func (g *guiStreamCallback) OnReasoning(delta string) {
+	g.app.Event.Emit("chat:reasoning", delta)
+}
+
 func (g *guiStreamCallback) OnStreamStart() {
 	g.app.Event.Emit("chat:streamStart", "")
 }
@@ -482,12 +538,33 @@ func (g *guiStreamCallback) OnToolCallComplete(toolCall agent.ToolCall, result s
 		"name":   toolCall.Name,
 		"result": result,
 	})
-	// plan_mode_respond should be visible to the user (it contains the plan).
-	if toolCall.Name == "plan_mode_respond" && result != "" {
-		g.app.Event.Emit("chat:systemMessage", map[string]interface{}{
-			"role":    "system",
-			"content": result,
-		})
+	// Special tools whose result should be shown directly to the user
+	// (not hidden behind a tool-call badge).
+	switch toolCall.Name {
+	case "plan_mode_respond":
+		if result != "" {
+			g.app.Event.Emit("chat:systemMessage", map[string]interface{}{
+				"role":    "system",
+				"content": result,
+			})
+		}
+	case "attempt_completion":
+		if result != "" {
+			g.app.Event.Emit("chat:systemMessage", map[string]interface{}{
+				"role":    "system",
+				"content": "📋 " + result,
+			})
+		}
+	case "ask_followup_question":
+		// The question itself is already emitted via chat:followupQuestion
+		// but we also show the answer prompt as a system message so the user
+		// sees the question inline without needing the popup.
+		if result != "" {
+			g.app.Event.Emit("chat:systemMessage", map[string]interface{}{
+				"role":    "system",
+				"content": "💬 " + result,
+			})
+		}
 	}
 }
 

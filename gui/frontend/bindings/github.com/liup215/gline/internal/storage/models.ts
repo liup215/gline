@@ -24,6 +24,16 @@ export class MessageRecord {
      */
     "ToolCalls": string;
     "ToolCallID": string;
+
+    /**
+     * JSON - the list of tools available when this message was sent
+     */
+    "AvailableTools": string;
+
+    /**
+     * the tool_choice setting sent with the request (e.g. "required", "auto")
+     */
+    "ToolChoice": string;
     "CreatedAt": time$0.Time;
 
     /** Creates a new MessageRecord instance. */
@@ -48,6 +58,12 @@ export class MessageRecord {
         }
         if (!("ToolCallID" in $$source)) {
             this["ToolCallID"] = "";
+        }
+        if (!("AvailableTools" in $$source)) {
+            this["AvailableTools"] = "";
+        }
+        if (!("ToolChoice" in $$source)) {
+            this["ToolChoice"] = "";
         }
         if (!("CreatedAt" in $$source)) {
             this["CreatedAt"] = null;

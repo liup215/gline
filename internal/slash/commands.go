@@ -18,6 +18,7 @@ const (
 	ResultCompact
 	ResultShowHelp
 	ResultShowHistory
+	ResultReloadRules
 )
 
 // CommandContext holds the dependencies needed by slash command handlers.
@@ -29,6 +30,10 @@ type CommandContext struct {
 
 	// OnResult is called when a command produces a TUI-level action.
 	OnResult func(result CommandResult, message string)
+
+	// ReloadRules is called to reload custom rules from disk.
+	// Returns the number of rule files loaded and a description message.
+	ReloadRules func() (int, string, error)
 }
 
 // DefaultCommands returns the built-in slash commands for gline.
@@ -129,6 +134,26 @@ func DefaultCommands(ctx *CommandContext) []*types.SlashCommand {
 				return true, nil
 			},
 		},
+		{
+			Name:        "reload",
+			Description: "Reload custom rules from ~/.gline/rules/ and .gline/rules/",
+			Section:     types.SectionDefault,
+			Handler: func(args string) (bool, error) {
+				if ctx != nil && ctx.ReloadRules != nil {
+					count, _, err := ctx.ReloadRules()
+					if err != nil {
+						return false, fmt.Errorf("failed to reload rules: %w", err)
+					}
+					message := fmt.Sprintf("Reloaded %d custom rule file(s). Rules will apply to the next message.", count)
+					if ctx.OnResult != nil {
+						ctx.OnResult(ResultReloadRules, message)
+					}
+				} else if ctx != nil && ctx.OnResult != nil {
+					ctx.OnResult(ResultReloadRules, "No rule reloader configured")
+				}
+				return true, nil
+			},
+		},
 	}
 }
 
@@ -144,6 +169,7 @@ func buildHelpText() string {
 		{"/newtask [name]", "Start a new task (preserves system context)"},
 		{"/smol or /compact", "Compact conversation to save tokens"},
 		{"/history", "Show conversation history"},
+		{"/reload", "Reload custom rules from disk"},
 	}
 	for _, c := range commands {
 		b.WriteString(fmt.Sprintf("  %-18s %s\n", c.name, c.desc))

@@ -102,24 +102,28 @@ func initConfig() {
 	}
 }
 
-// startInteractiveMode starts the interactive TUI mode
+// startInteractiveMode starts the interactive GUI mode
 func startInteractiveMode() {
 	log.Info("Starting gline in interactive mode")
 
-	// Initialize agent
-	agentInstance, err := initializeAgent()
-	if err != nil {
-		log.Errorf("Failed to initialize agent: %v", err)
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		fmt.Println()
-		fmt.Println("To get started:")
-		fmt.Println("  1. Set your API key: gline config set provider.openai.apikey YOUR_API_KEY")
-		fmt.Println("  2. Or set environment variable: GLINE_OPENAI_API_KEY=your_key")
-		os.Exit(1)
+	// Check if GUI binary exists
+	guiBinary := "gline-gui"
+	if os.PathListSeparator == ';' {
+		guiBinary = "gline-gui.exe"
 	}
 
-	// Start TUI chat
-	runTUIChat(agentInstance)
+	// Check in PATH or in same directory
+	fmt.Println("🚀 gline GUI Application")
+	fmt.Println("=======================")
+	fmt.Println()
+	fmt.Println("The TUI mode has been deprecated. Please use the GUI version:")
+	fmt.Println()
+	fmt.Printf("  1. Build GUI: cd gui && go build -o ../bin/%s .\n", guiBinary)
+	fmt.Printf("  2. Run GUI:   ./bin/%s\n", guiBinary)
+	fmt.Println()
+	fmt.Println("Or use single-message mode:")
+	fmt.Println("  gline chat \"your question here\"")
+	fmt.Println()
 }
 
 // chatCmd represents the chat command
@@ -154,9 +158,19 @@ Or start an interactive TUI chat session (default):
 			// Single message mode - non-interactive
 			runSingleMessage(agentInstance, message)
 		} else {
-			// Interactive TUI mode (default)
-			log.Info("Starting TUI chat mode")
-			runTUIChat(agentInstance)
+			// GUI mode (TUI deprecated)
+			log.Info("Starting GUI mode - TUI deprecated")
+			fmt.Println("🚀 gline GUI Application")
+			fmt.Println("=======================")
+			fmt.Println()
+			fmt.Println("The TUI mode has been deprecated. Please use the GUI version:")
+			fmt.Println()
+			fmt.Println("  1. Build GUI: cd gui && go build -o ../bin/gline-gui.exe .")
+			fmt.Println("  2. Run GUI:   ./bin/gline-gui.exe")
+			fmt.Println()
+			fmt.Println("Or use single-message mode:")
+			fmt.Println("  gline chat \"your question here\"")
+			fmt.Println()
 		}
 	},
 }
@@ -195,7 +209,7 @@ func init() {
 	configCmd.AddCommand(&cobra.Command{
 		Use:   "set <key> <value>",
 		Short: "Set a configuration value",
-		Example: `  gline config set provider.default anthropic
+		Example: `  gline config set provider.default openai
   gline config set log.level debug`,
 		Run: func(cmd *cobra.Command, args []string) {
 			if len(args) < 2 {
@@ -223,7 +237,6 @@ func init() {
 			fmt.Println()
 			fmt.Printf("Provider:\n")
 			fmt.Printf("  Default: %s\n", cfg.Provider.Default)
-			fmt.Printf("  Anthropic Model: %s\n", cfg.Provider.Anthropic.Model)
 			fmt.Printf("  OpenAI Model: %s\n", cfg.Provider.OpenAI.Model)
 			fmt.Println()
 			fmt.Printf("UI:\n")

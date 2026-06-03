@@ -235,8 +235,13 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 			Tools:        convertTools(availableTools),
 			SystemPrompt: systemPrompt,
 		}
+		// Use "auto" instead of "required" for reasoning models (DeepSeek/Kimi).
+		// "required" can cause confused-stop when the model sees a complex system
+		// prompt, because it does not know which specific tool is required.
+		// "auto" lets the model choose based on context; if it wrongly chooses
+		// not to call, the noToolsUsedMsg fallback below corrects it.
 		if needsTool {
-			req.ToolChoice = ToolChoiceRequired
+			req.ToolChoice = ToolChoiceAuto
 		}
 		log.Infof("RunWithCallback: availableTools=%d, needsTool=%v, toolChoice=%s", len(availableTools), needsTool, req.ToolChoice)
 
@@ -695,6 +700,10 @@ func (a *BaseAgent) processStream(ctx context.Context, streamChan <-chan StreamC
 			return chunk.Error
 		}
 
+		// TEMP DIAGNOSTIC
+		log.Infof("processStream chunk: content=%d reasoning=%d toolCall=%v done=%v",
+			len(chunk.Content), len(chunk.ReasoningContent), chunk.ToolCall != nil, chunk.Done)
+
 		// Accumulate real token usage from the API whenever available
 		if chunk.Usage.TotalTokens > 0 {
 			a.conversation.AddActualTokens(chunk.Usage.InputTokens, chunk.Usage.OutputTokens)
@@ -704,17 +713,20 @@ func (a *BaseAgent) processStream(ctx context.Context, streamChan <-chan StreamC
 			break
 		}
 
-		// Handle content
+		// Handle content (actual assistant reply text)
 		if chunk.Content != "" {
 			content.WriteString(chunk.Content)
 			callback.OnContent(chunk.Content)
 		}
 
-		// Handle reasoning content (internal/model thinking). Accumulate but don't mix into visible content.
+		// Handle reasoning content (internal/model thinking).
+		// Cline keeps this strictly separate from assistant text and exposes
+		// it via a dedicated callback so the UI can choose to show it in a
+		// collapsible panel or hide it completely.  We never mix reasoning
+		// into OnContent.
 		if chunk.ReasoningContent != "" {
 			reasoning.WriteString(chunk.ReasoningContent)
-			// Do not send reasoning to OnContent by default to avoid showing internal thoughts in the main UI.
-			// If the UI wants to surface reasoning in the future, add a dedicated callback method.
+			callback.OnReasoning(chunk.ReasoningContent)
 		}
 
 		// Handle tool call
@@ -733,6 +745,20 @@ func (a *BaseAgent) processStream(ctx context.Context, streamChan <-chan StreamC
 		}
 	}
 
+	// Build the final content strings after the stream is complete.
+	fullContent := content.String()
+
+	// Fallback: if no native tool_calls were received but the content contains
+	// XML-style tool calls (<tool_name>...params...</tool_name>), parse them.
+	if len(toolCalls) == 0 {
+		availableTools := convertTools(a.toolRegistry.GetAll())
+		parsedXML := ParseXMLToolCalls(fullContent, availableTools)
+		if len(parsedXML) > 0 {
+			log.Infof("Fallback: parsed %d XML tool calls from assistant content", len(parsedXML))
+			toolCalls = append(toolCalls, parsedXML...)
+		}
+	}
+
 	// Convert accumulated tool calls to types.ToolCall
 	var typesToolCalls []types.ToolCall
 	for _, tc := range toolCalls {
@@ -745,7 +771,6 @@ func (a *BaseAgent) processStream(ctx context.Context, streamChan <-chan StreamC
 
 	// Add assistant message to conversation, including any accumulated reasoning content.
 	// Tool calls are stored in the ToolCalls field; the TUI renders them via OnToolCallStart/Complete callbacks.
-	fullContent := content.String()
 	a.conversation.AddMessage(types.Message{
 		Role:             types.RoleAssistant,
 		Content:          fullContent,

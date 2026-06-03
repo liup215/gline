@@ -12,6 +12,9 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as prompts$0 from "../internal/prompts/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as storage$0 from "../internal/storage/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -89,6 +92,15 @@ export function GetMode(): $CancellablePromise<string> {
 }
 
 /**
+ * GetRulesInfo returns metadata about available custom rule files.
+ */
+export function GetRulesInfo(): $CancellablePromise<prompts$0.RuleFileInfo[]> {
+    return $Call.ByID(2145237972).then(($result: any) => {
+        return $$createType5($result);
+    });
+}
+
+/**
  * GetSlashCommands returns all available slash commands.
  */
 export function GetSlashCommands(): $CancellablePromise<$models.SlashCommandInfo[]> {
@@ -102,7 +114,7 @@ export function GetSlashCommands(): $CancellablePromise<$models.SlashCommandInfo
  */
 export function GetStatus(): $CancellablePromise<{ [_ in string]?: string }> {
     return $Call.ByID(4059966519).then(($result: any) => {
-        return $$createType4($result);
+        return $$createType6($result);
     });
 }
 
@@ -111,8 +123,8 @@ export function GetStatus(): $CancellablePromise<{ [_ in string]?: string }> {
  */
 export function GetTaskSummary(taskID: string): $CancellablePromise<[storage$0.TaskRecord | null, storage$0.MessageRecord[]]> {
     return $Call.ByID(3884067532, taskID).then(($result: any) => {
-        $result[0] = $$createType6($result[0]);
-        $result[1] = $$createType8($result[1]);
+        $result[0] = $$createType8($result[0]);
+        $result[1] = $$createType10($result[1]);
         return $result;
     });
 }
@@ -136,7 +148,7 @@ export function IsSlashCommand(text: string): $CancellablePromise<boolean> {
  */
 export function ListTasks(limit: number, offset: number): $CancellablePromise<storage$0.TaskRecord[]> {
     return $Call.ByID(2917519979, limit, offset).then(($result: any) => {
-        return $$createType9($result);
+        return $$createType11($result);
     });
 }
 
@@ -145,7 +157,7 @@ export function ListTasks(limit: number, offset: number): $CancellablePromise<st
  */
 export function LoadTask(taskID: string): $CancellablePromise<storage$0.TaskRecord | null> {
     return $Call.ByID(3581714498, taskID).then(($result: any) => {
-        return $$createType6($result);
+        return $$createType8($result);
     });
 }
 
@@ -162,6 +174,14 @@ export function NewConversation(): $CancellablePromise<void> {
  */
 export function ParseSlashCommand(text: string): $CancellablePromise<[string, string]> {
     return $Call.ByID(34237656, text);
+}
+
+/**
+ * ReloadRules reloads custom rules from disk and updates the agent.
+ * Returns the number of rule files loaded and a formatted description.
+ */
+export function ReloadRules(): $CancellablePromise<[number, string]> {
+    return $Call.ByID(3702964733);
 }
 
 /**
@@ -216,9 +236,11 @@ const $$createType0 = $models.SlashActionResult.createFrom;
 const $$createType1 = $Create.Nullable($$createType0);
 const $$createType2 = $models.SlashCommandInfo.createFrom;
 const $$createType3 = $Create.Array($$createType2);
-const $$createType4 = $Create.Map($Create.Any, $Create.Any);
-const $$createType5 = storage$0.TaskRecord.createFrom;
-const $$createType6 = $Create.Nullable($$createType5);
-const $$createType7 = storage$0.MessageRecord.createFrom;
-const $$createType8 = $Create.Array($$createType7);
-const $$createType9 = $Create.Array($$createType5);
+const $$createType4 = prompts$0.RuleFileInfo.createFrom;
+const $$createType5 = $Create.Array($$createType4);
+const $$createType6 = $Create.Map($Create.Any, $Create.Any);
+const $$createType7 = storage$0.TaskRecord.createFrom;
+const $$createType8 = $Create.Nullable($$createType7);
+const $$createType9 = storage$0.MessageRecord.createFrom;
+const $$createType10 = $Create.Array($$createType9);
+const $$createType11 = $Create.Array($$createType7);

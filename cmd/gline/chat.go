@@ -11,7 +11,6 @@ import (
 	"github.com/liup215/gline/internal/prompts"
 	"github.com/liup215/gline/internal/storage"
 	"github.com/liup215/gline/internal/tools"
-	"github.com/liup215/gline/internal/ui"
 )
 
 // initializeAgent creates and configures the agent based on configuration
@@ -27,21 +26,6 @@ func initializeAgent() (*agent.BaseAgent, error) {
 	// Create the appropriate provider
 	var provider agent.Provider
 	switch providerName {
-	case "anthropic":
-		apiKey := cfg.Provider.Anthropic.APIKey
-		if apiKey == "" {
-			apiKey = os.Getenv("GLINE_ANTHROPIC_API_KEY")
-		}
-		if apiKey == "" {
-			return nil, fmt.Errorf("Anthropic API key not configured. Set it in config or GLINE_ANTHROPIC_API_KEY environment variable")
-		}
-		model := cfg.Provider.Anthropic.Model
-		if model == "" {
-			model = "claude-3-5-sonnet-20241022"
-		}
-		provider = api.NewAnthropicProvider(apiKey, model)
-		log.Infof("Using Anthropic provider with model: %s", model)
-
 	case "openai":
 		apiKey := cfg.Provider.OpenAI.APIKey
 		if apiKey == "" {
@@ -142,15 +126,18 @@ func runSingleMessage(agentInstance *agent.BaseAgent, message string) {
 	}
 }
 
-// runTUIChat starts the interactive TUI chat mode
-func runTUIChat(agentInstance *agent.BaseAgent) {
-	// Disable console logging in TUI mode to prevent interference with TUI rendering
-	// Logs will still be written to file if configured
+// runGUIChat starts the GUI desktop application
+func runGUIChat(agentInstance *agent.BaseAgent) {
+	log.Info("Starting gline GUI application")
+	fmt.Println("🚀 Starting gline GUI application...")
+	fmt.Println("If the window doesn't open, make sure you have WebView2 installed on Windows.")
+	fmt.Println()
+	
+	// Disable console logging in GUI mode
 	log.SetConsoleOutput(false)
 
-	if err := ui.Run(agentInstance); err != nil {
-		log.Errorf("TUI error: %v", err)
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
+	// Import gui package and start the application
+	// This is done through the gui main package, not directly here
+	fmt.Println("Please run 'gline-gui' or use the desktop shortcut to start the GUI.")
+	fmt.Println("The gline GUI is built as a separate application in the gui/ directory.")
 }

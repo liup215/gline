@@ -181,8 +181,12 @@ func DefaultProviderConfig() ProviderConfig {
 // StreamCallback is the interface for receiving streaming updates
 // This allows the Agent to notify the UI of content updates, tool calls, etc.
 type StreamCallback interface {
-	// OnContent is called when new content is received from the LLM
+	// OnContent is called when new content (the assistant reply text) is received.
 	OnContent(delta string)
+
+	// OnReasoning is called when the LLM emits a thinking / reasoning block.
+	// UI implementations can choose to show this in a collapsible panel or hide it completely.
+	OnReasoning(delta string)
 
 	// OnStreamStart is called when a new streaming response begins
 	// This allows the UI to prepare a new assistant message slot for streaming content.
@@ -214,6 +218,7 @@ type StreamCallback interface {
 type StreamCallbackAdapter struct{}
 
 func (a *StreamCallbackAdapter) OnContent(delta string)                              {}
+func (a *StreamCallbackAdapter) OnReasoning(delta string)                           {}
 func (a *StreamCallbackAdapter) OnStreamStart()                                      {}
 func (a *StreamCallbackAdapter) OnToolCallStart(toolCall ToolCall)                   {}
 func (a *StreamCallbackAdapter) OnToolCallComplete(toolCall ToolCall, result string) {}

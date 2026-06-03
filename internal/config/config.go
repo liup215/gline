@@ -27,11 +27,8 @@ type Config struct {
 
 // ProviderConfig holds LLM provider settings
 type ProviderConfig struct {
-	// Default provider to use (anthropic, openai, etc.)
+	// Default provider to use (openai)
 	Default string `mapstructure:"default"`
-
-	// Anthropic provider settings
-	Anthropic ProviderSettings `mapstructure:"anthropic"`
 
 	// OpenAI provider settings
 	OpenAI ProviderSettings `mapstructure:"openai"`
@@ -114,7 +111,7 @@ func (m *Manager) Load() error {
 
 // setupDefaults sets default configuration values
 func (m *Manager) setupDefaults() {
-	m.viper.SetDefault("provider.default", "anthropic")
+	m.viper.SetDefault("provider.default", "openai")
 	m.viper.SetDefault("ui.theme", "default")
 	m.viper.SetDefault("ui.animations", true)
 	m.viper.SetDefault("log.level", "info")
@@ -183,7 +180,6 @@ func (m *Manager) loadEnvironmentVariables() {
 	m.viper.AutomaticEnv()
 
 	// Map specific environment variables
-	m.viper.BindEnv("provider.anthropic.api_key", "GLINE_ANTHROPIC_API_KEY")
 	m.viper.BindEnv("provider.openai.api_key", "GLINE_OPENAI_API_KEY")
 	m.viper.BindEnv("provider.default", "GLINE_PROVIDER")
 	m.viper.BindEnv("log.level", "GLINE_LOG_LEVEL")
@@ -197,19 +193,9 @@ func (m *Manager) createDefaultConfig(configFile string) error {
 
 # LLM Provider Settings
 provider:
-  # Default provider to use (anthropic, openai)
-  default: anthropic
-  
-  # Anthropic (Claude) settings
-  anthropic:
-    # API key (can also be set via GLINE_ANTHROPIC_API_KEY env var)
-    api_key: ""
-    # Model to use (claude-3-opus, claude-3-sonnet, claude-3-haiku)
-    model: claude-3-sonnet
-    # Max context tokens (0 = default ~262K)
-    # Claude 3 Opus/Sonnet: ~200000 | Claude 3 Haiku: ~200000
-    max_context_tokens: 0
-  
+  # Default provider to use (openai)
+  default: openai
+
   # OpenAI settings
   # Supports OpenAI official API, OpenRouter, and any OpenAI-compatible endpoint
   openai:

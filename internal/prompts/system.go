@@ -1,124 +1,179 @@
-// Package prompts manages system prompts and tool definitions for gline
+// Package prompts manages system prompts and tool definitions for gline.
 package prompts
 
 import (
 	"fmt"
+	"os"
+	"runtime"
 	"strings"
 )
-
-// SystemPrompt contains the system prompt configuration
-type SystemPrompt struct {
-	// BasePrompt is the core system prompt
-	BasePrompt string
-
-	// Mode is the operating mode (plan or act)
-	Mode string
-
-	// Capabilities lists what the agent can do
-	Capabilities []string
-
-	// Rules are the guidelines for the agent
-	Rules []string
-
-	// ToolDescriptions contains descriptions of available tools
-	ToolDescriptions string
-}
 
 // GetSystemPrompt returns the appropriate system prompt for the given mode.
 // If customRules is non-empty, it is appended at the end of the prompt.
 func GetSystemPrompt(mode string, tools []ToolDescription, customRules string) string {
-	var basePrompt string
+	var prompt strings.Builder
 
-	switch mode {
-	case "plan":
-		basePrompt = getPlanModePrompt()
-	case "act":
-		basePrompt = getActModePrompt()
-	default:
-		basePrompt = getActModePrompt()
-	}
+	// Agent Role
+	prompt.WriteString("You are gline, a highly skilled software engineer with extensive knowledge in many programming languages, frameworks, design patterns, and best practices.")
 
-	// Add tool descriptions
+	// ====
+	prompt.WriteString("\n\n====\n\n")
+
+	// TOOL USE
+	prompt.WriteString(getToolUseSection())
+
+	// ====
+	prompt.WriteString("\n\n====\n\n")
+
+	// EDITING FILES
+	prompt.WriteString(getEditingFilesSection())
+
+	// ====
+	prompt.WriteString("\n\n====\n\n")
+
+	// ACT VS PLAN
+	prompt.WriteString(getActVsPlanSection(mode))
+
+	// ====
+	prompt.WriteString("\n\n====\n\n")
+
+	// CAPABILITIES
+	prompt.WriteString(getCapabilitiesSection())
+
+	// ====
+	prompt.WriteString("\n\n====\n\n")
+
+	// RULES
+	prompt.WriteString(getRulesSection())
+
+	// ====
+	prompt.WriteString("\n\n====\n\n")
+
+	// SYSTEM INFORMATION
+	prompt.WriteString(getSystemInfoSection())
+
+	// ====
+	prompt.WriteString("\n\n====\n\n")
+
+	// OBJECTIVE
+	prompt.WriteString(getObjectiveSection())
+
+	// ====
+	prompt.WriteString("\n\n====\n\n")
+
+	// AVAILABLE TOOLS
 	toolSection := buildToolSection(tools)
-
-	result := fmt.Sprintf("%s\n\n%s", basePrompt, toolSection)
+	prompt.WriteString(toolSection)
 
 	// Append custom rules if provided
 	if customRules != "" {
-		result += "\n\n# Custom Rules\n\n" + customRules
+		prompt.WriteString("\n\n# Custom Rules\n\n")
+		prompt.WriteString(customRules)
 	}
 
-	return result
+	return prompt.String()
 }
 
-// getPlanModePrompt returns the system prompt for plan mode
-func getPlanModePrompt() string {
-	return `You are gline, an AI programming assistant in PLAN MODE.
+// getToolUseSection returns the tool use section with formatting, guidelines, and examples.
+func getToolUseSection() string {
+	return `TOOL USE
 
-In Plan Mode, you focus on exploration, planning, and gathering information WITHOUT making any changes to files or executing commands.
+You have access to tools. Use them step by step. After each tool use, wait for the result before proceeding.
 
-YOUR CAPABILITIES:
-- Read and analyze files to understand the codebase
-- Search for patterns and code definitions
-- List files and directories to explore structure
-- Ask follow-up questions to clarify requirements
-- Present plans and strategies for implementation
+# Format
 
-WHAT YOU CANNOT DO IN PLAN MODE:
-- Write or modify files
-- Execute commands
-- Make any changes to the system
+Use native tool_calls when available. If native calls are not supported, use XML tags:
 
-WORKFLOW:
-1. Understand the user's request
-2. Explore the codebase if needed (read files, search, etc.)
-3. Ask clarifying questions if requirements are unclear
-4. Present a detailed plan of action
-5. Wait for user approval before proceeding to Act Mode
+<tool_name>
+<parameter>value</parameter>
+</tool_name>
 
-RESPONSE FORMAT:
-- Be thorough in your analysis
-- Present clear, actionable plans
-- Use the plan_mode_respond tool to present your plan
-- Do not use file modification or command execution tools`
+Example:
+<read_file>
+<path>src/main.go</path>
+</read_file>`
 }
 
-// getActModePrompt returns the system prompt for act mode
-func getActModePrompt() string {
-	return `You are gline, an AI programming assistant in ACT MODE.
+// getEditingFilesSection returns the editing files section (concise).
+func getEditingFilesSection() string {
+	return `EDITING FILES
 
-In Act Mode, you can execute tasks, modify files, and run commands to help the user accomplish their goals.
+- write_to_file: create new files or overwrite existing ones completely.
+- replace_in_file: make targeted edits. Prefer this for small changes.
 
-YOUR CAPABILITIES:
-- Read and analyze files
-- Write new files or modify existing ones
-- Execute commands and scripts
-- Search for patterns and code definitions
-- List files and directories
-- Ask follow-up questions when needed
+When editing the same file multiple times, use a single replace_in_file call with multiple SEARCH/REPLACE blocks.`
+}
 
-WORKFLOW:
-1. Understand the user's request
-2. Plan your approach (you can think through this)
-3. Execute the plan using available tools
-4. Read files to verify changes
-5. Use attempt_completion when finished
+// getActVsPlanSection returns the Act vs Plan mode section.
+func getActVsPlanSection(mode string) string {
+	return `ACT MODE V.S. PLAN MODE
 
-TOOL USAGE GUIDELINES:
-- Use read_file to examine existing code
-- Use write_to_file to create new files or completely rewrite existing ones
-- Use replace_in_file for targeted modifications (SEARCH/REPLACE blocks)
-- Use execute_command to run commands
-- Use search_files to find patterns across the codebase
-- Use list_files to explore directory structure
-- Use ask_followup_question when you need clarification
-- Use attempt_completion when the task is done
+- ACT MODE: use tools to complete tasks. End with attempt_completion.
+- PLAN MODE: use plan_mode_respond to present plans and gather feedback.`
+}
 
-BEST PRACTICES:
-- Always verify file contents before modifying
-- Make minimal, focused changes
-- Test your changes when possible
-- Provide clear summaries of what was done`
+// getCapabilitiesSection returns the capabilities section.
+func getCapabilitiesSection() string {
+	return `CAPABILITIES
+
+- You have access to tools that let you execute CLI commands on the user's computer, list files, view source code definitions, regex search, read and edit files, and ask follow-up questions. These tools help you effectively accomplish a wide range of tasks, such as writing code, making edits or improvements to existing files, understanding the current state of a project, performing system operations, and much more.
+- When the user initially gives you a task, a recursive list of all filepaths in the current working directory ('` + getCWD() + `') will be included in environment_details. This provides an overview of the project's file structure, offering key insights into the project from directory/file names (how developers conceptualize and organize their code) and file extensions (the language used). This can also guide decision-making on which files to explore further. If you need to further explore directories such as outside the current working directory, you can use the list_files tool. If you pass 'true' for the recursive parameter, it will list files recursively. Otherwise, it will list files at the top level, which is better suited for generic directories where you don't necessarily need the nested structure, like the Desktop.
+- You can use search_files to perform regex searches across files in a specified directory, outputting context-rich results that include surrounding lines. This is particularly useful for understanding code patterns, finding specific implementations, or identifying areas that need refactoring.
+- You can use the list_code_definition_names tool to get an overview of source code definitions for all files at the top level of a specified directory. This can be particularly useful when you need to understand the broader context and relationships between certain parts of the code. You may need to call this tool multiple times to understand various parts of the codebase related to the task.
+    - For example, when asked to make edits or improvements you might analyze the file structure in the initial environment_details to get an overview of the project, then use list_code_definition_names to get further insight using source code definitions for files located in relevant directories, then read_file to examine the contents of relevant files, analyze the code and suggest improvements or make necessary edits, then use the replace_in_file tool to implement changes. If you refactored code that could affect other parts of the codebase, you could use search_files to ensure you update other files as needed.
+- You can use the execute_command tool to run commands on the user's computer whenever you feel it can help accomplish the user's task. When you need to execute a CLI command, you must provide a clear explanation of what the command does. Prefer to execute complex CLI commands over creating executable scripts, since they are more flexible and easier to run. Prefer non-interactive commands when possible: use flags to disable pagers (e.g., '--no-pager'), auto-confirm prompts (e.g., '-y' when safe), provide input via flags/arguments rather than stdin, suppress interactive behavior, etc. For commands that may fail, consider redirecting stderr to stdout (e.g., 'command 2>&1') so you can see error messages in the output. For long-running commands, the user may keep them running in the background and you will be kept updated on their status along the way. Each command you execute is run in a new terminal instance.`
+}
+
+// getRulesSection returns the rules section.
+func getRulesSection() string {
+	return `RULES
+
+- Working directory: ` + getCWD() + ` (cannot cd elsewhere).
+- Use correct path; no ~ or $HOME.
+- For outside cwd: cd /dir && cmd.
+- End with attempt_completion. Do NOT keep calling tools after finishing.
+- NEVER call same tool with same params twice.`
+}
+
+
+// getObjectiveSection returns the objective section.
+func getObjectiveSection() string {
+	return `OBJECTIVE
+
+Break task into steps, work sequentially, use tools one at a time.`
+}
+
+
+// getSystemInfoSection returns the system information section.
+func getSystemInfoSection() string {
+	goVersion := runtime.Version()
+	osName := runtime.GOOS
+	osArch := runtime.GOARCH
+	cwd := getCWD()
+
+	shell := "bash"
+	if osName == "windows" {
+		shell = "PowerShell"
+	}
+
+	homeDir, _ := os.UserHomeDir()
+
+	return fmt.Sprintf(`SYSTEM INFORMATION
+
+Operating System: %s (%s)
+Default Shell: %s
+Home Directory: %s
+Current Working Directory: %s
+Go Version: %s`, osName, osArch, shell, homeDir, cwd, goVersion)
+}
+
+// getCWD returns the current working directory.
+func getCWD() string {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "."
+	}
+	return dir
 }
 
 // ToolDescription describes a tool for the system prompt
@@ -128,7 +183,7 @@ type ToolDescription struct {
 	InputSchema string
 }
 
-// buildToolSection builds the tool descriptions section
+// buildToolSection builds the tool descriptions section with Usage examples.
 func buildToolSection(tools []ToolDescription) string {
 	if len(tools) == 0 {
 		return ""
@@ -136,15 +191,20 @@ func buildToolSection(tools []ToolDescription) string {
 
 	var builder strings.Builder
 	builder.WriteString("AVAILABLE TOOLS:\n\n")
+	builder.WriteString("The following tools are available to you. Use these tools to accomplish the user's request:\n\n")
 
 	for _, tool := range tools {
 		builder.WriteString(fmt.Sprintf("## %s\n", tool.Name))
-		builder.WriteString(fmt.Sprintf("%s\n", tool.Description))
-		if tool.InputSchema != "" {
-			builder.WriteString(fmt.Sprintf("Input Schema:\n%s\n", tool.InputSchema))
-		}
-		builder.WriteString("\n")
+		builder.WriteString(fmt.Sprintf("Description: %s\n", tool.Description))
+		builder.WriteString(fmt.Sprintf("Usage:\n<%s>\n...parameters...\n</%s>\n\n", tool.Name, tool.Name))
 	}
+
+	builder.WriteString("\n")
+	builder.WriteString("---\n")
+	builder.WriteString(`ALTERNATIVE TOOL USE FORMAT:
+`)
+	builder.WriteString(`If native tool calls are not supported, you can use XML-style tags: <tool_name>{"key":"value"}</tool_name>.\n`)
+	builder.WriteString(`---\n`)
 
 	return builder.String()
 }
@@ -155,47 +215,47 @@ func GetToolDescriptions() []ToolDescription {
 		{
 			Name:        "read_file",
 			Description: "Read the contents of a file at the specified path. Use this when you need to examine the contents of an existing file.",
-			InputSchema: `{"path": "string (required) - The path of the file to read"}`,
+			InputSchema: `{"type":"object","properties":{"path":{"type":"string","description":"The path of the file to read"}},"required":["path"]}`,
 		},
 		{
 			Name:        "write_to_file",
 			Description: "Write content to a file at the specified path. If the file exists, it will be overwritten. Use this when creating new files or completely rewriting existing files.",
-			InputSchema: `{"path": "string (required)", "content": "string (required)"}`,
+			InputSchema: `{"type":"object","properties":{"path":{"type":"string","description":"The path of the file to write"},"content":{"type":"string","description":"The content to write to the file"}},"required":["path","content"]}`,
 		},
 		{
 			Name:        "replace_in_file",
 			Description: "Replace specific content in a file using exact search/replace. Use this for targeted modifications to existing files.",
-			InputSchema: `{"path": "string (required)", "search": "string (required) - Exact content to find", "replace": "string (required) - Content to replace with"}`,
+			InputSchema: `{"type":"object","properties":{"path":{"type":"string","description":"The path of the file to modify"},"search":{"type":"string","description":"Exact content to find"},"replace":{"type":"string","description":"Content to replace with"}},"required":["path","search","replace"]}`,
 		},
 		{
 			Name:        "list_files",
 			Description: "List files and directories at the specified path. Use this to explore the file system.",
-			InputSchema: `{"path": "string (required)", "recursive": "boolean (optional) - List recursively"}`,
+			InputSchema: `{"type":"object","properties":{"path":{"type":"string","description":"The path of the directory to list"},"recursive":{"type":"boolean","description":"List recursively"}},"required":["path"]}`,
 		},
 		{
 			Name:        "search_files",
 			Description: "Search for a regex pattern in files within a directory. Returns context-rich results with file paths, line numbers, and surrounding context.",
-			InputSchema: `{"path": "string (required) - Directory to search", "regex": "string (required) - Pattern to search for", "file_pattern": "string (optional) - Glob pattern to filter files"}`,
+			InputSchema: `{"type":"object","properties":{"path":{"type":"string","description":"Directory to search"},"regex":{"type":"string","description":"Pattern to search for"},"file_pattern":{"type":"string","description":"Glob pattern to filter files"}},"required":["path","regex"]}`,
 		},
 		{
 			Name:        "list_code_definition_names",
 			Description: "List definition names (functions, classes, methods, etc.) in code files within a directory. Provides insights into codebase structure.",
-			InputSchema: `{"path": "string (required) - Directory to analyze", "file_pattern": "string (optional) - Glob pattern to filter files"}`,
+			InputSchema: `{"type":"object","properties":{"path":{"type":"string","description":"Directory to analyze"},"file_pattern":{"type":"string","description":"Glob pattern to filter files"}},"required":["path"]}`,
 		},
 		{
 			Name:        "execute_command",
 			Description: "Execute a CLI command on the system. Use this when you need to perform system operations or run specific commands.",
-			InputSchema: `{"command": "string (required) - The command to execute", "requires_approval": "boolean (optional) - Whether this command requires user approval", "cwd": "string (optional) - Working directory", "timeout": "integer (optional) - Timeout in seconds"}`,
+			InputSchema: `{"type":"object","properties":{"command":{"type":"string","description":"The command to execute"},"requires_approval":{"type":"boolean","description":"Whether this command requires user approval","default":false},"timeout":{"type":"integer","description":"Timeout in seconds"}},"required":["command"]}`,
 		},
 		{
 			Name:        "ask_followup_question",
 			Description: "Ask the user a question to gather clarifying information or make a decision. Use this when you need more information to complete a task.",
-			InputSchema: `{"question": "string (required) - The question to ask", "options": "array of strings (optional) - Options for the user to choose from"}`,
+			InputSchema: `{"type":"object","properties":{"question":{"type":"string","description":"The question to ask"},"options":{"type":"array","items":{"type":"string"},"description":"Options for the user to choose from"}},"required":["question"]}`,
 		},
 		{
 			Name:        "attempt_completion",
 			Description: "Indicate that you have completed the task and provide a summary of what was accomplished. Use this when you have finished all required work.",
-			InputSchema: `{"result": "string (required) - Summary of what was accomplished", "command": "string (optional) - Command to showcase the result"}`,
+			InputSchema: `{"type":"object","properties":{"result":{"type":"string","description":"Summary of what was accomplished"},"command":{"type":"string","description":"Command to showcase the result"}},"required":["result"]}`,
 		},
 	}
 }
@@ -205,7 +265,6 @@ func GetPlanModeToolDescriptions() []ToolDescription {
 	allTools := GetToolDescriptions()
 	var planTools []ToolDescription
 
-	// Filter out tools not allowed in plan mode
 	actOnlyTools := map[string]bool{
 		"write_to_file":   true,
 		"replace_in_file": true,

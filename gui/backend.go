@@ -18,6 +18,22 @@ import (
 var backendInstance *Backend
 
 func initBackend() error {
+	// Initialize logger with file output so diagnostic info persists even in GUI mode.
+	logDir := getGlobalConfigDir()
+	logPath := filepath.Join(logDir, "gline.log")
+	// Force file-only logging. In Windows GUI mode (-H windowsgui) stderr
+	// is nil, so a ConsoleWriter would silently break the MultiWriter chain.
+	if err := log.Init(log.Config{
+		Level:   "info",
+		File:    logPath,
+		Console: false,
+		Color:   false,
+	}); err != nil {
+		// Non-fatal: proceed without logging if init fails
+		fmt.Fprintf(os.Stderr, "failed to init logger: %v\n", err)
+	}
+	log.Infof("=== GUI session started, log file: %s ===", logPath)
+
 	backendInstance = &Backend{}
 	if err := backendInstance.initConfig(); err != nil {
 		return fmt.Errorf("init config: %w", err)
@@ -66,16 +82,12 @@ func (b *Backend) initAgent() error {
 	cfg := b.cfg.Get()
 	providerName := cfg.Provider.Default
 	if providerName == "" {
-		providerName = "anthropic"
+		providerName = "openai"
 	}
 
 	var provider agent.Provider
 	var maxTokens int
 	switch providerName {
-	case "anthropic":
-		s := cfg.Provider.Anthropic
-		provider = api.NewAnthropicProvider(s.APIKey, s.Model)
-		maxTokens = s.MaxContextTokens
 	case "openai":
 		s := cfg.Provider.OpenAI
 		provider = api.NewOpenAIProvider(s.APIKey, s.Model, s.BaseURL)
@@ -155,7 +167,6 @@ func (b *Backend) UpdateConfig(key string, value string) error {
 	b.cfg.Save()
 
 	if key == "provider.default" ||
-		key == "provider.anthropic.max_context_tokens" ||
 		key == "provider.openai.max_context_tokens" {
 		if err := b.initAgent(); err != nil {
 			return fmt.Errorf("reinit agent: %w", err)

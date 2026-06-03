@@ -1,14 +1,34 @@
 import { useState, useEffect } from 'react';
 import { THEME } from '../theme';
+import type { RuleInfo } from '../hooks/useSettings';
 
 interface SettingsPanelProps {
   config: any;
   onClose: () => void;
   onSave: (updates: Record<string, string>) => void;
   saveMessage: string;
+  rules: RuleInfo[];
+  rulesMessage: string;
+  loadingRules: boolean;
+  onLoadRules: () => Promise<void>;
+  onReloadRules: () => Promise<void>;
+  formatFileSize: (bytes: number) => string;
+  formatModTime: (ts: number) => string;
 }
 
-export function SettingsPanel({ config, onClose, onSave, saveMessage }: SettingsPanelProps) {
+export function SettingsPanel({
+  config,
+  onClose,
+  onSave,
+  saveMessage,
+  rules,
+  rulesMessage,
+  loadingRules,
+  onLoadRules,
+  onReloadRules,
+  formatFileSize,
+  formatModTime,
+}: SettingsPanelProps) {
   const [provider, setProvider] = useState(config?.Provider?.Default || 'anthropic');
   const [anthropicKey, setAnthropicKey] = useState(config?.Provider?.Anthropic?.APIKey || '');
   const [anthropicModel, setAnthropicModel] = useState(config?.Provider?.Anthropic?.Model || 'claude-3-sonnet');
