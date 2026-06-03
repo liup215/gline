@@ -38,6 +38,12 @@ type Message struct {
 	// ToolCallID identifies which tool call this result is for
 	ToolCallID string
 
+	// AvailableTools records the list of tools that were available to the
+	// assistant when this message was sent.  This is stored as JSON on
+	// assistant messages so that users can verify whether the request
+	// actually included tools.
+	AvailableTools json.RawMessage
+
 	// Timestamp when the message was created
 	Timestamp time.Time
 }

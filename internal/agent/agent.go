@@ -238,6 +238,24 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 		if needsTool {
 			req.ToolChoice = ToolChoiceRequired
 		}
+		log.Infof("RunWithCallback: availableTools=%d, needsTool=%v, toolChoice=%s", len(availableTools), needsTool, req.ToolChoice)
+
+		// Serialize available tool names for diagnostic storage. We attach this
+		// to the assistant message record so users can verify whether the
+		// request actually contained tools when debugging empty tool_calls.
+		var availableToolsJSON json.RawMessage
+		if len(availableTools) > 0 {
+			names := make([]string, 0, len(availableTools))
+			for _, t := range availableTools {
+				names = append(names, t.Name())
+			}
+			b, err := json.Marshal(names)
+			if err != nil {
+				log.Warnf("Failed to marshal available tools: %v", err)
+			} else {
+				availableToolsJSON = b
+			}
+		}
 
 		// Use streaming API
 		streamChan, err := a.provider.CreateMessageStream(ctx, req)
@@ -266,11 +284,14 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 			return err
 		}
 
-		// Save assistant message to storage
+		// Save assistant message to storage, attaching the list of tools that
+		// were available to the assistant so users can diagnose why tool_calls
+		// may be empty.
 		if a.store != nil && a.taskID != "" {
 			if msgs := a.conversation.GetMessages(); len(msgs) > 0 {
 				lastMsg := msgs[len(msgs)-1]
 				if lastMsg.Role == types.RoleAssistant {
+					lastMsg.AvailableTools = availableToolsJSON
 					if err := a.store.SaveMessage(a.taskID, lastMsg); err != nil {
 						log.Warnf("Failed to save assistant message: %v", err)
 					}

@@ -120,9 +120,9 @@ func (s *SQLiteStore) SaveMessage(taskID string, msg types.Message) error {
 	}
 
 	_, err := s.db.Exec(`
-		INSERT INTO messages (task_id, role, content, reasoning_content, tool_calls, tool_call_id, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, taskID, string(msg.Role), msg.Content, msg.ReasoningContent, string(toolCallsJSON), msg.ToolCallID, msg.Timestamp)
+		INSERT INTO messages (task_id, role, content, reasoning_content, tool_calls, tool_call_id, available_tools, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`, taskID, string(msg.Role), msg.Content, msg.ReasoningContent, string(toolCallsJSON), msg.ToolCallID, string(msg.AvailableTools), msg.Timestamp)
 	if err != nil {
 		return fmt.Errorf("failed to save message: %w", err)
 	}
@@ -132,7 +132,7 @@ func (s *SQLiteStore) SaveMessage(taskID string, msg types.Message) error {
 // GetMessages retrieves all messages for a task.
 func (s *SQLiteStore) GetMessages(taskID string) ([]MessageRecord, error) {
 	rows, err := s.db.Query(`
-		SELECT id, task_id, role, content, reasoning_content, tool_calls, tool_call_id, created_at
+		SELECT id, task_id, role, content, reasoning_content, tool_calls, tool_call_id, available_tools, created_at
 		FROM messages
 		WHERE task_id = ?
 		ORDER BY created_at ASC, id ASC
@@ -148,12 +148,14 @@ func (s *SQLiteStore) GetMessages(taskID string) ([]MessageRecord, error) {
 		var toolCalls sql.NullString
 		var reasoningContent sql.NullString
 		var toolCallID sql.NullString
-		if err := rows.Scan(&m.ID, &m.TaskID, &m.Role, &m.Content, &reasoningContent, &toolCalls, &toolCallID, &m.CreatedAt); err != nil {
+		var availableTools sql.NullString
+		if err := rows.Scan(&m.ID, &m.TaskID, &m.Role, &m.Content, &reasoningContent, &toolCalls, &toolCallID, &availableTools, &m.CreatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan message: %w", err)
 		}
 		m.ReasoningContent = reasoningContent.String
 		m.ToolCalls = toolCalls.String
 		m.ToolCallID = toolCallID.String
+		m.AvailableTools = availableTools.String
 		messages = append(messages, m)
 	}
 
@@ -343,6 +345,9 @@ func (m MessageRecord) ToTypesMessage() (types.Message, error) {
 			return msg, fmt.Errorf("failed to unmarshal tool calls: %w", err)
 		}
 		msg.ToolCalls = tcs
+	}
+	if m.AvailableTools != "" {
+		msg.AvailableTools = json.RawMessage(m.AvailableTools)
 	}
 	return msg, nil
 }

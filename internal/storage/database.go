@@ -106,6 +106,16 @@ func migrate(db *sql.DB) error {
 		}
 	}
 
+	// Version 3: Add available_tools column to messages (for debugging tool availability)
+	if v < 3 {
+		if err := applyV3(db); err != nil {
+			return err
+		}
+		if _, err := db.Exec("INSERT INTO migrations (version) VALUES (3)"); err != nil {
+			return fmt.Errorf("failed to record v3 migration: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -165,6 +175,16 @@ func applyV2(db *sql.DB) error {
 		// Column may already exist; ignore that specific error
 		if !strings.Contains(err.Error(), "duplicate column name") && !strings.Contains(err.Error(), "already exists") {
 			return fmt.Errorf("failed to apply v2 migration: %w", err)
+		}
+	}
+	return nil
+}
+
+func applyV3(db *sql.DB) error {
+	_, err := db.Exec(`ALTER TABLE messages ADD COLUMN available_tools TEXT`)
+	if err != nil {
+		if !strings.Contains(err.Error(), "duplicate column name") && !strings.Contains(err.Error(), "already exists") {
+			return fmt.Errorf("failed to apply v3 migration: %w", err)
 		}
 	}
 	return nil

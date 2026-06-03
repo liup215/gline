@@ -89,6 +89,7 @@ type MessageRecord struct {
 	ReasoningContent string
 	ToolCalls        string // JSON
 	ToolCallID       string
+	AvailableTools   string // JSON - the list of tools available when this message was sent
 	CreatedAt        time.Time
 }
 
