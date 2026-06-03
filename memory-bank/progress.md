@@ -428,6 +428,35 @@ gline/
 - `gui/chat_service.go`
 - `gui/frontend/src/App.tsx`
 
+### 2026-06-03 — search_files 工具优化 + 单元测试 ✅
+
+**Search 工具重构**：`internal/tools/search.go` 全面优化，支持并发搜索、字面量快速路径、跳过常见目录。
+
+**变更内容**:
+1. **并发搜索 Worker Pool**：`searchFilesConcurrent()` 使用 `runtime.GOMAXPROCS(0) * 4` 个 worker，channel 分发文件 + channel 收集结果
+2. **字面量快速路径**：`isLiteralPattern()` 检测无正则元字符的 pattern，回退到 `bytes.Index()` 子串搜索（比 regex 快 5-10 倍）
+3. **目录跳过**：`skipDirs` 集合（`.git`, `node_modules`, `vendor`, `dist`, `build`, `__pycache__`, `.next`, `.nuxt`, `.output`, `.idea`, `.vscode`, `target`, `out`, `.terraform`）+ 隐藏目录自动跳过
+4. **二进制文件跳过**：`binaryExts` 集合（图片、音频、视频、压缩包、字体、wasm、sqlite 等）+ `maxFileSize = 8MB`
+5. **文件 pattern 过滤**：支持 `*.go` 等 glob pattern
+6. **上下文展示**：命中行前后各 2 行上下文，带行号和高亮 `>` 标记
+7. **代码定义扫描**：`list_code_definition_names` 支持 Go/Python/JS/TS 的函数/类/结构体/接口识别
+8. **单元测试**：`internal/tools/search_test.go` — 覆盖字面量搜索、regex 搜索、文件过滤、大文件跳过、目录跳过、`isLiteralPattern` 边界情况
+9. **基准测试**：`BenchmarkSearchInFile`（literal vs regex）、`BenchmarkSearchConcurrent`（100 文件并发）
+
+**文件**: `internal/tools/search.go`, `internal/tools/search_test.go`
+
+---
+
+### 2026-06-03 — Help 文本改为 Markdown 表格渲染 ✅
+
+`chat_service.go` 的 `BuildHelpText()` 输出从纯文本改为 Markdown 表格格式，`SystemMessage.tsx` 改用 `formatContent()` 统一渲染（复用 Markdown 渲染器，支持表格、粗体等）。
+
+**变更文件**:
+- `gui/chat_service.go`: `BuildHelpText()` 输出 Markdown 表格
+- `gui/frontend/src/components/SystemMessage.tsx`: 改用 `formatContent(content)` 渲染，移除自定义 help 文本解析逻辑
+
+---
+
 ### 2026-06-02 — GUI Slash 命令功能完成 ✅
 
 在 Wails GUI 中实现了 slash 命令弹出菜单，复用 `internal/slash/` 的 registry 和命令定义。

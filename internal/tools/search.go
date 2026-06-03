@@ -1,29 +1,119 @@
 package tools
 
 import (
-	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
+	"sort"
+	"strconv"
 	"strings"
+	"sync"
+	"unicode/utf8"
 )
 
-// SearchFilesTool searches for patterns in files
+// Common directories to skip during file traversal.
+var skipDirs = map[string]bool{
+	".git":         true,
+	"node_modules": true,
+	"vendor":       true,
+	"__pycache__":  true,
+	".next":        true,
+	".nuxt":        true,
+	".output":      true,
+	".idea":        true,
+	".vscode":      true,
+	"dist":         true,
+	"build":        true,
+	"target":       true,
+	"out":          true,
+	".terraform":   true,
+}
+
+// Binary file extensions to skip.
+var binaryExts = map[string]bool{
+	".exe":   true, ".dll": true, ".so": true, ".dylib": true,
+	".bin":   true, ".o": true, ".a": true, ".obj": true,
+	".png":   true, ".jpg": true, ".jpeg": true, ".gif": true,
+	".bmp":   true, ".ico": true, ".webp": true,
+	".mp3":   true, ".mp4": true, ".avi": true, ".mov": true,
+	".zip":   true, ".tar": true, ".gz": true, ".rar": true,
+	".7z":    true, ".pdf": true, ".doc": true, ".docx": true,
+	".xls":   true, ".xlsx": true, ".ppt": true, ".pptx": true,
+	".woff":  true, ".woff2": true, ".ttf": true, ".otf": true,
+	".eot":   true, ".wasm": true, ".sqlite": true, ".db": true,
+}
+
+const (
+	// Max file size to search (8MB).
+	maxFileSize = 8 << 20
+	// Context lines around a match.
+	contextLines = 2
+	// Worker multiplier over CPU count.
+	workerMultiplier = 4
+)
+
+// searcher abstracts regex/literal search.
+type searcher interface {
+	FindAllIndex([]byte) [][]int
+	String() string
+}
+
+// regexSearcher wraps *regexp.Regexp.
+type regexSearcher struct {
+	re *regexp.Regexp
+}
+
+func (s *regexSearcher) FindAllIndex(b []byte) [][]int {
+	return s.re.FindAllIndex(b, -1)
+}
+
+func (s *regexSearcher) String() string { return s.re.String() }
+
+// literalSearcher does fast substring search.
+type literalSearcher struct {
+	pattern []byte
+}
+
+func (s *literalSearcher) FindAllIndex(b []byte) [][]int {
+	var out [][]int
+	p := s.pattern
+	if len(p) == 0 {
+		return nil
+	}
+	n := len(p)
+	start := 0
+	for {
+		idx := bytes.Index(b[start:], p)
+		if idx < 0 {
+			break
+		}
+		pos := start + idx
+		out = append(out, []int{pos, pos + n})
+		start = pos + n
+	}
+	return out
+}
+
+func (s *literalSearcher) String() string { return string(s.pattern) }
+
+// SearchFilesTool searches for patterns in files.
 type SearchFilesTool struct {
 	BaseTool
 }
 
-// SearchFilesInput represents the input for search_files tool
+// SearchFilesInput represents the input for search_files tool.
 type SearchFilesInput struct {
 	Path        string `json:"path"`
 	Regex       string `json:"regex"`
 	FilePattern string `json:"file_pattern,omitempty"`
 }
 
-// SearchResult represents a single search result
+// SearchResult represents a single search result.
 type SearchResult struct {
 	Path        string `json:"path"`
 	Line        int    `json:"line"`
@@ -33,14 +123,14 @@ type SearchResult struct {
 	ContextLine int    `json:"context_line"`
 }
 
-// SearchFilesOutput represents the output of search_files tool
+// SearchFilesOutput represents the output of search_files tool.
 type SearchFilesOutput struct {
-	Results    []SearchResult `json:"results"`
-	TotalFiles int            `json:"total_files"`
-	TotalMatches int          `json:"total_matches"`
+	Results      []SearchResult `json:"results"`
+	TotalFiles   int            `json:"total_files"`
+	TotalMatches int            `json:"total_matches"`
 }
 
-// NewSearchFilesTool creates a new search_files tool
+// NewSearchFilesTool creates a new search_files tool.
 func NewSearchFilesTool() *SearchFilesTool {
 	schema := json.RawMessage(`{
 		"type": "object",
@@ -70,7 +160,7 @@ func NewSearchFilesTool() *SearchFilesTool {
 	}
 }
 
-// Execute searches for the pattern
+// Execute searches for the pattern.
 func (t *SearchFilesTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
 	var req SearchFilesInput
 	if err := ParseInput(input, &req); err != nil {
@@ -84,16 +174,22 @@ func (t *SearchFilesTool) Execute(ctx context.Context, input json.RawMessage) (s
 		return "", fmt.Errorf("regex is required")
 	}
 
-	// Compile regex
-	pattern, err := regexp.Compile(req.Regex)
-	if err != nil {
-		return "", fmt.Errorf("invalid regex pattern: %w", err)
+	// Build appropriate searcher (literal fast path when possible).
+	var srh searcher
+	if isLiteralPattern(req.Regex) {
+		srh = &literalSearcher{pattern: []byte(req.Regex)}
+	} else {
+		re, err := regexp.Compile(req.Regex)
+		if err != nil {
+			return "", fmt.Errorf("invalid regex pattern: %w", err)
+		}
+		srh = &regexSearcher{re: re}
 	}
 
-	// Clean path
+	// Clean path.
 	path := filepath.Clean(req.Path)
 
-	// Check if path exists
+	// Check if path exists.
 	info, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -102,63 +198,148 @@ func (t *SearchFilesTool) Execute(ctx context.Context, input json.RawMessage) (s
 		return "", fmt.Errorf("failed to stat path: %w", err)
 	}
 
-	// If path is a file, search just that file
+	// If path is a file, search just that file.
 	var files []string
 	if !info.IsDir() {
 		files = []string{path}
 	} else {
-		// Find all files
 		files, err = findFiles(path, req.FilePattern)
 		if err != nil {
 			return "", fmt.Errorf("failed to find files: %w", err)
 		}
 	}
 
-	// Search in files
+	// Search in files concurrently.
+	output := searchFilesConcurrent(ctx, files, srh)
+
+	// Format output.
+	return formatSearchResults(output), nil
+}
+
+// isLiteralPattern returns true if the pattern contains no regex metacharacters.
+func isLiteralPattern(s string) bool {
+	for _, r := range s {
+		switch r {
+		case '\\', '.', '*', '?', '+', '[', ']', '(', ')', '{', '}',
+			'^', '$', '|':
+			return false
+		}
+	}
+	return true
+}
+
+// searchFilesConcurrent searches files using a worker pool.
+func searchFilesConcurrent(ctx context.Context, files []string, srh searcher) *SearchFilesOutput {
+	numWorkers := runtime.GOMAXPROCS(0) * workerMultiplier
+	if numWorkers > len(files) {
+		numWorkers = len(files)
+	}
+	if numWorkers < 1 {
+		numWorkers = 1
+	}
+
+	fileCh := make(chan string, numWorkers)
+	resultCh := make(chan []SearchResult, numWorkers)
+
+	var wg sync.WaitGroup
+
+	// Start workers.
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for file := range fileCh {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
+				results, _ := searchInFile(file, srh)
+				if len(results) > 0 {
+					resultCh <- results
+				}
+			}
+		}()
+	}
+
+	// Wait for workers then close result channel.
+	go func() {
+		wg.Wait()
+		close(resultCh)
+	}()
+
+	// Send files.
+	go func() {
+		for _, f := range files {
+			select {
+			case <-ctx.Done():
+				break
+			case fileCh <- f:
+			}
+		}
+		close(fileCh)
+	}()
+
+	// Collect results.
 	output := &SearchFilesOutput{
 		Results:    make([]SearchResult, 0),
 		TotalFiles: len(files),
 	}
-
-	for _, file := range files {
-		results, err := searchInFile(file, pattern)
-		if err != nil {
-			// Skip files we can't read
-			continue
-		}
+	for results := range resultCh {
 		output.Results = append(output.Results, results...)
-		output.TotalMatches += len(results)
 	}
+	output.TotalMatches = len(output.Results)
 
-	// Format output
-	return formatSearchResults(output), nil
+	// Sort by path, then line number.
+	sort.Slice(output.Results, func(i, j int) bool {
+		if output.Results[i].Path != output.Results[j].Path {
+			return output.Results[i].Path < output.Results[j].Path
+		}
+		return output.Results[i].Line < output.Results[j].Line
+	})
+
+	return output
 }
 
-// findFiles finds all files matching the pattern
+// findFiles finds all files matching the pattern.
 func findFiles(root string, pattern string) ([]string, error) {
 	var files []string
 
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			return nil // Skip errors
+			return nil // Skip errors.
 		}
 
 		if info.IsDir() {
-			// Skip hidden directories
-			if strings.HasPrefix(info.Name(), ".") && info.Name() != "." {
+			name := info.Name()
+			if skipDirs[name] {
+				return filepath.SkipDir
+			}
+			// Skip hidden directories.
+			if strings.HasPrefix(name, ".") && name != "." {
 				return filepath.SkipDir
 			}
 			return nil
 		}
 
-		// Skip hidden files
-		if strings.HasPrefix(info.Name(), ".") {
+		// Skip hidden files.
+		name := info.Name()
+		if strings.HasPrefix(name, ".") {
 			return nil
 		}
 
-		// Apply file pattern filter
+		// Skip large and binary files.
+		if info.Size() > maxFileSize {
+			return nil
+		}
+		ext := strings.ToLower(filepath.Ext(name))
+		if binaryExts[ext] {
+			return nil
+		}
+
+		// Apply file pattern filter.
 		if pattern != "" {
-			matched, err := filepath.Match(pattern, info.Name())
+			matched, err := filepath.Match(pattern, name)
 			if err != nil {
 				return nil
 			}
@@ -174,71 +355,94 @@ func findFiles(root string, pattern string) ([]string, error) {
 	return files, err
 }
 
-// searchInFile searches for pattern in a single file
-func searchInFile(path string, pattern *regexp.Regexp) ([]SearchResult, error) {
-	file, err := os.Open(path)
+// searchInFile searches for pattern in a single file.
+func searchInFile(path string, srh searcher) ([]SearchResult, error) {
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+
+	// Quick check: if literal pattern not in file at all, skip.
+	if ls, ok := srh.(*literalSearcher); ok {
+		if !bytes.Contains(data, ls.pattern) {
+			return nil, nil
+		}
+	}
+
+	// Split into lines preserving line endings for accurate counting.
+	content := string(data)
+	lines := strings.Split(content, "\n")
+
+	// Pre-calculate line start positions in the raw string.
+	lineStarts := make([]int, len(lines))
+	pos := 0
+	for i := 0; i < len(lines); i++ {
+		lineStarts[i] = pos
+		pos += len(lines[i])
+		if i < len(lines)-1 {
+			pos++ // Account for "\n".
+		}
+	}
 
 	var results []SearchResult
-	scanner := bufio.NewScanner(file)
-	lineNum := 0
+	lineIdx := 0
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
+		locs := srh.FindAllIndex([]byte(line))
+		if len(locs) == 0 {
+			continue
+		}
 
-	// Read all lines for context
-	var lines []string
-	for scanner.Scan() {
-		lines = append(lines, scanner.Text())
-	}
+		// Get context range.
+		ctxStart := i - contextLines
+		if ctxStart < 0 {
+			ctxStart = 0
+		}
+		ctxEnd := i + contextLines + 1
+		if ctxEnd > len(lines) {
+			ctxEnd = len(lines)
+		}
 
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-
-	// Search each line
-	for i, line := range lines {
-		lineNum = i + 1
-		matches := pattern.FindAllStringIndex(line, -1)
-
-		for _, match := range matches {
-			start, end := match[0], match[1]
-
-			// Get context (2 lines before and after)
-			contextStart := i - 2
-			if contextStart < 0 {
-				contextStart = 0
+		// Pre-allocate string builder.
+		var b strings.Builder
+		b.Grow(256)
+		for j := ctxStart; j < ctxEnd; j++ {
+			if j > ctxStart {
+				b.WriteByte('\n')
 			}
-			contextEnd := i + 3
-			if contextEnd > len(lines) {
-				contextEnd = len(lines)
+			if j == i {
+				b.WriteString("> ")
+			} else {
+				b.WriteString("  ")
 			}
+			b.WriteString(strconv.Itoa(j + 1))
+			b.WriteString(": ")
+			b.WriteString(lines[j])
+		}
+		contextStr := b.String()
 
-			var contextLines []string
-			for j := contextStart; j < contextEnd; j++ {
-				prefix := "  "
-				if j == i {
-					prefix = "> "
-				}
-				contextLines = append(contextLines, fmt.Sprintf("%s%d: %s", prefix, j+1, lines[j]))
-			}
-
+		for _, loc := range locs {
+			start, end := loc[0], loc[1]
+			// Convert byte column to rune column for display.
+			col := utf8.RuneCountInString(line[:start]) + 1
 			result := SearchResult{
 				Path:        path,
-				Line:        lineNum,
-				Column:      start + 1,
+				Line:        i + 1,
+				Column:      col,
 				Match:       line[start:end],
-				Context:     strings.Join(contextLines, "\n"),
-				ContextLine: i - contextStart + 1,
+				Context:     contextStr,
+				ContextLine: i - ctxStart + 1,
 			}
 			results = append(results, result)
 		}
+		lineIdx++
+		_ = lineIdx // Unused.
 	}
 
 	return results, nil
 }
 
-// formatSearchResults formats search results for display
+// formatSearchResults formats search results for display.
 func formatSearchResults(output *SearchFilesOutput) string {
 	if len(output.Results) == 0 {
 		return fmt.Sprintf("No matches found in %d files.", output.TotalFiles)
@@ -247,18 +451,19 @@ func formatSearchResults(output *SearchFilesOutput) string {
 	var builder strings.Builder
 	builder.WriteString(fmt.Sprintf("Found %d matches in %d files:\n\n", output.TotalMatches, output.TotalFiles))
 
-	// Group by file
-	fileResults := make(map[string][]SearchResult)
-	for _, r := range output.Results {
-		fileResults[r.Path] = append(fileResults[r.Path], r)
-	}
-
-	for path, results := range fileResults {
-		builder.WriteString(fmt.Sprintf("📄 %s\n", path))
-		for _, r := range results {
-			builder.WriteString(fmt.Sprintf("   Line %d, Col %d: %s\n", r.Line, r.Column, r.Match))
+	// Group by file (already sorted).
+	var currentPath string
+	for i, r := range output.Results {
+		if r.Path != currentPath {
+			if i > 0 {
+				builder.WriteByte('\n')
+			}
+			builder.WriteString("📄 ")
+			builder.WriteString(r.Path)
+			builder.WriteByte('\n')
+			currentPath = r.Path
 		}
-		builder.WriteString("\n")
+		builder.WriteString(fmt.Sprintf("   Line %d, Col %d: %s\n", r.Line, r.Column, r.Match))
 	}
 
 	return builder.String()

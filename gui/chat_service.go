@@ -189,15 +189,19 @@ func (c *ChatService) BuildHelpText() string {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString("Available slash commands:\n\n")
+	b.WriteString("### 🛠️ Available Slash Commands\n\n")
+	b.WriteString("| Command | Description |\n")
+	b.WriteString("|---------|-------------|\n")
 	for _, cmd := range c.cmdReg.GetAll() {
-		b.WriteString(fmt.Sprintf("  /%-18s %s\n", cmd.Name, cmd.Description))
+		b.WriteString(fmt.Sprintf("| **/%s** | %s |\n", cmd.Name, cmd.Description))
 	}
-	b.WriteString("\nShortcuts:\n")
-	b.WriteString("  Tab          Toggle Plan/Act mode\n")
-	b.WriteString("  Ctrl+N       New conversation\n")
-	b.WriteString("  Ctrl+K       Focus input\n")
-	b.WriteString("  Ctrl+B       Toggle sidebar\n")
+	b.WriteString("\n### ⌨️ Shortcuts\n\n")
+	b.WriteString("| Shortcut | Action |\n")
+	b.WriteString("|----------|--------|\n")
+	b.WriteString("| Tab | Toggle Plan/Act mode |\n")
+	b.WriteString("| Ctrl+N | New conversation |\n")
+	b.WriteString("| Ctrl+K | Focus input |\n")
+	b.WriteString("| Ctrl+B | Toggle sidebar |\n")
 	return b.String()
 }
 

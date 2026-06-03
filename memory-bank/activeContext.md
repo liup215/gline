@@ -27,6 +27,8 @@
 | GUI 前端模块化拆分 | ✅ | 2026-06-02，App.tsx 从 1234 行/52KB 拆分为 18+ 独立模块 |
 | workingDir 历史持久化 | ✅ | 2026-06-02，数据库添加 `working_dir` 列，加载历史会话恢复目录 |
 | 空工具调用消息过滤 | ✅ | 2026-06-03，不渲染 `content` 为空、仅有 `tool_calls` 的助手消息 |
+| search_files 工具优化 + 单元测试 | ✅ | 2026-06-03，并发搜索、字面量快速路径、跳过目录、二进制文件过滤、代码定义扫描、benchmark |
+| Help 文本 Markdown 表格 | ✅ | 2026-06-03，`BuildHelpText()` 输出 Markdown 表格，`SystemMessage` 改用 `formatContent` 渲染 |
 
 ---
 
