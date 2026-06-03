@@ -44,6 +44,12 @@ type Message struct {
 	// actually included tools.
 	AvailableTools json.RawMessage
 
+	// ToolChoice records the tool_choice setting sent with the request.
+	// Common values: "required", "auto", "any", "none", or a JSON object
+	// like {"type":"any"}.  This helps diagnose why a model did or did
+	// not use tools.
+	ToolChoice string
+
 	// Timestamp when the message was created
 	Timestamp time.Time
 }

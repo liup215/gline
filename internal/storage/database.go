@@ -116,6 +116,16 @@ func migrate(db *sql.DB) error {
 		}
 	}
 
+	// Version 4: Add tool_choice column to messages (for debugging force tool use)
+	if v < 4 {
+		if err := applyV4(db); err != nil {
+			return err
+		}
+		if _, err := db.Exec("INSERT INTO migrations (version) VALUES (4)"); err != nil {
+			return fmt.Errorf("failed to record v4 migration: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -185,6 +195,16 @@ func applyV3(db *sql.DB) error {
 	if err != nil {
 		if !strings.Contains(err.Error(), "duplicate column name") && !strings.Contains(err.Error(), "already exists") {
 			return fmt.Errorf("failed to apply v3 migration: %w", err)
+		}
+	}
+	return nil
+}
+
+func applyV4(db *sql.DB) error {
+	_, err := db.Exec(`ALTER TABLE messages ADD COLUMN tool_choice TEXT`)
+	if err != nil {
+		if !strings.Contains(err.Error(), "duplicate column name") && !strings.Contains(err.Error(), "already exists") {
+			return fmt.Errorf("failed to apply v4 migration: %w", err)
 		}
 	}
 	return nil

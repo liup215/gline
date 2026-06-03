@@ -90,6 +90,7 @@ type MessageRecord struct {
 	ToolCalls        string // JSON
 	ToolCallID       string
 	AvailableTools   string // JSON - the list of tools available when this message was sent
+	ToolChoice       string // the tool_choice setting sent with the request (e.g. "required", "auto")
 	CreatedAt        time.Time
 }
 

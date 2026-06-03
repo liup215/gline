@@ -292,6 +292,7 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 				lastMsg := msgs[len(msgs)-1]
 				if lastMsg.Role == types.RoleAssistant {
 					lastMsg.AvailableTools = availableToolsJSON
+					lastMsg.ToolChoice = string(req.ToolChoice)
 					if err := a.store.SaveMessage(a.taskID, lastMsg); err != nil {
 						log.Warnf("Failed to save assistant message: %v", err)
 					}
