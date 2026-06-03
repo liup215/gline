@@ -161,13 +161,125 @@ export function SettingsPanel({
           </>
         )}
 
+        {/* ── Chat Theme (Coming Soon) ── */}
         <div style={{ borderTop: `1px solid ${THEME.border}`, paddingTop: '18px', marginBottom: '14px' }}>
-          <label style={labelStyle}>Chat Theme</label>
-          <select style={selectStyle} value={uiTheme} onChange={e => setUiTheme(e.target.value)}>
+          <label style={labelStyle}>Chat Theme 🚧</label>
+          <select style={selectStyle} value={uiTheme} onChange={e => setUiTheme(e.target.value)} disabled>
             <option value="default">Default</option>
             <option value="dark">Dark</option>
             <option value="light">Light</option>
           </select>
+          <div style={{ fontSize: '0.75rem', color: THEME.textDim, marginTop: '4px' }}>
+            🚧 Theme switching is coming soon
+          </div>
+        </div>
+
+        {/* ── Custom Rules ── */}
+        <div style={{ borderTop: `1px solid ${THEME.border}`, paddingTop: '18px', marginBottom: '14px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <label style={{ ...labelStyle, marginBottom: 0 }}>📋 Custom Rules</label>
+            <button
+              onClick={onReloadRules}
+              disabled={loadingRules}
+              style={{
+                padding: '5px 12px',
+                borderRadius: '6px',
+                border: `1px solid ${THEME.border}`,
+                background: 'transparent',
+                color: THEME.textMuted,
+                cursor: loadingRules ? 'not-allowed' : 'pointer',
+                fontSize: '0.8rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+              }}
+            >
+              {loadingRules ? '⏳' : '🔄'} Reload
+            </button>
+          </div>
+
+          {rulesMessage && (
+            <div style={{
+              padding: '8px 12px',
+              borderRadius: '6px',
+              background: rulesMessage.includes('✅') ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+              color: rulesMessage.includes('✅') ? '#4ade80' : '#f87171',
+              fontSize: '0.8rem',
+              marginBottom: '10px',
+            }}>
+              {rulesMessage}
+            </div>
+          )}
+
+          {loadingRules ? (
+            <div style={{ textAlign: 'center', padding: '20px', color: THEME.textDim, fontSize: '0.85rem' }}>
+              ⏳ Loading rules...
+            </div>
+          ) : rules.length === 0 ? (
+            <div style={{
+              padding: '16px 14px',
+              borderRadius: '8px',
+              background: 'rgba(30, 41, 59, 0.5)',
+              color: THEME.textDim,
+              fontSize: '0.85rem',
+              textAlign: 'center',
+            }}>
+              <div style={{ marginBottom: '6px' }}>📭 No custom rules found</div>
+              <div style={{ fontSize: '0.75rem' }}>
+                Create <code style={{ background: '#1e293b', padding: '2px 6px', borderRadius: '4px' }}>.clinerules</code> in your workspace
+                or <code style={{ background: '#1e293b', padding: '2px 6px', borderRadius: '4px' }}>~/.gline/clinerules</code> globally.
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {rules.map((rule, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    padding: '10px 14px',
+                    borderRadius: '8px',
+                    background: '#1e293b',
+                    border: `1px solid ${THEME.border}`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                  }}
+                >
+                  <span style={{ fontSize: '1.1rem' }}>📄</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontSize: '0.85rem',
+                      fontWeight: 500,
+                      color: THEME.text,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}>
+                      {rule.name}
+                    </div>
+                    <div style={{
+                      fontSize: '0.72rem',
+                      color: THEME.textDim,
+                      display: 'flex',
+                      gap: '8px',
+                      marginTop: '2px',
+                    }}>
+                      <span>{rule.source === 'global' ? '🌍 global' : '📁 workspace'}</span>
+                      <span>·</span>
+                      <span>{formatFileSize(rule.size)}</span>
+                      <span>·</span>
+                      <span>{formatModTime(rule.modTime)}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div style={{ fontSize: '0.75rem', color: THEME.textDim, marginTop: '10px', lineHeight: 1.5 }}>
+            Rules are injected into the system prompt and guide the AI&apos;s behavior.
+            Changes take effect on the next message after reloading.
+          </div>
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '8px' }}>
