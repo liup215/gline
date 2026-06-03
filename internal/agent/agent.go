@@ -393,6 +393,24 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 			}
 		}
 
+		// If the conversation is not complete but the last assistant message has
+		// no tool calls while tools are still needed, inject the no-tools-used
+		// reminder so the next loop iteration forces the model to call a tool.
+		if !a.conversation.IsComplete() && !a.abort {
+			messages := a.conversation.GetMessages()
+			if len(messages) > 0 {
+				lastMsg := messages[len(messages)-1]
+				if lastMsg.Role == types.RoleAssistant && len(lastMsg.ToolCalls) == 0 && needsTool {
+					a.consecutiveMistakes++
+					a.conversation.AddMessage(types.Message{
+						Role:    types.RoleUser,
+						Content: noToolsUsedMsg,
+					})
+					continue // go to next loop iteration instead of falling through
+				}
+			}
+		}
+
 		// Check if conversation is complete
 		if a.conversation.IsComplete() || a.abort {
 			if a.store != nil && a.taskID != "" {
