@@ -2,6 +2,20 @@ import { useState, useEffect } from 'react';
 import { THEME } from '../theme';
 import type { RuleInfo } from '../hooks/useSettings';
 
+type TabKey = 'provider' | 'general' | 'rules';
+
+interface TabDef {
+  key: TabKey;
+  label: string;
+  icon: string;
+}
+
+const TABS: TabDef[] = [
+  { key: 'provider', label: 'Provider', icon: '🔗' },
+  { key: 'general', label: 'General', icon: '🎨' },
+  { key: 'rules', label: 'Rules', icon: '📋' },
+];
+
 interface SettingsPanelProps {
   config: any;
   onClose: () => void;
@@ -29,6 +43,8 @@ export function SettingsPanel({
   formatFileSize,
   formatModTime,
 }: SettingsPanelProps) {
+  const [activeTab, setActiveTab] = useState<TabKey>('provider');
+
   const [provider, setProvider] = useState(config?.Provider?.Default || 'anthropic');
   const [anthropicKey, setAnthropicKey] = useState(config?.Provider?.Anthropic?.APIKey || '');
   const [anthropicModel, setAnthropicModel] = useState(config?.Provider?.Anthropic?.Model || 'claude-3-sonnet');
@@ -67,18 +83,7 @@ export function SettingsPanel({
     onSave(updates);
   };
 
-  const overlayStyle: React.CSSProperties = {
-    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-    background: 'rgba(0, 0, 0, 0.6)', backdropFilter: 'blur(4px)',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    zIndex: 1000,
-  };
-  const panelStyle: React.CSSProperties = {
-    width: '520px', maxHeight: '85vh', overflowY: 'auto',
-    background: '#111827', border: `1px solid ${THEME.border}`,
-    borderRadius: '14px', padding: '24px 28px',
-    color: THEME.text, boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
-  };
+  /* ── shared styles ── */
   const inputStyle: React.CSSProperties = {
     width: '100%', padding: '10px 14px', borderRadius: '8px',
     border: `1px solid ${THEME.border}`, background: '#1e293b',
@@ -95,194 +100,283 @@ export function SettingsPanel({
     cursor: 'pointer', boxSizing: 'border-box',
   };
 
+  /* ── tab content ── */
+  const renderProviderTab = () => (
+    <>
+      <div style={{ marginBottom: '18px' }}>
+        <label style={labelStyle}>Default Provider</label>
+        <select style={selectStyle} value={provider} onChange={e => setProvider(e.target.value)}>
+          <option value="anthropic">Anthropic (Claude)</option>
+          <option value="openai">OpenAI / Compatible</option>
+        </select>
+      </div>
+
+      {provider === 'anthropic' && (
+        <>
+          <div style={{ marginBottom: '14px' }}>
+            <label style={labelStyle}>Anthropic API Key</label>
+            <input type="password" style={inputStyle} value={anthropicKey} onChange={e => setAnthropicKey(e.target.value)} placeholder="sk-ant-api03-..." />
+          </div>
+          <div style={{ marginBottom: '14px' }}>
+            <label style={labelStyle}>Model</label>
+            <select style={selectStyle} value={anthropicModel} onChange={e => setAnthropicModel(e.target.value)}>
+              <option value="claude-3-opus">Claude 3 Opus</option>
+              <option value="claude-3-sonnet">Claude 3 Sonnet</option>
+              <option value="claude-3-haiku">Claude 3 Haiku</option>
+              <option value="claude-3-5-sonnet">Claude 3.5 Sonnet</option>
+            </select>
+          </div>
+          <div style={{ marginBottom: '18px' }}>
+            <label style={labelStyle}>Max Context Tokens (0 = auto ~262K)</label>
+            <input type="number" style={inputStyle} value={anthropicMaxTokens} onChange={e => setAnthropicMaxTokens(e.target.value)} placeholder="262000" />
+          </div>
+        </>
+      )}
+
+      {provider === 'openai' && (
+        <>
+          <div style={{ marginBottom: '14px' }}>
+            <label style={labelStyle}>API Key</label>
+            <input type="password" style={inputStyle} value={openaiKey} onChange={e => setOpenaiKey(e.target.value)} placeholder="sk-..." />
+          </div>
+          <div style={{ marginBottom: '14px' }}>
+            <label style={labelStyle}>Model</label>
+            <input type="text" style={inputStyle} value={openaiModel} onChange={e => setOpenaiModel(e.target.value)} placeholder="gpt-4, gpt-4-turbo..." />
+          </div>
+          <div style={{ marginBottom: '14px' }}>
+            <label style={labelStyle}>Base URL (optional)</label>
+            <input type="text" style={inputStyle} value={openaiBaseURL} onChange={e => setOpenaiBaseURL(e.target.value)} placeholder="https://api.openai.com/v1" />
+            <div style={{ fontSize: '0.75rem', color: THEME.textDim, marginTop: '4px' }}>Leave empty for OpenAI. For OpenRouter, use https://openrouter.ai/api/v1</div>
+          </div>
+          <div style={{ marginBottom: '18px' }}>
+            <label style={labelStyle}>Max Context Tokens (0 = auto ~262K)</label>
+            <input type="number" style={inputStyle} value={openaiMaxTokens} onChange={e => setOpenaiMaxTokens(e.target.value)} placeholder="262000" />
+          </div>
+        </>
+      )}
+    </>
+  );
+
+  const renderGeneralTab = () => (
+    <>
+      {/* Chat Theme */}
+      <div style={{ marginBottom: '14px' }}>
+        <label style={labelStyle}>Chat Theme 🚧</label>
+        <select style={{ ...selectStyle, opacity: 0.5, cursor: 'not-allowed' }} value={uiTheme} onChange={e => setUiTheme(e.target.value)} disabled>
+          <option value="default">Default</option>
+          <option value="dark">Dark</option>
+          <option value="light">Light</option>
+        </select>
+        <div style={{ fontSize: '0.75rem', color: THEME.textDim, marginTop: '4px' }}>
+          🚧 Theme switching is coming soon
+        </div>
+      </div>
+    </>
+  );
+
+  const renderRulesTab = () => (
+    <>
+      {/* Reload button row */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
+        <button
+          onClick={onReloadRules}
+          disabled={loadingRules}
+          style={{
+            padding: '5px 12px',
+            borderRadius: '6px',
+            border: `1px solid ${THEME.border}`,
+            background: 'transparent',
+            color: THEME.textMuted,
+            cursor: loadingRules ? 'not-allowed' : 'pointer',
+            fontSize: '0.8rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+          }}
+        >
+          {loadingRules ? '⏳' : '🔄'} Reload
+        </button>
+      </div>
+
+      {/* Toast message */}
+      {rulesMessage && (
+        <div style={{
+          padding: '8px 12px',
+          borderRadius: '6px',
+          background: rulesMessage.includes('✅') ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+          color: rulesMessage.includes('✅') ? '#4ade80' : '#f87171',
+          fontSize: '0.8rem',
+          marginBottom: '10px',
+        }}>
+          {rulesMessage}
+        </div>
+      )}
+
+      {/* Loading */}
+      {loadingRules ? (
+        <div style={{ textAlign: 'center', padding: '20px', color: THEME.textDim, fontSize: '0.85rem' }}>
+          ⏳ Loading rules...
+        </div>
+      ) : rules.length === 0 ? (
+        /* Empty state */
+        <div style={{
+          padding: '16px 14px',
+          borderRadius: '8px',
+          background: 'rgba(30, 41, 59, 0.5)',
+          color: THEME.textDim,
+          fontSize: '0.85rem',
+          textAlign: 'center',
+        }}>
+          <div style={{ marginBottom: '6px' }}>📭 No custom rules found</div>
+          <div style={{ fontSize: '0.75rem' }}>
+            Create <code style={{ background: '#1e293b', padding: '2px 6px', borderRadius: '4px' }}>.clinerules</code> in your workspace
+            or <code style={{ background: '#1e293b', padding: '2px 6px', borderRadius: '4px' }}>~/.gline/clinerules</code> globally.
+          </div>
+        </div>
+      ) : (
+        /* Rules list */
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {rules.map((rule, idx) => (
+            <div
+              key={idx}
+              style={{
+                padding: '10px 14px',
+                borderRadius: '8px',
+                background: '#1e293b',
+                border: `1px solid ${THEME.border}`,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+              }}
+            >
+              <span style={{ fontSize: '1.1rem' }}>📄</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                  fontSize: '0.85rem',
+                  fontWeight: 500,
+                  color: THEME.text,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {rule.name}
+                </div>
+                <div style={{
+                  fontSize: '0.72rem',
+                  color: THEME.textDim,
+                  display: 'flex',
+                  gap: '8px',
+                  marginTop: '2px',
+                }}>
+                  <span>{rule.source === 'global' ? '🌍 global' : '📁 workspace'}</span>
+                  <span>·</span>
+                  <span>{formatFileSize(rule.size)}</span>
+                  <span>·</span>
+                  <span>{formatModTime(rule.modTime)}</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Footer hint */}
+      <div style={{ fontSize: '0.75rem', color: THEME.textDim, marginTop: '12px', lineHeight: 1.5 }}>
+        Rules are injected into the system prompt and guide the AI&apos;s behavior.
+        Changes take effect on the next message after reloading.
+      </div>
+    </>
+  );
+
+  const tabContent: Record<TabKey, () => JSX.Element> = {
+    provider: renderProviderTab,
+    general: renderGeneralTab,
+    rules: renderRulesTab,
+  };
+
   return (
-    <div style={overlayStyle} onClick={onClose}>
-      <div style={panelStyle} onClick={e => e.stopPropagation()}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+    <div
+      style={{
+        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+        background: 'rgba(0, 0, 0, 0.6)', backdropFilter: 'blur(4px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        zIndex: 1000,
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          width: '520px', maxHeight: '85vh',
+          background: '#111827', border: `1px solid ${THEME.border}`,
+          borderRadius: '14px', padding: '24px 28px',
+          color: THEME.text, boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+          display: 'flex', flexDirection: 'column',
+          overflow: 'hidden',
+        }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* ── Header ── */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
           <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 600 }}>⚙️ Settings</h2>
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: THEME.textMuted, cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
         </div>
 
+        {/* ── Save message toast ── */}
         {saveMessage && (
-          <div style={{ padding: '10px 14px', borderRadius: '8px', background: saveMessage.includes('success') ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)', color: saveMessage.includes('success') ? '#4ade80' : '#f87171', fontSize: '0.85rem', marginBottom: '16px' }}>
+          <div style={{
+            padding: '10px 14px', borderRadius: '8px',
+            background: saveMessage.includes('success') ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+            color: saveMessage.includes('success') ? '#4ade80' : '#f87171',
+            fontSize: '0.85rem', marginBottom: '12px',
+          }}>
             {saveMessage}
           </div>
         )}
 
-        <div style={{ marginBottom: '18px' }}>
-          <label style={labelStyle}>Default Provider</label>
-          <select style={selectStyle} value={provider} onChange={e => setProvider(e.target.value)}>
-            <option value="anthropic">Anthropic (Claude)</option>
-            <option value="openai">OpenAI / Compatible</option>
-          </select>
+        {/* ── Tab bar ── */}
+        <div style={{
+          display: 'flex',
+          borderBottom: `1px solid ${THEME.border}`,
+          marginBottom: '16px',
+          gap: '0',
+        }}>
+          {TABS.map(tab => {
+            const isActive = activeTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                style={{
+                  flex: 1,
+                  padding: '10px 0',
+                  background: 'transparent',
+                  border: 'none',
+                  borderBottom: isActive ? '2px solid #3b82f6' : '2px solid transparent',
+                  color: isActive ? THEME.text : THEME.textDim,
+                  fontSize: '0.85rem',
+                  fontWeight: isActive ? 600 : 400,
+                  cursor: 'pointer',
+                  transition: 'color 0.15s, border-color 0.15s',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                }}
+              >
+                <span>{tab.icon}</span>
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
         </div>
 
-        {provider === 'anthropic' && (
-          <>
-            <div style={{ marginBottom: '14px' }}>
-              <label style={labelStyle}>Anthropic API Key</label>
-              <input type="password" style={inputStyle} value={anthropicKey} onChange={e => setAnthropicKey(e.target.value)} placeholder="sk-ant-api03-..." />
-            </div>
-            <div style={{ marginBottom: '14px' }}>
-              <label style={labelStyle}>Model</label>
-              <select style={selectStyle} value={anthropicModel} onChange={e => setAnthropicModel(e.target.value)}>
-                <option value="claude-3-opus">Claude 3 Opus</option>
-                <option value="claude-3-sonnet">Claude 3 Sonnet</option>
-                <option value="claude-3-haiku">Claude 3 Haiku</option>
-                <option value="claude-3-5-sonnet">Claude 3.5 Sonnet</option>
-              </select>
-            </div>
-            <div style={{ marginBottom: '18px' }}>
-              <label style={labelStyle}>Max Context Tokens (0 = auto ~262K)</label>
-              <input type="number" style={inputStyle} value={anthropicMaxTokens} onChange={e => setAnthropicMaxTokens(e.target.value)} placeholder="262000" />
-            </div>
-          </>
-        )}
-
-        {provider === 'openai' && (
-          <>
-            <div style={{ marginBottom: '14px' }}>
-              <label style={labelStyle}>API Key</label>
-              <input type="password" style={inputStyle} value={openaiKey} onChange={e => setOpenaiKey(e.target.value)} placeholder="sk-..." />
-            </div>
-            <div style={{ marginBottom: '14px' }}>
-              <label style={labelStyle}>Model</label>
-              <input type="text" style={inputStyle} value={openaiModel} onChange={e => setOpenaiModel(e.target.value)} placeholder="gpt-4, gpt-4-turbo..." />
-            </div>
-            <div style={{ marginBottom: '14px' }}>
-              <label style={labelStyle}>Base URL (optional)</label>
-              <input type="text" style={inputStyle} value={openaiBaseURL} onChange={e => setOpenaiBaseURL(e.target.value)} placeholder="https://api.openai.com/v1" />
-              <div style={{ fontSize: '0.75rem', color: THEME.textDim, marginTop: '4px' }}>Leave empty for OpenAI. For OpenRouter, use https://openrouter.ai/api/v1</div>
-            </div>
-            <div style={{ marginBottom: '18px' }}>
-              <label style={labelStyle}>Max Context Tokens (0 = auto ~262K)</label>
-              <input type="number" style={inputStyle} value={openaiMaxTokens} onChange={e => setOpenaiMaxTokens(e.target.value)} placeholder="262000" />
-            </div>
-          </>
-        )}
-
-        {/* ── Chat Theme (Coming Soon) ── */}
-        <div style={{ borderTop: `1px solid ${THEME.border}`, paddingTop: '18px', marginBottom: '14px' }}>
-          <label style={labelStyle}>Chat Theme 🚧</label>
-          <select style={selectStyle} value={uiTheme} onChange={e => setUiTheme(e.target.value)} disabled>
-            <option value="default">Default</option>
-            <option value="dark">Dark</option>
-            <option value="light">Light</option>
-          </select>
-          <div style={{ fontSize: '0.75rem', color: THEME.textDim, marginTop: '4px' }}>
-            🚧 Theme switching is coming soon
-          </div>
+        {/* ── Tab content (scrollable) ── */}
+        <div style={{ flex: 1, overflowY: 'auto', paddingRight: '4px' }}>
+          {tabContent[activeTab]()}
         </div>
 
-        {/* ── Custom Rules ── */}
-        <div style={{ borderTop: `1px solid ${THEME.border}`, paddingTop: '18px', marginBottom: '14px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-            <label style={{ ...labelStyle, marginBottom: 0 }}>📋 Custom Rules</label>
-            <button
-              onClick={onReloadRules}
-              disabled={loadingRules}
-              style={{
-                padding: '5px 12px',
-                borderRadius: '6px',
-                border: `1px solid ${THEME.border}`,
-                background: 'transparent',
-                color: THEME.textMuted,
-                cursor: loadingRules ? 'not-allowed' : 'pointer',
-                fontSize: '0.8rem',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-              }}
-            >
-              {loadingRules ? '⏳' : '🔄'} Reload
-            </button>
-          </div>
-
-          {rulesMessage && (
-            <div style={{
-              padding: '8px 12px',
-              borderRadius: '6px',
-              background: rulesMessage.includes('✅') ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-              color: rulesMessage.includes('✅') ? '#4ade80' : '#f87171',
-              fontSize: '0.8rem',
-              marginBottom: '10px',
-            }}>
-              {rulesMessage}
-            </div>
-          )}
-
-          {loadingRules ? (
-            <div style={{ textAlign: 'center', padding: '20px', color: THEME.textDim, fontSize: '0.85rem' }}>
-              ⏳ Loading rules...
-            </div>
-          ) : rules.length === 0 ? (
-            <div style={{
-              padding: '16px 14px',
-              borderRadius: '8px',
-              background: 'rgba(30, 41, 59, 0.5)',
-              color: THEME.textDim,
-              fontSize: '0.85rem',
-              textAlign: 'center',
-            }}>
-              <div style={{ marginBottom: '6px' }}>📭 No custom rules found</div>
-              <div style={{ fontSize: '0.75rem' }}>
-                Create <code style={{ background: '#1e293b', padding: '2px 6px', borderRadius: '4px' }}>.clinerules</code> in your workspace
-                or <code style={{ background: '#1e293b', padding: '2px 6px', borderRadius: '4px' }}>~/.gline/clinerules</code> globally.
-              </div>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {rules.map((rule, idx) => (
-                <div
-                  key={idx}
-                  style={{
-                    padding: '10px 14px',
-                    borderRadius: '8px',
-                    background: '#1e293b',
-                    border: `1px solid ${THEME.border}`,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '10px',
-                  }}
-                >
-                  <span style={{ fontSize: '1.1rem' }}>📄</span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{
-                      fontSize: '0.85rem',
-                      fontWeight: 500,
-                      color: THEME.text,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}>
-                      {rule.name}
-                    </div>
-                    <div style={{
-                      fontSize: '0.72rem',
-                      color: THEME.textDim,
-                      display: 'flex',
-                      gap: '8px',
-                      marginTop: '2px',
-                    }}>
-                      <span>{rule.source === 'global' ? '🌍 global' : '📁 workspace'}</span>
-                      <span>·</span>
-                      <span>{formatFileSize(rule.size)}</span>
-                      <span>·</span>
-                      <span>{formatModTime(rule.modTime)}</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <div style={{ fontSize: '0.75rem', color: THEME.textDim, marginTop: '10px', lineHeight: 1.5 }}>
-            Rules are injected into the system prompt and guide the AI&apos;s behavior.
-            Changes take effect on the next message after reloading.
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '8px' }}>
+        {/* ── Footer buttons ── */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px', paddingTop: '12px', borderTop: `1px solid ${THEME.border}` }}>
           <button onClick={onClose} style={{ padding: '10px 20px', borderRadius: '8px', border: `1px solid ${THEME.border}`, background: 'transparent', color: THEME.textMuted, cursor: 'pointer', fontSize: '0.9rem' }}>Cancel</button>
           <button onClick={handleSave} style={{ padding: '10px 24px', borderRadius: '8px', border: 'none', background: THEME.accent, color: '#fff', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 500 }}>Save Settings</button>
         </div>
