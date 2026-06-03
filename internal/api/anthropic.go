@@ -42,15 +42,21 @@ type AnthropicTool struct {
 	InputSchema json.RawMessage `json:"input_schema"`
 }
 
+// AnthropicToolChoice represents the tool_choice option for Anthropic API
+type AnthropicToolChoice struct {
+	Type string `json:"type"` // "auto", "any", or "none"
+}
+
 // AnthropicRequest represents the request body for Anthropic API
 type AnthropicRequest struct {
-	Model       string             `json:"model"`
-	MaxTokens   int                `json:"max_tokens"`
-	Messages    []AnthropicMessage `json:"messages"`
-	System      string             `json:"system,omitempty"`
-	Tools       []AnthropicTool    `json:"tools,omitempty"`
-	Temperature float64            `json:"temperature,omitempty"`
-	Stream      bool               `json:"stream,omitempty"`
+	Model       string                  `json:"model"`
+	MaxTokens   int                     `json:"max_tokens"`
+	Messages    []AnthropicMessage      `json:"messages"`
+	System      string                  `json:"system,omitempty"`
+	Tools       []AnthropicTool         `json:"tools,omitempty"`
+	ToolChoice  *AnthropicToolChoice      `json:"tool_choice,omitempty"`
+	Temperature float64                 `json:"temperature,omitempty"`
+	Stream      bool                    `json:"stream,omitempty"`
 }
 
 // AnthropicResponse represents the response from Anthropic API
@@ -166,6 +172,11 @@ func (p *AnthropicProvider) CreateMessage(ctx context.Context, req *agent.Messag
 		System:      systemPrompt,
 		Tools:       anthropicTools,
 		Temperature: req.Temperature,
+	}
+
+	// Force tool use whenever tools are provided and the agent loop signals work is pending.
+	if len(anthropicTools) > 0 && req.ToolChoice == agent.ToolChoiceRequired {
+		anthropicReq.ToolChoice = &AnthropicToolChoice{Type: "any"}
 	}
 
 	// Set defaults
@@ -358,6 +369,11 @@ func (p *AnthropicProvider) CreateMessageStream(ctx context.Context, req *agent.
 			Tools:       anthropicTools,
 			Temperature: req.Temperature,
 			Stream:      true,
+		}
+
+		// Force tool use whenever tools are provided and the agent loop signals work is pending.
+		if len(anthropicTools) > 0 && req.ToolChoice == agent.ToolChoiceRequired {
+			anthropicReq.ToolChoice = &AnthropicToolChoice{Type: "any"}
 		}
 
 		// Set defaults

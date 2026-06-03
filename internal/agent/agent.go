@@ -16,6 +16,13 @@ import (
 	"github.com/liup215/gline/pkg/types"
 )
 
+// noToolsUsedMsg is injected into the conversation when the assistant returns a
+// response without calling any tools while tool-calling is required.
+const noToolsUsedMsg = `[ERROR] You did not use a tool in your previous response.
+When you have a task to perform, you MUST use one of the available tools.
+Only calling attempt_completion, ask_followup_question, or plan_mode_respond can end the conversation.
+Please review the task and call the appropriate tool(s).`
+
 // Mode represents the operating mode of the Agent
 type Mode string
 
@@ -53,6 +60,9 @@ type Agent interface {
 
 	// Compact manually compacts the conversation history.
 	Compact() bool
+
+	// ReloadCustomRules reloads custom rules from disk and returns true if any rules were loaded.
+	ReloadCustomRules() (bool, []prompts.RuleFileInfo, error)
 }
 
 // Options contains configuration options for creating an Agent
@@ -213,11 +223,20 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 		// Auto-compact if tokens exceed 80% of the max context
 		a.AutoCompact()
 
+		// Determine whether the assistant still has pending work.
+		// We require tools when:
+		//   - there is at least one non-completion/non-question tool available
+		//   - the conversation is not already marked complete
+		needsTool := a.needsTool(availableTools)
+
 		// Create LLM request
 		req := &MessageRequest{
 			Messages:     a.conversation.GetMessages(),
 			Tools:        convertTools(availableTools),
 			SystemPrompt: systemPrompt,
+		}
+		if needsTool {
+			req.ToolChoice = ToolChoiceRequired
 		}
 
 		// Use streaming API
@@ -362,6 +381,14 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 						Name:  tc.Name,
 						Input: string(tc.Input),
 					}, result)
+
+					// Special tools that can terminate the conversation
+					switch tc.Name {
+					case types.ToolAttemptCompletion.String(),
+						types.ToolAskFollowupQuestion.String(),
+						types.ToolPlanModeRespond.String():
+						a.conversation.SetComplete()
+					}
 				}
 			}
 		}
@@ -416,6 +443,24 @@ func (a *BaseAgent) Compact() bool {
 	return compacted
 }
 
+// needsTool determines whether the assistant should be forced to call at
+// least one tool.
+//
+// Returns false when the only available tools are conversation-ending
+// tools (attempt_completion, ask_followup_question, plan_mode_respond) or
+// when there are no tools at all.
+func (a *BaseAgent) needsTool(toolsList []tools.Tool) bool {
+	for _, t := range toolsList {
+		name := t.Name()
+		if name != types.ToolAttemptCompletion.String() &&
+			name != types.ToolAskFollowupQuestion.String() &&
+			name != types.ToolPlanModeRespond.String() {
+			return true
+		}
+	}
+	return false
+}
+
 // AutoCompact checks whether current token usage exceeds 80% of the
 // max context window and, if so, triggers a compaction.
 func (a *BaseAgent) AutoCompact() {
@@ -446,8 +491,9 @@ func (a *BaseAgent) processResponse(ctx context.Context, resp *MessageResponse, 
 
 	// Handle tool calls
 	if len(resp.ToolCalls) == 0 {
-		// No tool calls, conversation is complete
-		a.conversation.SetComplete()
+		// No tool calls from a non-streaming response.
+		// Do NOT mark as complete here; the main loop will inject noToolsUsedMsg
+		// if there is still pending work.
 		return nil
 	}
 
@@ -582,6 +628,22 @@ func (a *BaseAgent) SetWorkingDir(dir string) {
 	a.workingDir = dir
 }
 
+// ReloadCustomRules reloads custom rules from disk and updates the agent's customRules field.
+// Returns true if any rules were loaded, along with metadata about the loaded files.
+func (a *BaseAgent) ReloadCustomRules() (bool, []prompts.RuleFileInfo, error) {
+	content, infos, err := prompts.LoadCustomRulesWithMeta()
+	if err != nil {
+		return false, nil, err
+	}
+	a.customRules = content
+	return content != "", infos, nil
+}
+
+// GetCustomRulesInfo returns metadata about available rule files without reloading content.
+func (a *BaseAgent) GetCustomRulesInfo() ([]prompts.RuleFileInfo, error) {
+	return prompts.GetCustomRulesInfo()
+}
+
 // processStream handles the streaming response from the LLM
 func (a *BaseAgent) processStream(ctx context.Context, streamChan <-chan StreamChunk, callback StreamCallback) error {
 	var content strings.Builder
@@ -650,12 +712,6 @@ func (a *BaseAgent) processStream(ctx context.Context, streamChan <-chan StreamC
 		ReasoningContent: reasoning.String(),
 		ToolCalls:        typesToolCalls,
 	})
-
-	// If there are no tool calls, mark conversation as complete
-	// Otherwise, the agent loop will continue to execute tools
-	if len(typesToolCalls) == 0 {
-		a.conversation.SetComplete()
-	}
 
 	return nil
 }

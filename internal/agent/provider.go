@@ -60,6 +60,18 @@ type StreamChunk struct {
 	Done bool
 }
 
+// ToolChoiceOption controls whether the model must use tools.
+type ToolChoiceOption string
+
+const (
+	// ToolChoiceAuto lets the model decide whether to call tools.
+	ToolChoiceAuto ToolChoiceOption = "auto"
+	// ToolChoiceRequired forces the model to call at least one tool.
+	ToolChoiceRequired ToolChoiceOption = "required"
+	// ToolChoiceNone prevents the model from calling any tools.
+	ToolChoiceNone ToolChoiceOption = "none"
+)
+
 // MessageRequest represents a request to the LLM
 type MessageRequest struct {
 	// Messages is the conversation history
@@ -76,6 +88,10 @@ type MessageRequest struct {
 
 	// Temperature controls randomness (0.0 - 1.0)
 	Temperature float64
+
+	// ToolChoice forces the model to use a tool when set to "required".
+	// The agent loop sets this automatically whenever work is still pending.
+	ToolChoice ToolChoiceOption
 }
 
 // MessageResponse represents a response from the LLM

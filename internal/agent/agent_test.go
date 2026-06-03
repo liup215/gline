@@ -34,8 +34,17 @@ func (p *toolOnlyProvider) CreateMessageStream(ctx context.Context, req *Message
 		}
 		chunkChan <- StreamChunk{FinishReason: "tool_calls", Done: true}
 	} else {
-		// Second call: return empty response to end conversation
-		chunkChan <- StreamChunk{Content: "Tool execution complete.", Done: true}
+		// Second call: must use a tool to end conversation.
+		chunkChan <- StreamChunk{Content: "All done."}
+		chunkChan <- StreamChunk{
+			ToolCall: &ToolCall{
+				ID:    "call_2",
+				Name:  "attempt_completion",
+				Input: `{"result":"Tool execution complete."}`,
+			},
+			IsPartial: false,
+		}
+		chunkChan <- StreamChunk{FinishReason: "tool_calls", Done: true}
 	}
 	close(chunkChan)
 	return chunkChan, nil
@@ -123,9 +132,10 @@ func TestRunWithCallbackToolCallsViaDedicatedCallbacks(t *testing.T) {
 		t.Fatalf("callback content should not contain [tool:] text (tool info goes via dedicated callbacks): %q", gotContent)
 	}
 
-	// With a real registry the tool will execute; expect one start and one finish.
-	if callback.toolStartCount != 1 || callback.toolFinishCount != 1 {
-		t.Fatalf("expected one tool start and one finish, got starts=%d finishes=%d", callback.toolStartCount, callback.toolFinishCount)
+	// With the new enforcement the first round produces read_file, and the
+	// second round produces attempt_completion to end the conversation.
+	if callback.toolStartCount != 2 || callback.toolFinishCount != 2 {
+		t.Fatalf("expected two tool starts and two finishes, got starts=%d finishes=%d", callback.toolStartCount, callback.toolFinishCount)
 	}
 	if callback.completeCount != 1 {
 		t.Fatalf("expected OnComplete to be called once, got %d", callback.completeCount)

@@ -142,6 +142,7 @@ type OpenAIRequest struct {
 	Model       string         `json:"model"`
 	Messages    []OpenAIMessage `json:"messages"`
 	Tools       []OpenAITool   `json:"tools,omitempty"`
+	ToolChoice  interface{}    `json:"tool_choice,omitempty"`
 	Temperature float64        `json:"temperature,omitempty"`
 	MaxTokens   int            `json:"max_tokens,omitempty"`
 	Stream      bool           `json:"stream,omitempty"`
@@ -340,6 +341,10 @@ func (p *OpenAIProvider) CreateMessage(ctx context.Context, req *agent.MessageRe
 	// Only add tools if there are any
 	if len(openaiTools) > 0 {
 		openaiReq.Tools = openaiTools
+		// Force tool use whenever tools are provided and the agent loop signals work is pending.
+		if req.ToolChoice == agent.ToolChoiceRequired {
+			openaiReq.ToolChoice = "required"
+		}
 	}
 
 	// Set defaults
@@ -581,6 +586,10 @@ func (p *OpenAIProvider) CreateMessageStream(ctx context.Context, req *agent.Mes
 		// Only add tools if there are any
 		if len(openaiTools) > 0 {
 			openaiReq.Tools = openaiTools
+			// Force tool use whenever tools are provided and the agent loop signals work is pending.
+			if req.ToolChoice == agent.ToolChoiceRequired {
+				openaiReq.ToolChoice = "required"
+			}
 		}
 
 		// Set defaults
