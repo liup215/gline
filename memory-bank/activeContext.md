@@ -2,19 +2,61 @@
 
 ## Current Focus
 
-### Uncommitted Changes (Working Tree)
+### 四层记忆与知识引擎（2026-06-05）
 
-| File | Change | Notes |
-|------|--------|-------|
-| `gui/frontend/src/theme.ts` | +28 new color tokens | `inputBg`, `cardBg`, `overlayBg`, `toastBg`, `toastSuccess`, `toastError`, `codeInlineBg`, `codeInlineText`, `optionBg`, `optionHoverBg`, `linkColor`, `spinner`, `tableHeadBg`, `tableBorder`, `footnoteText`, `footnoteBorder`, `highlightJsTheme`, `userTextColor`, `statusSuccessBg`, `statusSuccessBorder`, `statusSuccessText`, `statusPendingBg`, `statusPendingBorder`, `statusPendingText`, `logoGradientStart`, `logoGradientEnd` |
-| `gui/frontend/index.html` | FOUC prevention script + hljs link | Inline `<script>` reads `localStorage.getItem('gline-theme')` and syncs all CSS variables before React mounts; `<link id="hljs-theme">` for dynamic highlight.js stylesheet |
-| `gui/frontend/src/components/*.tsx` | THEME variable adoption | All components migrated from hardcoded hex values to `THEME.*` references (stop button, sidebar, message list, settings panel, input area, etc.) |
-| `gui/frontend/src/utils/format.ts` | Refactored | Significant refactoring of formatting utilities |
-| `gui/frontend/public/styles/` | New directory | `hljs-github-dark.css` + `hljs-github-light.css` for code-block theme switching |
+**状态**: Phases 1-6 已完成，所有测试通过 ✅；Phase 7（Fact Extractor LLM 集成）待开始。
 
-**Scope**: P2.5.3 Theme System Component Integration — the CSS-variable-based theme system is being expanded from the initial skeleton to full component coverage, including highlight.js theme synchronization.
+#### 架构决策
 
-**Status**: Code complete, uncommitted. Needs final review / commit.
+融合三种前沿方案：
+- **Layer 1 Fact** (mem0 风格) — 语义事实提取与衰减
+- **Layer 2 Wiki** (Karpathy 风格) — LLM 维护 Markdown 知识笔记
+- **Layer 3 RAG** — 向量 + FTS5 混合检索
+- **Layer 4 Conversation** — 已有对话历史
+
+#### 技术突破
+
+- `modernc.org/sqlite`（纯 Go）**无法加载 C 扩展**，不能用 `sqlite-vec` → 创新方案：embedding 向量用 `gob` 编码存 BLOB，Go 内存中计算余弦相似度（归一化后点积），配合 FTS5 用 RRF 融合两层结果。
+- 性能设计：同步只读（Fact FTS5/SQL + RAG 向量/FTS5 + Wiki 文件读取）< 150ms；异步写入（Fact 提取、Embedding、Wiki Ingest）后台 goroutine。
+- Token 硬限制：MAX_MEMORY_TOKENS = 2000，超时降级 200ms。
+
+#### 已创建文件 (18 个新源文件)
+
+| 文件 | 职责 |
+|------|------|
+| `internal/memory/types.go` | 四层类型契约（Fact, WikiPage, Document/Chunk, KnowledgeBase, ContextPack） |
+| `internal/memory/embedder.go` | 嵌入器接口、L2 归一化、余弦相似度、TopK 搜索 |
+| `internal/memory/embedder_openai.go` | OpenAI 兼容 API 和 Ollama 嵌入客户端 |
+| `internal/memory/chunk.go` | Token 感知分块器（段落边界优先、可配置重叠） |
+| `internal/memory/store.go` | **纯 Go SQLite 向量存储**（Go 内存 KNN + FTS5 + RRF 融合） |
+| `internal/memory/kb_registry.go` | 知识库注册表 |
+| `internal/memory/fact_store_sqlite.go` | Fact 层 SQLite 实现（facts 表 + FTS5 + entities 表 + Decay） |
+| `internal/memory/fact_extractor.go` | mem0 风格事实提取器（rule-based stub → Phase 7 LLM） |
+| `internal/memory/wiki_fs.go` | Wiki Markdown 文件系统 |
+| `internal/memory/wiki_engine.go` | Wiki 管理器 stub |
+| `internal/memory/rag_engine.go` | RAG 管理器封装 |
+| `internal/memory/engine.go` | **UnifiedEngine** 统一入口 |
+| `internal/memory/parser.go` | 文档解析器（md/txt/code/html） |
+| `internal/memory/util.go` | 通用工具（genID） |
+| `internal/memory/memory_test.go` | 单元测试（覆盖 Chunker, Embedder, KBRegistry, FactStore, VectorStore, WikiFS, FactExtractor） |
+| `cmd/gline/kb.go` | `gline kb init/list/remove/status/add/search` |
+| `cmd/gline/wiki.go` | `gline wiki show/links/lint/sync` |
+| `cmd/gline/mem.go` | `gline mem facts/recall/decay` |
+
+#### 已修改文件
+
+- `internal/config/config.go` — 新增 MemoryConfig, MemoryEmbeddingConfig, MemoryRetrievalConfig
+- `internal/agent/agent.go` — MemoryEngine 注入 system prompt；异步 fact 提取 hook
+- `cmd/gline/chat.go` — initializeAgent() 中可选初始化 memory engine
+- `go.mod` / `go.sum` — 新增 `golang.org/x/net v0.55.0`
+
+#### 验证
+- `go test ./internal/memory/...` ✅ (0.756s)
+- `go build ./cmd/gline/...` ✅
+- `go vet ./internal/memory/...` ✅
+- 修复 bug：Search() 中 `!rows.Next()` 消耗首行导致单条记录查询为空、`upsertFact` nil tx 崩溃。记忆留到下一轮，镜像建构发生在下一轮系统提示词更新时。
+
+**建议下一步**: Phase 7（Fact Extractor LLM 集成）→ Phase 8（Wiki Ingest LLM 集成）→ 连接池优化 → PDF 解析。
 
 ---
 
