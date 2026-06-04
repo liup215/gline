@@ -69,14 +69,8 @@ jobs:
 
             ## Installation
 
-            ### macOS
+            ### macOS (Apple Silicon)
             ```bash
-            # Intel
-            curl -L -o gline-darwin-amd64 https://github.com/${{ github.repository }}/releases/download/snapshot/gline-darwin-amd64
-            chmod +x gline-darwin-amd64
-            sudo mv gline-darwin-amd64 /usr/local/bin/gline
-
-            # Apple Silicon
             curl -L -o gline-darwin-arm64 https://github.com/${{ github.repository }}/releases/download/snapshot/gline-darwin-arm64
             chmod +x gline-darwin-arm64
             sudo mv gline-darwin-arm64 /usr/local/bin/gline
@@ -84,22 +78,13 @@ jobs:
 
             ### Linux
             ```bash
-            # AMD64
             curl -L -o gline-linux-amd64 https://github.com/${{ github.repository }}/releases/download/snapshot/gline-linux-amd64
             chmod +x gline-linux-amd64
             sudo mv gline-linux-amd64 /usr/local/bin/gline
-
-            # ARM64
-            curl -L -o gline-linux-arm64 https://github.com/${{ github.repository }}/releases/download/snapshot/gline-linux-arm64
-            chmod +x gline-linux-arm64
-            sudo mv gline-linux-arm64 /usr/local/bin/gline
             ```
 
             ### Windows
             Download `gline-windows-amd64.exe` and place it in your PATH.
-
-            ## Checksums
-            See `SHA256SUMS` file for checksums of all binaries.
           files: release/*
           draft: false
           prerelease: true

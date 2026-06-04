@@ -46,21 +46,20 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: darwin-amd64
-            runner: macos-13
-            asset_name: gline-darwin-amd64
+          # macOS Apple Silicon
           - name: darwin-arm64
             runner: macos-latest
             asset_name: gline-darwin-arm64
+          # Linux AMD64
           - name: linux-amd64
             runner: ubuntu-latest
             asset_name: gline-linux-amd64
-          - name: linux-arm64
-            runner: ubuntu-24.04-arm
-            asset_name: gline-linux-arm64
+          # Windows AMD64
           - name: windows-amd64
             runner: windows-latest
             asset_name: gline-windows-amd64
+          # NOTE: darwin-amd64 (Intel) and linux-arm64 excluded because free runners
+          # are either deprecated (macos-13) or severely capacity-constrained.
 
     steps:
       - name: Checkout code
@@ -104,8 +103,8 @@ jobs:
           cd gui/bin
           if [[ "${{ matrix.name }}" == windows-* ]]; then
             mv gline.exe "${{ matrix.asset_name }}.exe"
-            sha256sum "${{ matrix.asset_name }}.exe" > "${{ matrix.asset_name }}.exe.sha256"
-            cat "${{ matrix.asset_name }}.exe.sha256"
+            sha256sum "${{ matrix.asset_name }}.exe" > "${{ matrix.asset_name }}.sha256"
+            cat "${{ matrix.asset_name }}.sha256"
           else
             mv gline "${{ matrix.asset_name }}"
             sha256sum "${{ matrix.asset_name }}" > "${{ matrix.asset_name }}.sha256"
@@ -178,30 +177,20 @@ jobs:
 
             ## Installation
 
-            ### macOS
+            ### macOS (Apple Silicon)
             ```bash
-            # Intel
-            curl -L -o gline-darwin-amd64 https://github.com/${{ github.repository }}/releases/download/${{ steps.changelog.outputs.version }}/gline-darwin-amd64
-            chmod +x gline-darwin-amd64
-            sudo mv gline-darwin-amd64 /usr/local/bin/gline
-
-            # Apple Silicon
             curl -L -o gline-darwin-arm64 https://github.com/${{ github.repository }}/releases/download/${{ steps.changelog.outputs.version }}/gline-darwin-arm64
             chmod +x gline-darwin-arm64
             sudo mv gline-darwin-arm64 /usr/local/bin/gline
             ```
+            > Note: Intel Macs are not supported in CI builds due to runner scarcity.
+            > Apple Silicon users can use the arm64 binary.
 
             ### Linux
             ```bash
-            # AMD64
             curl -L -o gline-linux-amd64 https://github.com/${{ github.repository }}/releases/download/${{ steps.changelog.outputs.version }}/gline-linux-amd64
             chmod +x gline-linux-amd64
             sudo mv gline-linux-amd64 /usr/local/bin/gline
-
-            # ARM64
-            curl -L -o gline-linux-arm64 https://github.com/${{ github.repository }}/releases/download/${{ steps.changelog.outputs.version }}/gline-linux-arm64
-            chmod +x gline-linux-arm64
-            sudo mv gline-linux-arm64 /usr/local/bin/gline
             ```
 
             ### Windows
@@ -231,10 +220,9 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Platform | Architecture |" >> $GITHUB_STEP_SUMMARY
           echo "|----------|-------------|" >> $GITHUB_STEP_SUMMARY
-          echo "| macOS    | amd64       |" >> $GITHUB_STEP_SUMMARY
           echo "| macOS    | arm64       |" >> $GITHUB_STEP_SUMMARY
           echo "| Linux    | amd64       |" >> $GITHUB_STEP_SUMMARY
-          echo "| Linux    | arm64       |" >> $GITHUB_STEP_SUMMARY
           echo "| Windows  | amd64       |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          echo "> ⚠️ darwin-amd64 and linux-arm64 excluded due to scarce free runners." >> $GITHUB_STEP_SUMMARY
           echo "📦 [View Release](https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }})" >> $GITHUB_STEP_SUMMARY
