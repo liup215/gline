@@ -26,6 +26,8 @@ type UnifiedEngine struct {
 	RAGEngine  *RAGManager  // wraps VectorStore + Embedder
 	WikiEngine *WikiManager // wraps WikiFS + LLM integration
 	Embedder   Embedder
+	// Caller is injected by the application layer for LLM-driven tasks (wiki ingest, fact extraction).
+	Caller func(ctx context.Context, systemPrompt, userContent string) (string, error)
 
 	mu sync.RWMutex
 }
@@ -215,7 +217,7 @@ func (e *UnifiedEngine) IngestFile(ctx context.Context, kbID, filePath string) e
 
 	// For wiki/hybrid: trigger async wiki ingest
 	if kb.Type == KBTypeWiki || kb.Type == KBTypeHybrid {
-		go e.WikiEngine.IngestAsync(kbID, doc)
+		go e.WikiEngine.IngestAsync(kbID, doc, e.Caller)
 	}
 
 	return nil

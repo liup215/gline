@@ -11,6 +11,7 @@ import (
 	"github.com/liup215/gline/internal/prompts"
 	"github.com/liup215/gline/internal/storage"
 	"github.com/liup215/gline/internal/tools"
+	"github.com/liup215/gline/pkg/types"
 )
 
 // initializeAgent creates and configures the agent based on configuration
@@ -89,6 +90,22 @@ func initializeAgent() (*agent.BaseAgent, error) {
 	if err != nil {
 		log.Warnf("Memory engine not initialised: %v", err)
 	} else {
+		// Wire LLM caller for wiki ingest and future memory layers
+		memoryEngine.Caller = func(ctx context.Context, systemPrompt, userContent string) (string, error) {
+			req := &agent.MessageRequest{
+				Messages: []types.Message{
+					{Role: types.RoleUser, Content: userContent},
+				},
+				SystemPrompt:  systemPrompt,
+				MaxTokens:     2048,
+				Temperature:   0.0,
+			}
+			resp, err := provider.CreateMessage(ctx, req)
+			if err != nil {
+				return "", err
+			}
+			return resp.Content, nil
+		}
 		opts.MemoryEngine = memoryEngine
 		log.Info("Memory engine initialised")
 	}
