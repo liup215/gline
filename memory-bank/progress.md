@@ -31,7 +31,7 @@
 
 ### 1. Cline 源码分析 ✅
 
-**时间**: 2026-05-08
+**时间**: 2025-06-04
 
 **成果**:
 - 分析了 Cline 的核心架构
@@ -275,7 +275,23 @@ gline/
 - [x] GUI 前端模块化拆分 ✅ (2026-06-02)
 - [x] 规则管理界面 ✅ (2026-XX-XX)
 - [x] 规则热重载 (`/reload`) ✅
-- [ ] @ 文件引用
+- [x] @ 文件引用 ✅ (2025-06-04)
+
+### 2025-06-04 — @ 文件引用功能完成 ✅
+
+**后端** (`gui/file_service.go`):
+- `ListDirEntries(dirPath)` — 列出项目目录下的文件/子目录，过滤隐藏目录
+- `ReadFileContent(relPath)` — 读取文件内容，1MB限制 + 二进制检测
+- `SendMessageWithContext(prompt, fileRefsJSON)` — 读取引用文件，拼接 `<referenced_files>` XML 上下文
+
+**前端**:
+- `useFileReference.ts` — @ 引用状态管理（FilePicker 开/关、目录浏览、文件选中/删除）
+- `FilePicker.tsx` — 文件浏览弹窗（目录/文件列表、路径面包屑、键盘导航）
+- `InputArea.tsx` — @ 触发检测 + 文件标签展示 + FilePicker 集成
+- `useChat.ts` — 发送时通过 `SendMessageWithContext` 携带文件引用
+- `App.tsx` / `ChatArea.tsx` — 串联 fileRef props
+
+**交互流程**: 用户输入 `@` → 弹出文件浏览器 → 选择文件 → 输入框上方显示标签 → 发送时自动读取文件内容注入 prompt
 - [ ] MCP 支持
 - [ ] 性能优化
 
