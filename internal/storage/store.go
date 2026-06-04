@@ -36,6 +36,10 @@ type Store interface {
 	// GetMessages retrieves all messages for a task, in order.
 	GetMessages(taskID string) ([]MessageRecord, error)
 
+	// GetMessagesPaginated retrieves messages for a task with pagination support.
+	// Use limit=-1 to retrieve all messages (backward compatible behaviour).
+	GetMessagesPaginated(taskID string, limit, offset int) ([]MessageRecord, error)
+
 	// === Tool call tracking ===
 
 	// StartToolCall records the beginning of a tool call.

@@ -129,20 +129,44 @@ func (s *SQLiteStore) SaveMessage(taskID string, msg types.Message) error {
 	return nil
 }
 
-// GetMessages retrieves all messages for a task.
+// GetMessages retrieves all messages for a task (backward compatible).
 func (s *SQLiteStore) GetMessages(taskID string) ([]MessageRecord, error) {
-	rows, err := s.db.Query(`
-		SELECT id, task_id, role, content, reasoning_content, tool_calls, tool_call_id, available_tools, tool_choice, created_at
-		FROM messages
-		WHERE task_id = ?
-		ORDER BY created_at ASC, id ASC
-	`, taskID)
+	return s.GetMessagesPaginated(taskID, -1, 0)
+}
+
+// GetMessagesPaginated retrieves messages for a task with pagination.
+// When limit < 0 all matching rows are returned (no LIMIT clause).
+func (s *SQLiteStore) GetMessagesPaginated(taskID string, limit, offset int) ([]MessageRecord, error) {
+	var rows *sql.Rows
+	var err error
+	if limit < 0 {
+		rows, err = s.db.Query(`
+			SELECT id, task_id, role, content, reasoning_content, tool_calls, tool_call_id, available_tools, tool_choice, created_at
+			FROM messages
+			WHERE task_id = ?
+			ORDER BY created_at ASC, id ASC
+		`, taskID)
+	} else {
+		if limit <= 0 {
+			limit = 50 // sensible default page size
+		}
+		if offset < 0 {
+			offset = 0
+		}
+		rows, err = s.db.Query(`
+			SELECT id, task_id, role, content, reasoning_content, tool_calls, tool_call_id, available_tools, tool_choice, created_at
+			FROM messages
+			WHERE task_id = ?
+			ORDER BY created_at ASC, id ASC
+			LIMIT ? OFFSET ?
+		`, taskID, limit, offset)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to query messages: %w", err)
 	}
 	defer rows.Close()
 
-	var messages []MessageRecord
+	messages := make([]MessageRecord, 0, 64) // pre-allocate modest buffer
 	for rows.Next() {
 		var m MessageRecord
 		var toolCalls sql.NullString

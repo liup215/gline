@@ -13,8 +13,39 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 )
+
+// searchCacheKey uniquely identifies a search request.
+type searchCacheKey struct {
+	path    string
+	pattern string
+	regex   string
+}
+
+// searchCacheEntry holds cached search results with a TTL.
+type searchCacheEntry struct {
+	output    *SearchFilesOutput
+	createdAt time.Time
+}
+
+var (
+	searchCache      = make(map[searchCacheKey]*searchCacheEntry)
+	searchCacheMu    sync.RWMutex
+	searchCacheTTL   = 30 * time.Second // refresh after 30s
+	maxSearchResults = 500               // cap results to avoid huge payloads
+)
+
+// clearExpiredSearchCache removes stale entries (called lazily on write).
+func clearExpiredSearchCache() {
+	now := time.Now()
+	for k, v := range searchCache {
+		if now.Sub(v.createdAt) > searchCacheTTL {
+			delete(searchCache, k)
+		}
+	}
+}
 
 // Common directories to skip during file traversal.
 var skipDirs = map[string]bool{
@@ -174,6 +205,16 @@ func (t *SearchFilesTool) Execute(ctx context.Context, input json.RawMessage) (s
 		return "", fmt.Errorf("regex is required")
 	}
 
+	// Check cache first.
+	path := filepath.Clean(req.Path)
+	cacheKey := searchCacheKey{path: path, pattern: req.FilePattern, regex: req.Regex}
+	searchCacheMu.RLock()
+	if entry, ok := searchCache[cacheKey]; ok && time.Since(entry.createdAt) < searchCacheTTL {
+		searchCacheMu.RUnlock()
+		return formatSearchResults(entry.output), nil
+	}
+	searchCacheMu.RUnlock()
+
 	// Build appropriate searcher (literal fast path when possible).
 	var srh searcher
 	if isLiteralPattern(req.Regex) {
@@ -185,9 +226,6 @@ func (t *SearchFilesTool) Execute(ctx context.Context, input json.RawMessage) (s
 		}
 		srh = &regexSearcher{re: re}
 	}
-
-	// Clean path.
-	path := filepath.Clean(req.Path)
 
 	// Check if path exists.
 	info, err := os.Stat(path)
@@ -211,6 +249,18 @@ func (t *SearchFilesTool) Execute(ctx context.Context, input json.RawMessage) (s
 
 	// Search in files concurrently.
 	output := searchFilesConcurrent(ctx, files, srh)
+
+	// Cap results to avoid huge payloads.
+	if len(output.Results) > maxSearchResults {
+		output.Results = output.Results[:maxSearchResults]
+		output.TotalMatches = maxSearchResults
+	}
+
+	// Store in cache.
+	searchCacheMu.Lock()
+	clearExpiredSearchCache()
+	searchCache[cacheKey] = &searchCacheEntry{output: output, createdAt: time.Now()}
+	searchCacheMu.Unlock()
 
 	// Format output.
 	return formatSearchResults(output), nil
@@ -515,6 +565,24 @@ func NewListCodeDefinitionNamesTool() *ListCodeDefinitionNamesTool {
 	}
 }
 
+// listDefCacheKey uniquely identifies a list_code_definition_names request.
+type listDefCacheKey struct {
+	path    string
+	pattern string
+}
+
+var (
+	listDefCache      = make(map[listDefCacheKey]*listDefCacheEntry)
+	listDefCacheMu    sync.RWMutex
+	listDefCacheTTL   = 30 * time.Second
+	maxDefinitionResults = 500
+)
+
+type listDefCacheEntry struct {
+	defs      []CodeDefinition
+	createdAt time.Time
+}
+
 // Execute lists code definitions
 func (t *ListCodeDefinitionNamesTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
 	var req ListCodeDefinitionNamesInput
@@ -529,6 +597,15 @@ func (t *ListCodeDefinitionNamesTool) Execute(ctx context.Context, input json.Ra
 	// Clean path
 	path := filepath.Clean(req.Path)
 
+	// Check cache first.
+	cacheKey := listDefCacheKey{path: path, pattern: req.FilePattern}
+	listDefCacheMu.RLock()
+	if entry, ok := listDefCache[cacheKey]; ok && time.Since(entry.createdAt) < listDefCacheTTL {
+		listDefCacheMu.RUnlock()
+		return formatCodeDefinitions(entry.defs), nil
+	}
+	listDefCacheMu.RUnlock()
+
 	// Find files
 	files, err := findFiles(path, req.FilePattern)
 	if err != nil {
@@ -536,11 +613,25 @@ func (t *ListCodeDefinitionNamesTool) Execute(ctx context.Context, input json.Ra
 	}
 
 	// Analyze each file
-	var allDefs []CodeDefinition
+	allDefs := make([]CodeDefinition, 0, 64)
 	for _, file := range files {
 		defs := analyzeFile(file)
 		allDefs = append(allDefs, defs...)
+		if len(allDefs) >= maxDefinitionResults {
+			allDefs = allDefs[:maxDefinitionResults]
+			break
+		}
 	}
+
+	// Store in cache.
+	listDefCacheMu.Lock()
+	for k, v := range listDefCache {
+		if time.Since(v.createdAt) > listDefCacheTTL {
+			delete(listDefCache, k)
+		}
+	}
+	listDefCache[cacheKey] = &listDefCacheEntry{defs: allDefs, createdAt: time.Now()}
+	listDefCacheMu.Unlock()
 
 	// Format output
 	return formatCodeDefinitions(allDefs), nil

@@ -126,6 +126,16 @@ func migrate(db *sql.DB) error {
 		}
 	}
 
+	// Version 5: Add composite indexes for better query performance
+	if v < 5 {
+		if err := applyV5(db); err != nil {
+			return err
+		}
+		if _, err := db.Exec("INSERT INTO migrations (version) VALUES (5)"); err != nil {
+			return fmt.Errorf("failed to record v5 migration: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -206,6 +216,25 @@ func applyV4(db *sql.DB) error {
 		if !strings.Contains(err.Error(), "duplicate column name") && !strings.Contains(err.Error(), "already exists") {
 			return fmt.Errorf("failed to apply v4 migration: %w", err)
 		}
+	}
+	return nil
+}
+
+func applyV5(db *sql.DB) error {
+	// Composite index for messages ordered by task + creation time (most common query)
+	_, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_messages_task_created ON messages(task_id, created_at, id)`)
+	if err != nil {
+		return fmt.Errorf("failed to create idx_messages_task_created: %w", err)
+	}
+	// Covering index for task listing by creation time
+	_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at DESC)`)
+	if err != nil {
+		return fmt.Errorf("failed to create idx_tasks_created: %w", err)
+	}
+	// Index for task status queries
+	_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status, created_at DESC)`)
+	if err != nil {
+		return fmt.Errorf("failed to create idx_tasks_status: %w", err)
 	}
 	return nil
 }

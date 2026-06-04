@@ -47,6 +47,12 @@ Phase 2 全部子任务已完成：
 
 ---
 
+### 2026-XX-XX — Agent 构建错误修复 ✅
+- **问题**: `SubmitHandler` 中直接实例化 `ai.NewAgent()` 返回 `*ai.Agent`，不包含 `client` 和 `Close()`，不满足 `agent.Agent` 接口要求。
+- **修复**: 恢复为 `NewRuntimeAgent(auth)`，正确满足 `Agent` 接口（包含完整客户端和生命周期方法）。
+- **文件**: `internal/agent/agent.go`
+- **验证**: `go build ./...` ✅
+
 ## 当前环境
 
 - **工作目录**: `C:\Users\22569\workspace\gline`

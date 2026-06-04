@@ -112,6 +112,7 @@
 14. **`/clear` 保留 workingDir** ✅
 15. **P2.2 系统托盘集成** ✅ — 左键切换窗口显示/隐藏，右键菜单含 Show/Hide 动态标签 + Quit
 16. **P2.4 构建产物优化** ✅ — Taskfile `dev`/`build` 统一 + CI wails3 build 集成
+17. **Agent 构建失败** ✅ — `SubmitHandler` 中直接实例化 `*ai.Agent` 导致 `Agent` 接口不匹配。修复：恢复 `NewRuntimeAgent(auth)` 调用。
 
 ## 已完成工作（2026-06-19）
 

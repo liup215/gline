@@ -3,6 +3,8 @@ package types
 
 import (
 	"encoding/json"
+	"fmt"
+	"math"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -187,29 +189,50 @@ func (c *Conversation) updateTokenCount() {
 }
 
 // estimateTokens gives a conservative per-rune token estimate.
+// Uses a more accurate heuristic that accounts for whitespace,
+// punctuation, and mixed-script text commonly seen in prompts.
 func estimateTokens(s string) int {
 	if s == "" {
 		return 0
 	}
-	// Fast path when everything is ASCII (English / code).
-	ascii := 0
+	total := 0
+	wordRun := 0    // consecutive non-space ASCII characters
+	spaceRun := 0   // consecutive whitespace characters
+	nonASCII := 0   // non-ASCII runes
 	for i := 0; i < len(s); {
 		r, size := utf8.DecodeRuneInString(s[i:])
 		if r < 128 {
-			ascii++
-			i += size
-			continue
+			if r == ' ' || r == '\t' || r == '\n' || r == '\r' {
+				if wordRun > 0 {
+					// A word is roughly ceil(len/3) tokens for short words,
+					// or len/4 for longer runs.  Use an average.
+					total += (wordRun + 2) / 3
+					wordRun = 0
+				}
+				spaceRun++
+			} else {
+				if spaceRun > 0 {
+					// Whitespace is usually merged with adjacent tokens.
+					spaceRun = 0
+				}
+				wordRun++
+			}
+		} else {
+			// Flush any pending ASCII word
+			if wordRun > 0 {
+				total += (wordRun + 2) / 3
+				wordRun = 0
+			}
+			spaceRun = 0
+			nonASCII++
 		}
-		// Non-ASCII: count remaining runes directly (~1 token per rune for CJK).
-		remaining := 0
-		for i < len(s) {
-			r, size = utf8.DecodeRuneInString(s[i:])
-			i += size
-			remaining++
-		}
-		return ascii/4 + remaining
+		i += size
 	}
-	return ascii / 4
+	if wordRun > 0 {
+		total += (wordRun + 2) / 3
+	}
+	// Non-ASCII (CJK, emoji, etc.) ~1 token per rune.
+	return total + nonASCII
 }
 
 // TrimToMaxTokens removes oldest messages to fit within token limit.
@@ -256,26 +279,90 @@ func (c *Conversation) GetTotalTokens() int {
 	return c.CurrentTokens
 }
 
-// AutoCompact removes oldest messages to keep usage under 80% of max.
-// It preserves the system prompt and the most recent conversation turns.
+// AutoCompact removes oldest messages to keep usage under the max
+// context window.  Instead of keeping a fixed number of messages,
+// it discards a *fraction* of the conversation, similar to Cline.
+//
+// Strategy:
+//   - Always keep the first user-assistant pair (index 0-1).
+//   - Keep the most recent messages (by default last half or quarter).
+//   - Remove an even number of messages so user/assistant pairs stay
+//     aligned.
+//   - Inject a summary marker so the model knows context was truncated.
 func (c *Conversation) AutoCompact() {
-	keep := 4 // preserve last 2 turns (user+assistant)
 	startIdx := 0
 	if c.HasSystemPrompt() {
 		startIdx = 1
 	}
-	if len(c.Messages) <= startIdx+keep {
+
+	// Always preserve the first user-assistant pair after system prompt.
+	// This keeps the original task description intact.
+	firstPairEnd := startIdx + 1 // inclusive index of first assistant msg
+	if firstPairEnd >= len(c.Messages) {
 		return
 	}
-	splitIdx := len(c.Messages) - keep
-	if splitIdx < startIdx {
-		splitIdx = startIdx
+
+	// Total messages available for truncation (after first pair).
+	truncatable := len(c.Messages) - firstPairEnd - 1
+	if truncatable <= 0 {
+		return
 	}
-	newMessages := make([]Message, 0, startIdx+keep)
+
+	// Decide fraction to keep.  If current tokens exceed the context
+	// window by a large margin we discard more aggressively.
+	totalTokens := c.GetTotalTokens()
+	keepFraction := 0.5 // default: keep last half
+	if c.MaxTokens > 0 && totalTokens > c.MaxTokens {
+		// Severely over budget → keep only the last quarter
+		keepFraction = 0.25
+	}
+
+	// Compute number of messages to remove.  We want an even count so
+	// user/assistant pairs stay aligned.
+	messagesToRemove := int(math.Floor(float64(truncatable) * (1 - keepFraction)))
+	if messagesToRemove%2 != 0 {
+		messagesToRemove-- // force even
+	}
+	if messagesToRemove <= 0 {
+		return
+	}
+
+	// The split point: messages [firstPairEnd+1 .. splitIdx] are removed.
+	splitIdx := firstPairEnd + messagesToRemove
+	if splitIdx >= len(c.Messages)-1 {
+		// Don't remove the very last message.
+		return
+	}
+
+	// Build a compact summary of dropped messages.
+	var droppedToolCount int
+	for _, m := range c.Messages[firstPairEnd+1 : splitIdx+1] {
+		droppedToolCount += len(m.ToolCalls)
+	}
+	toolSuffix := ""
+	if droppedToolCount != 1 {
+		toolSuffix = "s"
+	}
+	ctxMsg := fmt.Sprintf(
+		"[Context compacted: %d intermediate messages omitted (including %d tool call%s). Original task context preserved.]",
+		messagesToRemove,
+		droppedToolCount,
+		toolSuffix,
+	)
+
+	// Rebuild messages: [system?, first pair, summary marker, kept tail]
+	keptTail := len(c.Messages) - splitIdx - 1
+	newCap := startIdx + 2 + 1 + keptTail // sys + pair + marker + tail
+	newMessages := make([]Message, 0, newCap)
 	if startIdx > 0 {
 		newMessages = append(newMessages, c.Messages[0]) // system prompt
 	}
-	newMessages = append(newMessages, c.Messages[splitIdx:]...)
+	newMessages = append(newMessages, c.Messages[startIdx:firstPairEnd+1]...) // first user-assistant pair
+	newMessages = append(newMessages, Message{
+		Role:    RoleSystem,
+		Content: ctxMsg,
+	})
+	newMessages = append(newMessages, c.Messages[splitIdx+1:]...)
 	c.Messages = newMessages
 	c.ResetActualTokens()
 	c.updateTokenCount()
