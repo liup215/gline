@@ -54,19 +54,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # macOS Apple Silicon — GitHub free tier freely available
+          # macOS Apple Silicon
           - name: darwin-arm64
             runner: macos-latest
-          # Linux AMD64 (explicit 24.04 for webkitgtk-6.0)
-          - name: linux-amd64
-            runner: ubuntu-24.04
           # Windows AMD64
           - name: windows-amd64
             runner: windows-latest
-          # NOTE: darwin-amd64 (Intel) and linux-arm64 removed from CI matrix
-          # because macos-13 (Intel) runners are deprecated/scarce in free tier
-          # and ubuntu-arm64 runners have limited availability.
-          # Users needing Intel macOS or Linux ARM64 can build locally.
 
     steps:
       - name: Checkout code
@@ -93,28 +86,13 @@ jobs:
           echo "$HOME/go/bin" >> $GITHUB_PATH
         shell: bash
 
-      - name: Install Linux dependencies
-        if: startsWith(matrix.name, 'linux')
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev build-essential pkg-config npm
-          echo "=== Installed GTK/WebKit packages ==="
-          dpkg -l | grep -E 'libgtk|libwebkit'
-          echo "=== pkg-config search path ==="
-          pkg-config --variable pc_path pkg-config || true
-          echo "=== pkg-config list (gtk/webkit) ==="
-          pkg-config --list-all | grep -E 'gtk|webkit' || true
-          echo "=== Testing pkg-config ==="
-          pkg-config --cflags gtk4 || true
-          pkg-config --cflags webkitgtk-6.0 || true
-
       - name: Build with wails3
         shell: bash
         working-directory: gui
         run: wails3 build
 
-      - name: Upload binary (Unix)
-        if: '!startsWith(matrix.name, ''windows'')'
+      - name: Upload binary (macOS)
+        if: startsWith(matrix.name, 'darwin')
         uses: actions/upload-artifact@v4
         with:
           name: gline-${{ matrix.name }}
@@ -153,7 +131,4 @@ jobs:
           echo "| Platform | Architecture | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|----------|-------------|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| macOS    | arm64       | ✅ |" >> $GITHUB_STEP_SUMMARY
-          echo "| Linux    | amd64       | ✅ |" >> $GITHUB_STEP_SUMMARY
           echo "| Windows  | amd64       | ✅ |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "> ⚠️ darwin-amd64 and linux-arm64 excluded from CI matrix due to scarce free runners." >> $GITHUB_STEP_SUMMARY
