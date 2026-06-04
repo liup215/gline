@@ -6,6 +6,46 @@
 import { Create as $Create } from "@wailsio/runtime";
 
 /**
+ * DirEntry represents a file or directory entry for the frontend file browser.
+ */
+export class DirEntry {
+    "name": string;
+    "path": string;
+    "isDir": boolean;
+    "size": number;
+    "modTime": number;
+
+    /** Creates a new DirEntry instance. */
+    constructor($$source: Partial<DirEntry> = {}) {
+        if (!("name" in $$source)) {
+            this["name"] = "";
+        }
+        if (!("path" in $$source)) {
+            this["path"] = "";
+        }
+        if (!("isDir" in $$source)) {
+            this["isDir"] = false;
+        }
+        if (!("size" in $$source)) {
+            this["size"] = 0;
+        }
+        if (!("modTime" in $$source)) {
+            this["modTime"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new DirEntry instance from a string or object.
+     */
+    static createFrom($$source: any = {}): DirEntry {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new DirEntry($$parsedSource as Partial<DirEntry>);
+    }
+}
+
+/**
  * SlashActionResult is returned after executing a slash command.
  */
 export class SlashActionResult {

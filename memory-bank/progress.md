@@ -246,6 +246,24 @@ gline/
 - [x] 规则管理 UI（SettingsPanel 展示规则列表 + Reload 按钮）
 - [x] 主题切换占位（disabled + Coming soon 提示）
 - [x] @ 引用提示移除（避免误导）
+- [x] **SettingsPanel Custom Rules UI 修复**（2026-01-XX）— 组件接收了 rules props 但未渲染，已修复
+
+**优先级**: 中
+**预计时间**: 2-3 周
+**状态**: GUI 基础框架已完成，前端界面完善中
+
+- [x] Wails v3 GUI 框架
+- [x] Backend 服务与 Agent 集成
+- [x] 流式响应事件（SSE）
+- [x] 任务历史 Backend 接口
+- [x] 前端聊天界面（Markdown 渲染、代码高亮）
+- [x] 工具调用可视化
+- [x] 设置页面（API Key、Provider、Model）
+- [x] 历史任务浏览/续接 UI
+- [x] Slash 命令（弹出菜单，复用 internal/slash）
+- [x] 规则管理 UI（SettingsPanel 展示规则列表 + Reload 按钮）
+- [x] 主题切换占位（disabled + Coming soon 提示）
+- [x] @ 引用提示移除（避免误导）
 
 ### Phase 5: 高级功能
 

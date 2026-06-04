@@ -144,11 +144,21 @@ export function IsSlashCommand(text: string): $CancellablePromise<boolean> {
 }
 
 /**
+ * ListDirEntries returns files and subdirectories under the given relative path.
+ * dirPath is relative to the project's working directory; empty string means root.
+ */
+export function ListDirEntries(dirPath: string): $CancellablePromise<$models.DirEntry[]> {
+    return $Call.ByID(1442448370, dirPath).then(($result: any) => {
+        return $$createType12($result);
+    });
+}
+
+/**
  * ListTasks returns conversation history
  */
 export function ListTasks(limit: number, offset: number): $CancellablePromise<storage$0.TaskRecord[]> {
     return $Call.ByID(2917519979, limit, offset).then(($result: any) => {
-        return $$createType11($result);
+        return $$createType13($result);
     });
 }
 
@@ -177,6 +187,15 @@ export function ParseSlashCommand(text: string): $CancellablePromise<[string, st
 }
 
 /**
+ * ReadFileContent reads a file's content relative to the working directory.
+ * Returns the file content as a string. Binary files are detected and skipped.
+ * Files larger than maxFileReadSize are truncated.
+ */
+export function ReadFileContent(relPath: string): $CancellablePromise<string> {
+    return $Call.ByID(2901970126, relPath);
+}
+
+/**
  * ReloadRules reloads custom rules from disk and updates the agent.
  * Returns the number of rule files loaded and a formatted description.
  */
@@ -194,6 +213,15 @@ export function SelectProjectDir(): $CancellablePromise<string> {
 
 export function SendMessage(prompt: string): $CancellablePromise<void> {
     return $Call.ByID(1063940756, prompt);
+}
+
+/**
+ * SendMessageWithContext sends a message with file references attached.
+ * fileRefsJSON is a JSON array of relative file paths, e.g. ["src/main.go","README.md"].
+ * The referenced file contents are read and prepended to the prompt as context.
+ */
+export function SendMessageWithContext(prompt: string, fileRefsJSON: string): $CancellablePromise<void> {
+    return $Call.ByID(3385566703, prompt, fileRefsJSON);
 }
 
 /**
@@ -243,4 +271,6 @@ const $$createType7 = storage$0.TaskRecord.createFrom;
 const $$createType8 = $Create.Nullable($$createType7);
 const $$createType9 = storage$0.MessageRecord.createFrom;
 const $$createType10 = $Create.Array($$createType9);
-const $$createType11 = $Create.Array($$createType7);
+const $$createType11 = $models.DirEntry.createFrom;
+const $$createType12 = $Create.Array($$createType11);
+const $$createType13 = $Create.Array($$createType7);

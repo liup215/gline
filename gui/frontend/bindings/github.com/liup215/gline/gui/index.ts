@@ -7,6 +7,7 @@ export {
 };
 
 export {
+    DirEntry,
     SlashActionResult,
     SlashCommandInfo
 } from "./models.js";

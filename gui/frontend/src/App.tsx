@@ -5,6 +5,7 @@ import { useTaskHistory } from './hooks/useTaskHistory';
 import { useAppStatus } from './hooks/useAppStatus';
 import { useSettings } from './hooks/useSettings';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
+import { useFileReference } from './hooks/useFileReference';
 import { useSlashCommands } from './slash';
 import { Sidebar } from './components/Sidebar';
 import { ChatArea } from './components/ChatArea';
@@ -18,7 +19,8 @@ function App() {
   const appStatus = useAppStatus();
   const settings = useSettings();
   const tasks = useTaskHistory();
-  const chat = useChat(tasks.loadHistory, appStatus.loadStatus);
+  const fileRef = useFileReference();
+  const chat = useChat(tasks.loadHistory, appStatus.loadStatus, () => fileRef.selectedFiles, fileRef.clearFiles);
   const slash = useSlashCommands();
 
   // Can chat when a project directory has been selected or there is message history
@@ -115,6 +117,13 @@ function App() {
         onSelectProjectDir={handleSelectProjectDir}
         canChat={canChat}
         showSelectDir={(appStatus.status.cwd || '') === ''}
+        selectedFiles={fileRef.selectedFiles}
+        onRemoveFile={fileRef.removeFile}
+        filePickerState={fileRef.pickerState}
+        onFileSelect={fileRef.selectEntry}
+        onFilePickerKeyDown={fileRef.handlePickerKeyDown}
+        onOpenFilePicker={fileRef.openPicker}
+        onCloseFilePicker={fileRef.closePicker}
       />
       {settings.showSettings && (
         <SettingsPanel

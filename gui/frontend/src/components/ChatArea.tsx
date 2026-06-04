@@ -1,9 +1,10 @@
-import { Message } from '../types';
+import { Message, FileRef } from '../types';
 import { AppStatus } from '../types';
 import { Header } from './Header';
 import { MessageList } from './MessageList';
 import { InputArea } from './InputArea';
 import { SlashMenuState } from '../slash';
+import type { FileEntry, FilePickerState } from '../hooks/useFileReference';
 
 interface ChatAreaProps {
   sidebarOpen: boolean;
@@ -27,6 +28,14 @@ interface ChatAreaProps {
   onSelectProjectDir?: () => void;
   canChat?: boolean;
   showSelectDir?: boolean;
+  // File reference props
+  selectedFiles: FileRef[];
+  onRemoveFile: (path: string) => void;
+  filePickerState: FilePickerState;
+  onFileSelect: (entry: FileEntry) => void;
+  onFilePickerKeyDown: (e: React.KeyboardEvent) => { handled: boolean };
+  onOpenFilePicker: () => void;
+  onCloseFilePicker: () => void;
 }
 
 export function ChatArea(props: ChatAreaProps) {
@@ -56,6 +65,13 @@ export function ChatArea(props: ChatAreaProps) {
         onToggleMode={props.onToggleMode}
         chatInputRef={props.chatInputRef}
         canChat={props.canChat}
+        selectedFiles={props.selectedFiles}
+        onRemoveFile={props.onRemoveFile}
+        filePickerState={props.filePickerState}
+        onFileSelect={props.onFileSelect}
+        onFilePickerKeyDown={props.onFilePickerKeyDown}
+        onOpenFilePicker={props.onOpenFilePicker}
+        onCloseFilePicker={props.onCloseFilePicker}
       />
     </div>
   );

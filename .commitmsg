@@ -1,0 +1,7 @@
+feat(@): implement @ file reference for prompt context
+
+- Backend: ListDirEntries, ReadFileContent, SendMessageWithContext
+- Frontend: useFileReference hook, FilePicker component
+- InputArea: @ trigger, file tags, file browser integration
+- useChat: send with file context via SendMessageWithContext
+- File content injected as <referenced_files> XML in prompt

@@ -8,6 +8,12 @@ export interface Message {
   streaming?: boolean;
 }
 
+export interface FileRef {
+  path: string;
+  name: string;
+  isDir: boolean;
+}
+
 export interface AppStatus {
   provider: string;
   model: string;

@@ -1,9 +1,9 @@
 import { useState, useCallback, useRef } from 'react';
 import { Events, WML } from '@wailsio/runtime';
 import { ChatService } from '../../bindings/github.com/liup215/gline/gui';
-import { Message } from '../types';
+import { Message, FileRef } from '../types';
 
-export function useChat(onLoadHistory: () => void, onLoadStatus: () => void) {
+export function useChat(onLoadHistory: () => void, onLoadStatus: () => void, getFileRefs?: () => FileRef[], clearFileRefs?: () => void) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -88,15 +88,29 @@ export function useChat(onLoadHistory: () => void, onLoadStatus: () => void) {
     }
 
     setInput('');
-    setMessages(prev => [...prev, { role: 'user', content: prompt }]);
+
+    // Build display message with file indicators
+    const fileRefs = getFileRefs?.() || [];
+    const displayPrefix = fileRefs.length > 0
+      ? fileRefs.map(f => `@${f.name}`).join(' ') + '\n'
+      : '';
+
+    setMessages(prev => [...prev, { role: 'user', content: displayPrefix + prompt }]);
 
     try {
-      await ChatService.SendMessage(prompt);
+      if (fileRefs.length > 0) {
+        // Send with file context
+        const pathsJSON = JSON.stringify(fileRefs.map(f => f.path));
+        await ChatService.SendMessageWithContext(prompt, pathsJSON);
+        clearFileRefs?.();
+      } else {
+        await ChatService.SendMessage(prompt);
+      }
     } catch (err: any) {
       setMessages(prev => [...prev, { role: 'system', content: `Error: ${err}` }]);
       setIsLoading(false);
     }
-  }, [input, isLoading, executeSlashCommand]);
+  }, [input, isLoading, executeSlashCommand, getFileRefs, clearFileRefs]);
 
   const handleNewChat = useCallback(async () => {
     ChatService.StartNewConversation();
