@@ -69,30 +69,37 @@ jobs:
           name: frontend-dist
           path: gui/frontend/dist/
 
-  # 构建所有平台
+  # 构建所有平台 — 使用平台原生 runner
   build:
-    name: Build (${{ matrix.os }}-${{ matrix.arch }})
+    name: Build (${{ matrix.name }})
     needs: [test, build-frontend]
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
         include:
-          # macOS
-          - os: darwin
+          # macOS Intel
+          - name: darwin-amd64
+            runner: macos-latest
             arch: amd64
             ext: ''
-          - os: darwin
+          # macOS Apple Silicon
+          - name: darwin-arm64
+            runner: macos-14
             arch: arm64
             ext: ''
-          # Linux
-          - os: linux
+          # Linux Intel (native)
+          - name: linux-amd64
+            runner: ubuntu-latest
             arch: amd64
             ext: ''
-          - os: linux
+          # Linux ARM64 (cross from ubuntu, no CGO so OK)
+          - name: linux-arm64
+            runner: ubuntu-latest
             arch: arm64
             ext: ''
           # Windows
-          - os: windows
+          - name: windows-amd64
+            runner: windows-latest
             arch: amd64
             ext: '.exe'
 
@@ -111,9 +118,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-go-
+            ${{ runner.os }}-${{ runner.arch }}-go-
 
       - name: Download frontend dist
         uses: actions/download-artifact@v4
@@ -122,6 +129,7 @@ jobs:
           path: gui/frontend/dist/
 
       - name: Get version info
+        shell: bash
         id: version
         run: |
           VERSION=${GITHUB_REF#refs/tags/}
@@ -133,12 +141,12 @@ jobs:
           echo "Building version: $VERSION (commit: $COMMIT)"
 
       - name: Build binary
+        shell: bash
         env:
-          GOOS: ${{ matrix.os }}
           GOARCH: ${{ matrix.arch }}
           CGO_ENABLED: 0
         run: |
-          OUTPUT="gline-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}"
+          OUTPUT="gline-${{ matrix.name }}${{ matrix.ext }}"
           LDFLAGS="-X github.com/liup215/gline/internal/version.Version=${{ steps.version.outputs.VERSION }} \
             -X github.com/liup215/gline/internal/version.Commit=${{ steps.version.outputs.COMMIT }} \
             -X github.com/liup215/gline/internal/version.BuildTime=${{ steps.version.outputs.BUILD_TIME }} \
@@ -147,28 +155,34 @@ jobs:
           echo "Built: bin/$OUTPUT"
 
       - name: Package binary
+        shell: bash
         run: |
           mkdir -p dist
-          BINARY="gline-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}"
-          if [ "${{ matrix.os }}" = "windows" ]; then
-            (cd bin && zip "../dist/$BINARY.zip" "$BINARY")
+          BINARY="gline-${{ matrix.name }}${{ matrix.ext }}"
+          if [[ "${{ matrix.name }}" == *"windows"* ]]; then
+            (cd bin && 7z a "../dist/$BINARY.zip" "$BINARY")
           else
             (cd bin && tar -czf "../dist/$BINARY.tar.gz" "$BINARY")
           fi
           ls -la dist/
 
       - name: Generate checksum
+        shell: bash
         run: |
           cd dist
           for f in gline-*; do
-            sha256sum "$f" >> checksums.txt
+            if command -v sha256sum &> /dev/null; then
+              sha256sum "$f" >> checksums.txt
+            elif command -v shasum &> /dev/null; then
+              shasum -a 256 "$f" >> checksums.txt
+            fi
           done
           cat checksums.txt
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: gline-${{ matrix.os }}-${{ matrix.arch }}
+          name: gline-${{ matrix.name }}
           path: dist/gline-*
           if-no-files-found: error
 
@@ -190,6 +204,7 @@ jobs:
           pattern: gline-*
 
       - name: Prepare release files
+        shell: bash
         run: |
           mkdir -p release
           # 复制所有构建产物
@@ -201,6 +216,7 @@ jobs:
 
       - name: Generate changelog
         id: changelog
+        shell: bash
         run: |
           VERSION=${GITHUB_REF#refs/tags/}
           echo "version=$VERSION" >> $GITHUB_OUTPUT

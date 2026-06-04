@@ -72,30 +72,37 @@ jobs:
           name: frontend-dist
           path: gui/frontend/dist/
 
-  # 构建所有平台
+  # 构建所有平台 — 使用平台原生 runner
   build:
-    name: Build (${{ matrix.os }}-${{ matrix.arch }})
+    name: Build (${{ matrix.name }})
     needs: [test, build-frontend]
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
         include:
-          # macOS
-          - os: darwin
+          # macOS Intel
+          - name: darwin-amd64
+            runner: macos-latest
             arch: amd64
             ext: ''
-          - os: darwin
+          # macOS Apple Silicon
+          - name: darwin-arm64
+            runner: macos-14
             arch: arm64
             ext: ''
-          # Linux
-          - os: linux
+          # Linux Intel (native)
+          - name: linux-amd64
+            runner: ubuntu-latest
             arch: amd64
             ext: ''
-          - os: linux
+          # Linux ARM64 (cross from ubuntu, no CGO needed so OK)
+          - name: linux-arm64
+            runner: ubuntu-latest
             arch: arm64
             ext: ''
           # Windows
-          - os: windows
+          - name: windows-amd64
+            runner: windows-latest
             arch: amd64
             ext: '.exe'
 
@@ -114,9 +121,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-go-
+            ${{ runner.os }}-${{ runner.arch }}-go-
 
       - name: Download frontend dist
         uses: actions/download-artifact@v4
@@ -126,6 +133,7 @@ jobs:
 
       - name: Get version info
         id: version
+        shell: bash
         run: |
           VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
           COMMIT=$(git rev-parse --short HEAD)
@@ -136,12 +144,12 @@ jobs:
           echo "Building version: $VERSION (commit: $COMMIT)"
 
       - name: Build binary
+        shell: bash
         env:
-          GOOS: ${{ matrix.os }}
           GOARCH: ${{ matrix.arch }}
           CGO_ENABLED: 0
         run: |
-          OUTPUT="gline-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}"
+          OUTPUT="gline-${{ matrix.name }}${{ matrix.ext }}"
           LDFLAGS="-X github.com/liup215/gline/internal/version.Version=${{ steps.version.outputs.VERSION }} \
             -X github.com/liup215/gline/internal/version.Commit=${{ steps.version.outputs.COMMIT }} \
             -X github.com/liup215/gline/internal/version.BuildTime=${{ steps.version.outputs.BUILD_TIME }} \
@@ -151,28 +159,36 @@ jobs:
           ls -la bin/
 
       - name: Package binary
+        shell: bash
         run: |
           mkdir -p dist
-          BINARY="gline-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}"
-          if [ "${{ matrix.os }}" = "windows" ]; then
-            (cd bin && zip "../dist/$BINARY.zip" "$BINARY")
-            echo "PACKAGE=$BINARY.zip" >> $GITHUB_ENV
+          BINARY="gline-${{ matrix.name }}${{ matrix.ext }}"
+          if [[ "${{ matrix.name }}" == *"windows"* ]]; then
+            (cd bin && 7z a "../dist/$BINARY.zip" "$BINARY")
+            PACKAGE="$BINARY.zip"
           else
             (cd bin && tar -czf "../dist/$BINARY.tar.gz" "$BINARY")
-            echo "PACKAGE=$BINARY.tar.gz" >> $GITHUB_ENV
+            PACKAGE="$BINARY.tar.gz"
           fi
+          echo "PACKAGE=$PACKAGE" >> $GITHUB_ENV
           ls -la dist/
 
       - name: Generate checksum
+        shell: bash
         run: |
           cd dist
-          sha256sum "$PACKAGE" > "$PACKAGE.sha256"
-          cat "$PACKAGE.sha256"
+          if command -v sha256sum &> /dev/null; then
+            sha256sum "$PACKAGE" > "$PACKAGE.sha256"
+            cat "$PACKAGE.sha256"
+          elif command -v shasum &> /dev/null; then
+            shasum -a 256 "$PACKAGE" > "$PACKAGE.sha256"
+            cat "$PACKAGE.sha256"
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: gline-${{ matrix.os }}-${{ matrix.arch }}
+          name: gline-${{ matrix.name }}
           path: |
             dist/gline-*
           if-no-files-found: error
