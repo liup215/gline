@@ -2,9 +2,9 @@
 
 ## 项目状态概览
 
-**当前阶段**: Phase 1 快速赢 + Phase 2 性能修复 已完成 ✅
+**当前阶段**: Phase 1 快速赢 + Phase 2 全面完成 ✅
 
-**总体进度**: 78% - 核心架构已完成，3 个严重性能阻塞点已修复。
+**总体进度**: 82% - 核心架构已完成，性能阻塞点已修复，构建系统已统一。
 
 ## 2025-07-04 — 性能阻塞点修复 ✅
 
@@ -111,6 +111,7 @@
 13. **@ 文件引用** ✅
 14. **`/clear` 保留 workingDir** ✅
 15. **P2.2 系统托盘集成** ✅ — 左键切换窗口显示/隐藏，右键菜单含 Show/Hide 动态标签 + Quit
+16. **P2.4 构建产物优化** ✅ — Taskfile `dev`/`build` 统一 + CI wails3 build 集成
 
 ## 已完成工作（2026-06-19）
 
@@ -128,9 +129,21 @@
 ### 环境说明
 `go.mod` 和 `gui/go.mod` 保持 `go 1.25.0`（无法降级到 1.22，因为 `modernc.org/sqlite@v1.50.1`、`modernc.org/libc@v1.72.3`、`golang.org/x/sys@v0.42.0` 等核心依赖要求 `go >= 1.25.0`）。
 
+## 已完成工作（2026-06-20）
+
+### P2.4 构建产物优化 ✅
+**范围**: Taskfile `dev` / `build` 目标统一 + CI/CD 产物路径修正  
+**对应 commits**: `ci: refactor GitHub Actions for wails3 cross-platform builds` 及后续系列（~10 个 commits）  
+**内容**:
+- `gui/Taskfile.yml`: `build` / `dev` / `run` / `package` 目标按 OS 分发到 `build/{OS}/Taskfile.yml`
+- `gui/build/Taskfile.yml`（common）: 统一 `build:frontend`、`generate:bindings`、`build:server`、`build:docker` 等共享目标
+- GitHub Actions 统一使用 `wails3 build`（替代裸 `go build`），自动集成前端构建 + 产物路径修正
+- 产物清理：移除不兼容 `-ldflags`、精简 Linux 依赖、矩阵调整为 Windows + macOS
+
+---
+
 ## 建议下一步
 
-1. **P2.4 构建产物优化** (0.5天) — Taskfile `dev` / `build` 目标统一
-2. **前端测试补足** — .tsx 零测试覆盖技术债务
-3. **Phase 3 MCP 支持** (长期价值)
-4. **Phase 3 LiteLLM 多提供商统一** — `litellmcreds` 规范与引导流程
+1. **前端测试补足** — .tsx 零测试覆盖技术债务
+2. **Phase 3 MCP 支持** (长期价值)
+3. **Phase 3 LiteLLM 多提供商统一** — `litellmcreds` 规范与引导流程

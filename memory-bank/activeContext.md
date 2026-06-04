@@ -2,7 +2,15 @@
 
 ## 当前焦点
 
-### 性能阻塞点修复（2025-07-04）
+### Phase 2 全面完成（2026-06-20）
+
+Phase 2 全部子任务已完成：
+- P2.2 系统托盘集成 ✅
+- P2.3 废弃 TUI 清理 ✅
+- P2.4 构建产物优化 ✅ （本次完成）
+- P2.5 前端错误边界 ✅
+
+接下来进入 Phase 3 规划或优先技术债务清偿。之前详细记录的 2025-07-04 性能阻塞点修复内容如下：
 
 **用户反馈**: 对话"越用越慢"，定位并修复了 3 个明确阻塞点 + 1 个隐性累加 bug。
 
@@ -31,6 +39,7 @@
 | P1.4 主题切换占位 | Theme select disabled | ✅ | `SettingsPanel.tsx` |
 | P2.2 系统托盘集成 | 左键切换显示/隐藏，右键菜单含 Show/Hide、Quit | ✅ | `gui/main.go` |
 | P2.3 废弃 TUI 清理 | 删除 `internal/ui/` | ✅ | `cmd/gline/chat.go`, `root.go`, `go.mod` |
+| P2.4 构建产物优化 | Taskfile `dev`/`build` 统一 + CI 产物路径修正 | ✅ | `gui/Taskfile.yml`, `.github/workflows/` |
 | P2.5 前端错误边界 | ErrorBoundary 避免白屏 | ✅ | `ErrorBoundary.tsx`, `main.tsx` |
 
 ### 2026-06-04 — `/clear` 保留 workingDir 修复 ✅
@@ -70,10 +79,22 @@
   - **`release.yml`**: Release Artifacts 上传裸二进制（非 zip），覆盖 darwin-amd64/arm64, linux-amd64/arm64, windows-amd64。
 - **依赖约束**: `go.mod` 保持 `go 1.25.0`（`modernc.org/sqlite`/`libc`/`x/sys` 要求 `go >= 1.25.0`，无法降到 1.22）。
 
+## 已完成（本次更新）
+
+### P2.4 构建产物优化 ✅
+**范围**: Taskfile `dev` / `build` 目标统一 + CI/CD 产物路径修正  
+**对应 commits**: 系列 CI commits（`ci: refactor GitHub Actions...` 起）  
+**内容**:
+- `gui/Taskfile.yml`: `build` / `dev` / `run` / `package` 目标按 OS 分发到 `build/{OS}/Taskfile.yml`
+- `gui/build/Taskfile.yml`（common）: 统一 `build:frontend`、`generate:bindings`、`build:server`、`build:docker` 等共享目标
+- GitHub Actions 统一使用 `wails3 build`，自动集成前端构建 + 产物路径修正
+- 产物清理：移除不兼容 `-ldflags`、精简 Linux 依赖、矩阵调整为 Windows + macOS
+
+---
+
 ## 下一步建议
 
-1. **P2.4 构建优化** (0.5天) — Taskfile `dev` / `build` 目标统一
-2. **前端测试补足** — Jest/Vitest 从零建立测试
-3. **Phase 3 MCP 支持** (长期) — 引入 Model Context Protocol
-4. **Phase 3 LiteLLM 多提供商统一** — `litellmcreds` 规范与引导流程
-5. **System Tray 后续增强** — 未读消息角标、快速状态预览（可选）
+1. **前端测试补足** — Jest/Vitest 从零建立测试骨架，覆盖核心 hooks / components
+2. **Phase 3 MCP 支持** (长期) — 引入 Model Context Protocol，接入外部工具源
+3. **Phase 3 LiteLLM 多提供商统一** — `litellmcreds` 规范与引导流程
+4. **System Tray 后续增强** — 未读消息角标、快速状态预览（可选）
