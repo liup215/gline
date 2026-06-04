@@ -9,11 +9,9 @@ on:
   workflow_dispatch:
 
 env:
-  GO_VERSION: '1.24.4'
-  NODE_VERSION: '20'
+  GO_VERSION: '1.25.0'
 
 jobs:
-  # 运行测试
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -43,68 +41,25 @@ jobs:
       - name: Run vet
         run: go vet ./...
 
-  # 构建前端资源
-  build-frontend:
-    name: Build Frontend
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: gui/frontend/package-lock.json
-
-      - name: Install frontend dependencies
-        working-directory: gui/frontend
-        run: npm ci
-
-      - name: Build frontend
-        working-directory: gui/frontend
-        run: npm run build
-
-      - name: Upload frontend dist
-        uses: actions/upload-artifact@v4
-        with:
-          name: frontend-dist
-          path: gui/frontend/dist/
-
-  # 构建所有平台 — 使用平台原生 runner
   build:
     name: Build (${{ matrix.name }})
-    needs: [test, build-frontend]
+    needs: test
     runs-on: ${{ matrix.runner }}
     strategy:
+      fail-fast: false
       matrix:
         include:
-          # macOS Intel
           - name: darwin-amd64
-            runner: macos-latest
-            arch: amd64
-            ext: ''
-          # macOS Apple Silicon
+            runner: macos-13
           - name: darwin-arm64
-            runner: macos-14
-            arch: arm64
-            ext: ''
-          # Linux Intel (native)
+            runner: macos-latest
           - name: linux-amd64
             runner: ubuntu-latest
-            arch: amd64
-            ext: ''
-          # Linux ARM64 (cross from ubuntu, no CGO needed so OK)
           - name: linux-arm64
             runner: ubuntu-latest
             arch: arm64
-            ext: ''
-          # Windows
           - name: windows-amd64
             runner: windows-latest
-            arch: amd64
-            ext: '.exe'
 
     steps:
       - name: Checkout code
@@ -125,11 +80,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-go-
 
-      - name: Download frontend dist
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-dist
-          path: gui/frontend/dist/
+      - name: Install wails3 CLI
+        run: |
+          go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha.95
+          echo "$HOME/go/bin" >> $GITHUB_PATH
+        shell: bash
 
       - name: Get version info
         id: version
@@ -143,34 +98,41 @@ jobs:
           echo "BUILD_TIME=$BUILD_TIME" >> $GITHUB_OUTPUT
           echo "Building version: $VERSION (commit: $COMMIT)"
 
-      - name: Build binary
+      - name: Build with wails3
         shell: bash
+        working-directory: gui
         env:
-          GOARCH: ${{ matrix.arch }}
-          CGO_ENABLED: 0
+          CGO_ENABLED: 1
         run: |
-          OUTPUT="gline-${{ matrix.name }}${{ matrix.ext }}"
-          LDFLAGS="-X github.com/liup215/gline/internal/version.Version=${{ steps.version.outputs.VERSION }} \
+          WAILS_LDFLAGS="-X github.com/liup215/gline/internal/version.Version=${{ steps.version.outputs.VERSION }} \
             -X github.com/liup215/gline/internal/version.Commit=${{ steps.version.outputs.COMMIT }} \
             -X github.com/liup215/gline/internal/version.BuildTime=${{ steps.version.outputs.BUILD_TIME }} \
             -s -w"
-          cd gui && go build -ldflags "$LDFLAGS" -o "../bin/$OUTPUT" .
-          echo "Built: bin/$OUTPUT"
-          ls -la bin/
+          wails3 build -ldflags "$WAILS_LDFLAGS"
 
-      - name: Package binary
+      - name: Package artifacts
         shell: bash
         run: |
           mkdir -p dist
-          BINARY="gline-${{ matrix.name }}${{ matrix.ext }}"
-          if [[ "${{ matrix.name }}" == *"windows"* ]]; then
-            (cd bin && 7z a "../dist/$BINARY.zip" "$BINARY")
-            PACKAGE="$BINARY.zip"
+          if [[ "${{ matrix.name }}" == darwin-* ]]; then
+            # macOS produces .app bundle
+            APP_NAME="gline.app"
+            BUNDLE="gline-${{ matrix.name }}.zip"
+            (cd gui/build/bin && zip -r "../../../dist/$BUNDLE" "$APP_NAME")
+            echo "package=$BUNDLE" >> $GITHUB_ENV
+          elif [[ "${{ matrix.name }}" == windows-* ]]; then
+            # Windows produces .exe
+            BINARY="gline.exe"
+            PACKAGE="gline-${{ matrix.name }}.zip"
+            (cd gui/build/bin && 7z a "../../../dist/$PACKAGE" "$BINARY")
+            echo "package=$PACKAGE" >> $GITHUB_ENV
           else
-            (cd bin && tar -czf "../dist/$BINARY.tar.gz" "$BINARY")
-            PACKAGE="$BINARY.tar.gz"
+            # Linux produces bare binary
+            BINARY="gline"
+            PACKAGE="gline-${{ matrix.name }}.tar.gz"
+            (cd gui/build/bin && tar -czf "../../../dist/$PACKAGE" "$BINARY")
+            echo "package=$PACKAGE" >> $GITHUB_ENV
           fi
-          echo "PACKAGE=$PACKAGE" >> $GITHUB_ENV
           ls -la dist/
 
       - name: Generate checksum
@@ -178,12 +140,13 @@ jobs:
         run: |
           cd dist
           if command -v sha256sum &> /dev/null; then
-            sha256sum "$PACKAGE" > "$PACKAGE.sha256"
-            cat "$PACKAGE.sha256"
+            sha256sum "$package" > "$package.sha256"
           elif command -v shasum &> /dev/null; then
-            shasum -a 256 "$PACKAGE" > "$PACKAGE.sha256"
-            cat "$PACKAGE.sha256"
+            shasum -a 256 "$package" > "$package.sha256"
           fi
+          cat "$package.sha256"
+        env:
+          package: ${{ env.package }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -191,9 +154,9 @@ jobs:
           name: gline-${{ matrix.name }}
           path: |
             dist/gline-*
+            dist/*.sha256
           if-no-files-found: error
 
-  # 汇总构建结果
   build-summary:
     name: Build Summary
     needs: build
@@ -208,7 +171,7 @@ jobs:
       - name: List artifacts
         run: |
           echo "Build artifacts:"
-          find artifacts -type f -name "*" | sort
+          find artifacts -type f | sort
 
       - name: Summary
         run: |

@@ -10,47 +10,10 @@ on:
     types:
       - completed
 
-env:
-  GO_VERSION: '1.24.4'
-
 jobs:
-  # Use matrix to download artifacts in parallel
-  download-artifacts:
-    if: github.event.workflow_run.conclusion == 'success'
-    name: Download (${{ matrix.name }})
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: darwin-amd64
-            runner: macos-latest
-          - name: darwin-arm64
-            runner: macos-14
-          - name: linux-amd64
-            runner: ubuntu-latest
-          - name: linux-arm64
-            runner: ubuntu-latest
-          - name: windows-amd64
-            runner: windows-latest
-
-    steps:
-      - name: Download workflow artifacts from Build
-        uses: actions/download-artifact@v4
-        with:
-          name: gline-${{ matrix.name }}
-          path: downloaded-artifacts
-
-      - name: List downloaded files
-        shell: bash
-        run: |
-          echo "Downloaded artifacts for ${{ matrix.name }}:"
-          find downloaded-artifacts -type f | sort
-
-  # Create release from artifacts
   create-release:
-    name: Create Release
-    needs: download-artifacts
+    if: github.event.workflow_run.conclusion == 'success'
+    name: Create Snapshot Release
     runs-on: ubuntu-latest
 
     steps:
@@ -59,12 +22,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-
-      - name: Download all workflow artifacts
+      - name: Download all artifacts from Build workflow
         uses: actions/download-artifact@v4
         with:
           path: artifacts
@@ -74,23 +32,14 @@ jobs:
         shell: bash
         run: |
           mkdir -p release
-          # 复制所有构建产物
-          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" \) -exec cp {} release/ \;
-          # 复制校验和文件
-          find artifacts -type f -name "*.sha256" -exec cp {} release/ \;
-          ls -la release/
-
-      - name: Generate checksums
-        shell: bash
-        run: |
+          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.sha256" \) -exec cp {} release/ \;
           cd release
           if command -v sha256sum &> /dev/null; then
             sha256sum gline-* > SHA256SUMS
-            cat SHA256SUMS
           elif command -v shasum &> /dev/null; then
             shasum -a 256 gline-* > SHA256SUMS
-            cat SHA256SUMS
           fi
+          cat SHA256SUMS
 
       - name: Generate changelog
         id: changelog
@@ -98,22 +47,17 @@ jobs:
         run: |
           VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-          # 获取上一个标签
           PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "")
-
           if [ -z "$PREVIOUS_TAG" ]; then
             CHANGELOG=$(git log --pretty=format:"- %s" --no-merges)
           else
             CHANGELOG=$(git log --pretty=format:"- %s" --no-merges "$PREVIOUS_TAG..HEAD")
           fi
-
-          # 设置多行输出
           echo "changelog<<EOF" >> $GITHUB_OUTPUT
           echo "$CHANGELOG" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Create Release
+      - name: Create Snapshot Release
         uses: softprops/action-gh-release@v1
         with:
           name: "Snapshot ${{ steps.changelog.outputs.version }}"
@@ -127,14 +71,14 @@ jobs:
             ### macOS
             ```bash
             # Intel
-            curl -L -o gline.tar.gz https://github.com/${{ github.repository }}/releases/download/snapshot/gline-darwin-amd64.tar.gz
-            tar -xzf gline.tar.gz
-            sudo mv gline /usr/local/bin/
+            curl -L -o gline.zip https://github.com/${{ github.repository }}/releases/download/snapshot/gline-darwin-amd64.zip
+            unzip gline.zip
+            sudo mv gline.app /Applications/
 
             # Apple Silicon
-            curl -L -o gline.tar.gz https://github.com/${{ github.repository }}/releases/download/snapshot/gline-darwin-arm64.tar.gz
-            tar -xzf gline.tar.gz
-            sudo mv gline /usr/local/bin/
+            curl -L -o gline.zip https://github.com/${{ github.repository }}/releases/download/snapshot/gline-darwin-arm64.zip
+            unzip gline.zip
+            sudo mv gline.app /Applications/
             ```
 
             ### Linux
@@ -151,7 +95,7 @@ jobs:
             ```
 
             ### Windows
-            Download `gline-windows-amd64.zip` and extract to your PATH.
+            Download `gline-windows-amd64.zip` and extract `gline.exe` to your PATH.
 
             ## Checksums
             See `SHA256SUMS` file for checksums of all binaries.

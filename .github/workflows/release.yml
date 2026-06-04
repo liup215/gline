@@ -6,14 +6,12 @@ on:
       - 'v*'
 
 env:
-  GO_VERSION: '1.24.4'
-  NODE_VERSION: '20'
+  GO_VERSION: '1.25.0'
 
 permissions:
   contents: write
 
 jobs:
-  # 运行测试
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -40,68 +38,25 @@ jobs:
       - name: Run tests
         run: go test -v ./...
 
-  # 构建前端资源
-  build-frontend:
-    name: Build Frontend
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: gui/frontend/package-lock.json
-
-      - name: Install frontend dependencies
-        working-directory: gui/frontend
-        run: npm ci
-
-      - name: Build frontend
-        working-directory: gui/frontend
-        run: npm run build
-
-      - name: Upload frontend dist
-        uses: actions/upload-artifact@v4
-        with:
-          name: frontend-dist
-          path: gui/frontend/dist/
-
-  # 构建所有平台 — 使用平台原生 runner
   build:
     name: Build (${{ matrix.name }})
-    needs: [test, build-frontend]
+    needs: test
     runs-on: ${{ matrix.runner }}
     strategy:
+      fail-fast: false
       matrix:
         include:
-          # macOS Intel
           - name: darwin-amd64
-            runner: macos-latest
-            arch: amd64
-            ext: ''
-          # macOS Apple Silicon
+            runner: macos-13
           - name: darwin-arm64
-            runner: macos-14
-            arch: arm64
-            ext: ''
-          # Linux Intel (native)
+            runner: macos-latest
           - name: linux-amd64
             runner: ubuntu-latest
-            arch: amd64
-            ext: ''
-          # Linux ARM64 (cross from ubuntu, no CGO so OK)
           - name: linux-arm64
             runner: ubuntu-latest
             arch: arm64
-            ext: ''
-          # Windows
           - name: windows-amd64
             runner: windows-latest
-            arch: amd64
-            ext: '.exe'
 
     steps:
       - name: Checkout code
@@ -122,15 +77,15 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-go-
 
-      - name: Download frontend dist
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-dist
-          path: gui/frontend/dist/
+      - name: Install wails3 CLI
+        run: |
+          go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha.95
+          echo "$HOME/go/bin" >> $GITHUB_PATH
+        shell: bash
 
       - name: Get version info
-        shell: bash
         id: version
+        shell: bash
         run: |
           VERSION=${GITHUB_REF#refs/tags/}
           COMMIT=$(git rev-parse --short HEAD)
@@ -140,29 +95,37 @@ jobs:
           echo "BUILD_TIME=$BUILD_TIME" >> $GITHUB_OUTPUT
           echo "Building version: $VERSION (commit: $COMMIT)"
 
-      - name: Build binary
+      - name: Build with wails3
         shell: bash
+        working-directory: gui
         env:
-          GOARCH: ${{ matrix.arch }}
-          CGO_ENABLED: 0
+          CGO_ENABLED: 1
         run: |
-          OUTPUT="gline-${{ matrix.name }}${{ matrix.ext }}"
-          LDFLAGS="-X github.com/liup215/gline/internal/version.Version=${{ steps.version.outputs.VERSION }} \
+          WAILS_LDFLAGS="-X github.com/liup215/gline/internal/version.Version=${{ steps.version.outputs.VERSION }} \
             -X github.com/liup215/gline/internal/version.Commit=${{ steps.version.outputs.COMMIT }} \
             -X github.com/liup215/gline/internal/version.BuildTime=${{ steps.version.outputs.BUILD_TIME }} \
             -s -w"
-          cd gui && go build -ldflags "$LDFLAGS" -o "../bin/$OUTPUT" .
-          echo "Built: bin/$OUTPUT"
+          wails3 build -ldflags "$WAILS_LDFLAGS"
 
-      - name: Package binary
+      - name: Package artifacts
         shell: bash
         run: |
           mkdir -p dist
-          BINARY="gline-${{ matrix.name }}${{ matrix.ext }}"
-          if [[ "${{ matrix.name }}" == *"windows"* ]]; then
-            (cd bin && 7z a "../dist/$BINARY.zip" "$BINARY")
+          if [[ "${{ matrix.name }}" == darwin-* ]]; then
+            APP_NAME="gline.app"
+            BUNDLE="gline-${{ matrix.name }}.zip"
+            (cd gui/build/bin && zip -r "../../../dist/$BUNDLE" "$APP_NAME")
+            echo "package=$BUNDLE" >> $GITHUB_ENV
+          elif [[ "${{ matrix.name }}" == windows-* ]]; then
+            BINARY="gline.exe"
+            PACKAGE="gline-${{ matrix.name }}.zip"
+            (cd gui/build/bin && 7z a "../../../dist/$PACKAGE" "$BINARY")
+            echo "package=$PACKAGE" >> $GITHUB_ENV
           else
-            (cd bin && tar -czf "../dist/$BINARY.tar.gz" "$BINARY")
+            BINARY="gline"
+            PACKAGE="gline-${{ matrix.name }}.tar.gz"
+            (cd gui/build/bin && tar -czf "../../../dist/$PACKAGE" "$BINARY")
+            echo "package=$PACKAGE" >> $GITHUB_ENV
           fi
           ls -la dist/
 
@@ -170,23 +133,24 @@ jobs:
         shell: bash
         run: |
           cd dist
-          for f in gline-*; do
-            if command -v sha256sum &> /dev/null; then
-              sha256sum "$f" >> checksums.txt
-            elif command -v shasum &> /dev/null; then
-              shasum -a 256 "$f" >> checksums.txt
-            fi
-          done
-          cat checksums.txt
+          if command -v sha256sum &> /dev/null; then
+            sha256sum "$package" > "$package.sha256"
+          elif command -v shasum &> /dev/null; then
+            shasum -a 256 "$package" > "$package.sha256"
+          fi
+          cat "$package.sha256"
+        env:
+          package: ${{ env.package }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: gline-${{ matrix.name }}
-          path: dist/gline-*
+          path: |
+            dist/gline-*
+            dist/*.sha256
           if-no-files-found: error
 
-  # 创建 GitHub Release
   release:
     name: Create Release
     needs: build
@@ -207,11 +171,13 @@ jobs:
         shell: bash
         run: |
           mkdir -p release
-          # 复制所有构建产物
-          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "checksums.txt" \) -exec cp {} release/ \;
-          # 生成总校验和文件
+          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.sha256" \) -exec cp {} release/ \;
           cd release
-          sha256sum gline-* > SHA256SUMS
+          if command -v sha256sum &> /dev/null; then
+            sha256sum gline-* > SHA256SUMS
+          elif command -v shasum &> /dev/null; then
+            shasum -a 256 gline-* > SHA256SUMS
+          fi
           cat SHA256SUMS
 
       - name: Generate changelog
@@ -220,19 +186,12 @@ jobs:
         run: |
           VERSION=${GITHUB_REF#refs/tags/}
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          
-          # 获取上一个标签
           PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "")
-          
           if [ -z "$PREVIOUS_TAG" ]; then
-            # 如果没有上一个标签，获取所有提交
             CHANGELOG=$(git log --pretty=format:"- %s" --no-merges)
           else
-            # 获取两个标签之间的提交
             CHANGELOG=$(git log --pretty=format:"- %s" --no-merges "$PREVIOUS_TAG..HEAD")
           fi
-          
-          # 设置多行输出
           echo "changelog<<EOF" >> $GITHUB_OUTPUT
           echo "$CHANGELOG" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
@@ -251,14 +210,15 @@ jobs:
             ### macOS
             ```bash
             # Intel
-            curl -L -o gline.tar.gz https://github.com/${{ github.repository }}/releases/download/${{ steps.changelog.outputs.version }}/gline-darwin-amd64.tar.gz
-            tar -xzf gline.tar.gz
-            sudo mv gline /usr/local/bin/
+            curl -L -o gline.zip https://github.com/${{ github.repository }}/releases/download/${{ steps.changelog.outputs.version }}/gline-darwin-amd64.zip
+            unzip gline.zip
+            # Move gline.app to /Applications
+            sudo mv gline.app /Applications/
 
             # Apple Silicon
-            curl -L -o gline.tar.gz https://github.com/${{ github.repository }}/releases/download/${{ steps.changelog.outputs.version }}/gline-darwin-arm64.tar.gz
-            tar -xzf gline.tar.gz
-            sudo mv gline /usr/local/bin/
+            curl -L -o gline.zip https://github.com/${{ github.repository }}/releases/download/${{ steps.changelog.outputs.version }}/gline-darwin-arm64.zip
+            unzip gline.zip
+            sudo mv gline.app /Applications/
             ```
 
             ### Linux
@@ -275,7 +235,7 @@ jobs:
             ```
 
             ### Windows
-            Download `gline-windows-amd64.zip` and extract to your PATH.
+            Download `gline-windows-amd64.zip` and extract `gline.exe` to your PATH.
 
             ## Checksums
             See `SHA256SUMS` file for checksums of all binaries.
@@ -285,7 +245,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # 发布完成通知
   notify:
     name: Notify
     needs: release
