@@ -56,8 +56,7 @@ jobs:
           - name: linux-amd64
             runner: ubuntu-latest
           - name: linux-arm64
-            runner: ubuntu-latest
-            arch: arm64
+            runner: ubuntu-24.04-arm
           - name: windows-amd64
             runner: windows-latest
 
@@ -90,7 +89,7 @@ jobs:
         if: startsWith(matrix.name, 'linux')
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
+          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev build-essential pkg-config npm
 
       - name: Build with wails3
         shell: bash
