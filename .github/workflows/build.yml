@@ -90,7 +90,7 @@ jobs:
         if: startsWith(matrix.name, 'linux')
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
+          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
 
       - name: Build with wails3
         shell: bash
@@ -112,13 +112,13 @@ jobs:
             # Windows produces .exe
             BINARY="gline.exe"
             PACKAGE="gline-${{ matrix.name }}.zip"
-            (cd gui/build/bin && 7z a "../../../dist/$PACKAGE" "$BINARY")
+            (cd gui/bin && 7z a "../../../dist/$PACKAGE" "$BINARY")
             echo "package=$PACKAGE" >> $GITHUB_ENV
           else
             # Linux produces bare binary
             BINARY="gline"
             PACKAGE="gline-${{ matrix.name }}.tar.gz"
-            (cd gui/build/bin && tar -czf "../../../dist/$PACKAGE" "$BINARY")
+            (cd gui/bin && tar -czf "../../../dist/$PACKAGE" "$BINARY")
             echo "package=$PACKAGE" >> $GITHUB_ENV
           fi
           ls -la dist/
