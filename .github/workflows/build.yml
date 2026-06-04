@@ -95,54 +95,22 @@ jobs:
       - name: Build with wails3
         shell: bash
         working-directory: gui
-        run: |
-          wails3 build
+        run: wails3 build
 
-      - name: Package artifacts
-        shell: bash
-        run: |
-          mkdir -p dist
-          if [[ "${{ matrix.name }}" == darwin-* ]]; then
-            # macOS produces .app bundle
-            APP_NAME="gline.app"
-            BUNDLE="gline-${{ matrix.name }}.zip"
-            (cd gui/bin && zip -r "../../../dist/$BUNDLE" "$APP_NAME")
-            echo "package=$BUNDLE" >> $GITHUB_ENV
-          elif [[ "${{ matrix.name }}" == windows-* ]]; then
-            # Windows produces .exe
-            BINARY="gline.exe"
-            PACKAGE="gline-${{ matrix.name }}.zip"
-            (cd gui/bin && 7z a "../../../dist/$PACKAGE" "$BINARY")
-            echo "package=$PACKAGE" >> $GITHUB_ENV
-          else
-            # Linux produces bare binary
-            BINARY="gline"
-            PACKAGE="gline-${{ matrix.name }}.tar.gz"
-            (cd gui/bin && tar -czf "../../../dist/$PACKAGE" "$BINARY")
-            echo "package=$PACKAGE" >> $GITHUB_ENV
-          fi
-          ls -la dist/
-
-      - name: Generate checksum
-        shell: bash
-        run: |
-          cd dist
-          if command -v sha256sum &> /dev/null; then
-            sha256sum "$package" > "$package.sha256"
-          elif command -v shasum &> /dev/null; then
-            shasum -a 256 "$package" > "$package.sha256"
-          fi
-          cat "$package.sha256"
-        env:
-          package: ${{ env.package }}
-
-      - name: Upload artifact
+      - name: Upload binary (Unix)
+        if: '!startsWith(matrix.name, ''windows'')'
         uses: actions/upload-artifact@v4
         with:
           name: gline-${{ matrix.name }}
-          path: |
-            dist/gline-*
-            dist/*.sha256
+          path: gui/bin/gline
+          if-no-files-found: error
+
+      - name: Upload binary (Windows)
+        if: startsWith(matrix.name, 'windows')
+        uses: actions/upload-artifact@v4
+        with:
+          name: gline-${{ matrix.name }}
+          path: gui/bin/gline.exe
           if-no-files-found: error
 
   build-summary:
@@ -157,6 +125,7 @@ jobs:
           pattern: gline-*
 
       - name: List artifacts
+        shell: bash
         run: |
           echo "Build artifacts:"
           find artifacts -type f | sort

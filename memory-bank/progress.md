@@ -112,9 +112,24 @@
 14. **`/clear` 保留 workingDir** ✅
 15. **P2.2 系统托盘集成** ✅ — 左键切换窗口显示/隐藏，右键菜单含 Show/Hide 动态标签 + Quit
 
+## 已完成工作（2026-06-19）
+
+### GitHub Actions CI 重构 ✅
+**背景**: 之前的工作流只编译 Go 后端，完全不构建前端（React/TypeScript），导致产物中前端资源为空。
+**修复文件**: `.github/workflows/build.yml`, `.github/workflows/release.yml`
+**修复内容**:
+- **build.yml**: 新建 `test` job（ubuntu-latest），新增完整 `build` matrix（darwin-amd64/arm64, linux-amd64/arm64, windows-amd64）
+  - 安装 wails3 CLI (`go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha.95`)
+  - Linux 构建安装 `libgtk-4-dev` + `libwebkitgtk-6.0-dev`
+  - wails3 在 `gui/` 目录下构建，上传裸二进制（macOS/Linux: `gui/bin/gline`，Windows: `gui/bin/gline.exe`）
+  - 新增 `build-summary` 汇总 artifact 到 GitHub Step Summary
+- **release.yml**: 上传 Release Artifacts 同样改为裸二进制（非 zip），覆盖 5 个平台
+
+### 环境说明
+`go.mod` 和 `gui/go.mod` 保持 `go 1.25.0`（无法降级到 1.22，因为 `modernc.org/sqlite@v1.50.1`、`modernc.org/libc@v1.72.3`、`golang.org/x/sys@v0.42.0` 等核心依赖要求 `go >= 1.25.0`）。
+
 ## 建议下一步
 
-Phase 2 剩余 + Phase 3:
 1. **P2.4 构建产物优化** (0.5天) — Taskfile `dev` / `build` 目标统一
 2. **前端测试补足** — .tsx 零测试覆盖技术债务
 3. **Phase 3 MCP 支持** (长期价值)

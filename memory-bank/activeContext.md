@@ -61,6 +61,15 @@
 - **修复**: 在两个工作流中新增 `build-frontend` job，Node.js 环境编译 `gui/frontend`；Go build job 通过 artifact 下载 `frontend/dist`；修正构建路径为 `cd gui && go build`。
 - **文件**: `.github/workflows/build.yml`, `.github/workflows/release.yml`
 
+## 最新变更（2026-06-19）
+
+### GitHub Actions CI 重构
+- **问题**: `build.yml` / `release.yml` 只编译 Go 后端，不构建前端 React，导致产物中前端资源为空白。
+- **修复**:
+  - **`build.yml`**: 新建 `test` + `build` matrix（5 平台），安装 wails3 CLI，Linux 装 GTK/WebKit 依赖，wails3 build 在 `gui/` 目录下执行，上传裸二进制 artifact。
+  - **`release.yml`**: Release Artifacts 上传裸二进制（非 zip），覆盖 darwin-amd64/arm64, linux-amd64/arm64, windows-amd64。
+- **依赖约束**: `go.mod` 保持 `go 1.25.0`（`modernc.org/sqlite`/`libc`/`x/sys` 要求 `go >= 1.25.0`，无法降到 1.22）。
+
 ## 下一步建议
 
 1. **P2.4 构建优化** (0.5天) — Taskfile `dev` / `build` 目标统一

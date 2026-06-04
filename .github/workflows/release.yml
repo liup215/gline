@@ -48,15 +48,20 @@ jobs:
         include:
           - name: darwin-amd64
             runner: macos-13
+            asset_name: gline-darwin-amd64
           - name: darwin-arm64
             runner: macos-latest
+            asset_name: gline-darwin-arm64
           - name: linux-amd64
             runner: ubuntu-latest
+            asset_name: gline-linux-amd64
           - name: linux-arm64
             runner: ubuntu-latest
             arch: arm64
+            asset_name: gline-linux-arm64
           - name: windows-amd64
             runner: windows-latest
+            asset_name: gline-windows-amd64
 
     steps:
       - name: Checkout code
@@ -92,51 +97,27 @@ jobs:
       - name: Build with wails3
         shell: bash
         working-directory: gui
-        run: |
-          wails3 build
+        run: wails3 build
 
-      - name: Package artifacts
+      - name: Rename & generate checksum
         shell: bash
         run: |
-          mkdir -p dist
-          if [[ "${{ matrix.name }}" == darwin-* ]]; then
-            APP_NAME="gline.app"
-            BUNDLE="gline-${{ matrix.name }}.zip"
-            (cd gui/bin && zip -r "../../../dist/$BUNDLE" "$APP_NAME")
-            echo "package=$BUNDLE" >> $GITHUB_ENV
-          elif [[ "${{ matrix.name }}" == windows-* ]]; then
-            BINARY="gline.exe"
-            PACKAGE="gline-${{ matrix.name }}.zip"
-            (cd gui/bin && 7z a "../../../dist/$PACKAGE" "$BINARY")
-            echo "package=$PACKAGE" >> $GITHUB_ENV
+          cd gui/bin
+          if [[ "${{ matrix.name }}" == windows-* ]]; then
+            mv gline.exe "${{ matrix.asset_name }}.exe"
+            sha256sum "${{ matrix.asset_name }}.exe" > "${{ matrix.asset_name }}.exe.sha256"
+            cat "${{ matrix.asset_name }}.exe.sha256"
           else
-            BINARY="gline"
-            PACKAGE="gline-${{ matrix.name }}.tar.gz"
-            (cd gui/bin && tar -czf "../../../dist/$PACKAGE" "$BINARY")
-            echo "package=$PACKAGE" >> $GITHUB_ENV
+            mv gline "${{ matrix.asset_name }}"
+            sha256sum "${{ matrix.asset_name }}" > "${{ matrix.asset_name }}.sha256"
+            cat "${{ matrix.asset_name }}.sha256"
           fi
-          ls -la dist/
 
-      - name: Generate checksum
-        shell: bash
-        run: |
-          cd dist
-          if command -v sha256sum &> /dev/null; then
-            sha256sum "$package" > "$package.sha256"
-          elif command -v shasum &> /dev/null; then
-            shasum -a 256 "$package" > "$package.sha256"
-          fi
-          cat "$package.sha256"
-        env:
-          package: ${{ env.package }}
-
-      - name: Upload artifact
+      - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
-          name: gline-${{ matrix.name }}
-          path: |
-            dist/gline-*
-            dist/*.sha256
+          name: ${{ matrix.asset_name }}
+          path: gui/bin/${{ matrix.asset_name }}*
           if-no-files-found: error
 
   release:
@@ -159,12 +140,15 @@ jobs:
         shell: bash
         run: |
           mkdir -p release
-          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.sha256" \) -exec cp {} release/ \;
+          # Copy all binaries (gline-* and gline-*.exe) along with their .sha256 files
+          find artifacts -type f \( -name "gline-*" -o -name "gline-*.exe" -o -name "*.sha256" \) -exec cp {} release/ \;
           cd release
+          ls -la
+          # Generate aggregated SHA256SUMS
           if command -v sha256sum &> /dev/null; then
-            sha256sum gline-* > SHA256SUMS
+            sha256sum gline-darwin-* gline-linux-* gline-windows-* > SHA256SUMS
           elif command -v shasum &> /dev/null; then
-            shasum -a 256 gline-* > SHA256SUMS
+            shasum -a 256 gline-darwin-* gline-linux-* gline-windows-* > SHA256SUMS
           fi
           cat SHA256SUMS
 
@@ -185,7 +169,7 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           name: Release ${{ steps.changelog.outputs.version }}
           body: |
@@ -198,32 +182,31 @@ jobs:
             ### macOS
             ```bash
             # Intel
-            curl -L -o gline.zip https://github.com/${{ github.repository }}/releases/download/${{ steps.changelog.outputs.version }}/gline-darwin-amd64.zip
-            unzip gline.zip
-            # Move gline.app to /Applications
-            sudo mv gline.app /Applications/
+            curl -L -o gline-darwin-amd64 https://github.com/${{ github.repository }}/releases/download/${{ steps.changelog.outputs.version }}/gline-darwin-amd64
+            chmod +x gline-darwin-amd64
+            sudo mv gline-darwin-amd64 /usr/local/bin/gline
 
             # Apple Silicon
-            curl -L -o gline.zip https://github.com/${{ github.repository }}/releases/download/${{ steps.changelog.outputs.version }}/gline-darwin-arm64.zip
-            unzip gline.zip
-            sudo mv gline.app /Applications/
+            curl -L -o gline-darwin-arm64 https://github.com/${{ github.repository }}/releases/download/${{ steps.changelog.outputs.version }}/gline-darwin-arm64
+            chmod +x gline-darwin-arm64
+            sudo mv gline-darwin-arm64 /usr/local/bin/gline
             ```
 
             ### Linux
             ```bash
             # AMD64
-            curl -L -o gline.tar.gz https://github.com/${{ github.repository }}/releases/download/${{ steps.changelog.outputs.version }}/gline-linux-amd64.tar.gz
-            tar -xzf gline.tar.gz
-            sudo mv gline /usr/local/bin/
+            curl -L -o gline-linux-amd64 https://github.com/${{ github.repository }}/releases/download/${{ steps.changelog.outputs.version }}/gline-linux-amd64
+            chmod +x gline-linux-amd64
+            sudo mv gline-linux-amd64 /usr/local/bin/gline
 
             # ARM64
-            curl -L -o gline.tar.gz https://github.com/${{ github.repository }}/releases/download/${{ steps.changelog.outputs.version }}/gline-linux-arm64.tar.gz
-            tar -xzf gline.tar.gz
-            sudo mv gline /usr/local/bin/
+            curl -L -o gline-linux-arm64 https://github.com/${{ github.repository }}/releases/download/${{ steps.changelog.outputs.version }}/gline-linux-arm64
+            chmod +x gline-linux-arm64
+            sudo mv gline-linux-arm64 /usr/local/bin/gline
             ```
 
             ### Windows
-            Download `gline-windows-amd64.zip` and extract `gline.exe` to your PATH.
+            Download `gline-windows-amd64.exe` and place it in your PATH.
 
             ## Checksums
             See `SHA256SUMS` file for checksums of all binaries.
@@ -249,10 +232,10 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Platform | Architecture |" >> $GITHUB_STEP_SUMMARY
           echo "|----------|-------------|" >> $GITHUB_STEP_SUMMARY
-          echo "| macOS | amd64 |" >> $GITHUB_STEP_SUMMARY
-          echo "| macOS | arm64 |" >> $GITHUB_STEP_SUMMARY
-          echo "| Linux | amd64 |" >> $GITHUB_STEP_SUMMARY
-          echo "| Linux | arm64 |" >> $GITHUB_STEP_SUMMARY
-          echo "| Windows | amd64 |" >> $GITHUB_STEP_SUMMARY
+          echo "| macOS    | amd64       |" >> $GITHUB_STEP_SUMMARY
+          echo "| macOS    | arm64       |" >> $GITHUB_STEP_SUMMARY
+          echo "| Linux    | amd64       |" >> $GITHUB_STEP_SUMMARY
+          echo "| Linux    | arm64       |" >> $GITHUB_STEP_SUMMARY
+          echo "| Windows  | amd64       |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "📦 [View Release](https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }})" >> $GITHUB_STEP_SUMMARY
