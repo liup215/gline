@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/liup215/gline/internal/log"
 	"github.com/liup215/gline/internal/prompts"
@@ -113,6 +114,23 @@ type BaseAgent struct {
 	taskID    string        // current task ID
 	taskTitle string        // current task title
 	workingDir string      // project working directory
+
+	// Stream pre-dispatch: tool calls start executing while the SSE stream is still ongoing.
+	pendingToolCallsMu     sync.Mutex
+	pendingToolCalls       []ToolCall
+	preDispatchedResultsMu sync.Mutex
+	preDispatchedResults   map[string]preDispatchedResult
+	// preDispatchedIDs tracks call IDs that were pre-dispatched during the stream
+	// so the main loop can avoid calling OnToolCallStart twice for the same call.
+	preDispatchedIDsMu sync.Mutex
+	preDispatchedIDs   map[string]bool
+}
+
+// preDispatchedResult holds the outcome of a tool call that was launched
+// early, while the SSE stream was still in flight.
+type preDispatchedResult struct {
+	result string
+	err    error
 }
 
 // New creates a new Agent instance with the given options
@@ -312,7 +330,9 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 		if len(messages) > 0 {
 			lastMsg := messages[len(messages)-1]
 			if lastMsg.Role == types.RoleAssistant && len(lastMsg.ToolCalls) > 0 {
-				// Execute tools
+				// Execute tools. Pre-dispatched results (computed while the stream
+				// was still active) are used when available; otherwise tools run
+				// synchronously here.
 				for _, tc := range lastMsg.ToolCalls {
 					if a.abort {
 						break
@@ -346,12 +366,20 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 						continue
 					}
 
-					// Notify callback that tool is starting
-					callback.OnToolCallStart(ToolCall{
-						ID:    tc.ID,
-						Name:  tc.Name,
-						Input: string(tc.Input),
-					})
+					// Only fire OnToolCallStart if this tool wasn't already
+					// pre-dispatched during the stream (where the callback was
+					// already triggered when the complete chunk arrived).
+					a.preDispatchedIDsMu.Lock()
+					wasPreDispatched := a.preDispatchedIDs[tc.ID]
+					delete(a.preDispatchedIDs, tc.ID)
+					a.preDispatchedIDsMu.Unlock()
+					if !wasPreDispatched {
+						callback.OnToolCallStart(ToolCall{
+							ID:    tc.ID,
+							Name:  tc.Name,
+							Input: string(tc.Input),
+						})
+					}
 
 					// Record tool call start in storage
 					var callID int64
@@ -371,10 +399,21 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 							return callback.AskFollowupQuestion(question, options)
 						})
 					}
-					// Execute the tool
-					result, err := tool.Execute(ctx, tc.Input)
-					if err != nil {
-						result = fmt.Sprintf("Error: %v", err)
+
+					var result string
+					var execErr error
+
+					// Use pre-dispatched result if available.
+					pre, ok := a.takePreDispatchResult(tc.ID)
+					if ok {
+						result = pre.result
+						execErr = pre.err
+					} else {
+						// Execute the tool synchronously as fallback.
+						result, execErr = tool.Execute(ctx, tc.Input)
+						if execErr != nil {
+							result = fmt.Sprintf("Error: %v", execErr)
+						}
 					}
 
 					// Add tool result to conversation
@@ -392,8 +431,8 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 							}
 						}
 						if callID > 0 {
-							if err != nil {
-								if dbErr := a.store.FailToolCall(callID, err); dbErr != nil {
+							if execErr != nil {
+								if dbErr := a.store.FailToolCall(callID, execErr); dbErr != nil {
 									log.Warnf("Failed to record tool call failure: %v", dbErr)
 								}
 							} else {
@@ -741,10 +780,29 @@ func (a *BaseAgent) processStream(ctx context.Context, streamChan <-chan StreamC
 				// Just ignore partials in processStream
 			} else {
 				// Complete tool call received
-				toolCalls = append(toolCalls, *chunk.ToolCall)
-				// Tool call status is communicated via OnToolCallStart/OnToolCallComplete
-				// Do NOT mix tool call text into the content stream — this keeps
-				// LLM text and tool status visually separated in the TUI.
+				tc := *chunk.ToolCall
+				toolCalls = append(toolCalls, tc)
+
+				// Notify UI that a tool call has been detected in the stream.
+				callback.OnToolCallStart(tc)
+
+				// Track in pending list (used by tests / diagnostics).
+				a.pendingToolCallsMu.Lock()
+				a.pendingToolCalls = append(a.pendingToolCalls, tc)
+				a.pendingToolCallsMu.Unlock()
+
+				// Mark this call ID as pre-dispatched so the main loop skips
+				// calling OnToolCallStart a second time.
+				a.preDispatchedIDsMu.Lock()
+				if a.preDispatchedIDs == nil {
+					a.preDispatchedIDs = make(map[string]bool)
+				}
+				a.preDispatchedIDs[tc.ID] = true
+				a.preDispatchedIDsMu.Unlock()
+
+				// Pre-dispatch: launch tool execution in the background so it
+				// can overlap with the remaining SSE stream.
+				go a.preDispatchToolCall(ctx, tc)
 			}
 		}
 	}
@@ -783,6 +841,64 @@ func (a *BaseAgent) processStream(ctx context.Context, streamChan <-chan StreamC
 	})
 
 	return nil
+}
+
+// preDispatchToolCall executes a tool in the background while the SSE stream
+// is still ongoing and stores the result so the main loop can reuse it.
+func (a *BaseAgent) preDispatchToolCall(ctx context.Context, tc ToolCall) {
+	if a.abort {
+		return
+	}
+
+	// Validate before executing.
+	if !a.toolRegistry.IsAllowed(string(a.mode), tc.Name) {
+		a.recordPreDispatch(tc.ID, "", fmt.Errorf("tool %s is not allowed in %s mode", tc.Name, a.mode))
+		return
+	}
+
+	tool, err := a.toolRegistry.Get(tc.Name)
+	if err != nil {
+		a.recordPreDispatch(tc.ID, "", fmt.Errorf("tool '%s' not found: %v", tc.Name, err))
+		return
+	}
+
+	// Skip pre-dispatch for ask_followup_question because it needs the
+	// callback handler injected by the main loop.
+	if _, isAsk := tool.(*tools.AskFollowupQuestionTool); isAsk {
+		return
+	}
+
+	res, execErr := tool.Execute(ctx, []byte(tc.Input))
+	if execErr != nil {
+		res = fmt.Sprintf("Error: %v", execErr)
+	}
+	a.recordPreDispatch(tc.ID, res, execErr)
+}
+
+// recordPreDispatch stores the outcome of a pre-dispatched tool call.
+func (a *BaseAgent) recordPreDispatch(callID string, result string, execErr error) {
+	a.preDispatchedResultsMu.Lock()
+	defer a.preDispatchedResultsMu.Unlock()
+	if a.preDispatchedResults == nil {
+		a.preDispatchedResults = make(map[string]preDispatchedResult)
+	}
+	a.preDispatchedResults[callID] = preDispatchedResult{result: result, err: execErr}
+}
+
+// takePreDispatchResult retrieves and removes a pre-dispatched result for the
+// given call ID. If no pre-dispatch was recorded it returns ok=false so the
+// caller falls back to normal execution.
+func (a *BaseAgent) takePreDispatchResult(callID string) (preDispatchedResult, bool) {
+	a.preDispatchedResultsMu.Lock()
+	defer a.preDispatchedResultsMu.Unlock()
+	if a.preDispatchedResults == nil {
+		return preDispatchedResult{}, false
+	}
+	r, ok := a.preDispatchedResults[callID]
+	if ok {
+		delete(a.preDispatchedResults, callID)
+	}
+	return r, ok
 }
 
 // convertTools converts internal tool definitions to provider format
