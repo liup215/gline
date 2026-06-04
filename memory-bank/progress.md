@@ -332,6 +332,14 @@ gline/
 - 并发搜索 Worker Pool、字面量快速路径、目录跳过、二进制文件过滤
 - 100+ 文件基准测试覆盖
 
+### 2026-06-04 — `/clear` 保留 workingDir 修复 ✅
+- `gui/chat_service.go`: 新增 `ClearConversation()` 方法（保留 workingDir），`StartNewConversation()` 继续清空 workingDir
+- `gui/frontend/src/hooks/useChat.ts`: `/clear` 分支改调 `ClearConversation()`
+- `gui/frontend/bindings/.../chatservice.ts`: 绑定同步更新（删 `NewConversation`，加 `ClearConversation`）
+- `gui/chat_service.go`: 新增 `ClearConversation()` 方法（保留 workingDir），`StartNewConversation()` 继续清空 workingDir
+- `gui/frontend/src/hooks/useChat.ts`: `/clear` 分支改调 `ClearConversation()`
+- `gui/frontend/bindings/.../chatservice.ts`: 绑定同步更新（删 `NewConversation`，加 `ClearConversation`）
+
 ### 2026-XX-XX — Phase 1 快速赢完成 ✅
 - **P1.1 规则管理 UI**: SettingsPanel 新增「Custom Rules」区块，支持规则列表展示、来源标签（🌍 global / 📁 workspace）、文件大小、修改时间、Reload 按钮、空状态提示
 - **P1.2 `/reload` Slash 命令前端联动**: `/reload` 执行后通过 system message 显示重载结果
