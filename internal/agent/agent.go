@@ -220,8 +220,10 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 		// Trim conversation if it exceeds token budget before sending.
 		a.conversation.TrimToMaxTokens()
 
-		// Auto-compact if tokens exceed 80% of the max context
-		a.AutoCompact()
+		// Auto-compact if tokens exceed 60% of the max context.
+			// Earlier compaction prevents the token budget from growing too
+			// large and keeps API latency stable across long conversations.
+			a.AutoCompact()
 
 		// Determine whether the assistant still has pending work.
 		// We require tools when:
@@ -409,10 +411,13 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 						Input: string(tc.Input),
 					}, result)
 
-					// Special tools that can terminate the conversation
+					// Special tools that can terminate the conversation.
+					// Only attempt_completion (task done) or plan_mode_respond
+					// (plan mode turn finished) mark the conversation as complete.
+					// ask_followup_question must NOT mark it complete — the agent
+					// needs to continue the loop after receiving the user's answer.
 					switch tc.Name {
 					case types.ToolAttemptCompletion.String(),
-						types.ToolAskFollowupQuestion.String(),
 						types.ToolPlanModeRespond.String():
 						a.conversation.SetComplete()
 					}
