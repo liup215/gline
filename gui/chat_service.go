@@ -45,7 +45,8 @@ func (c *ChatService) pickProjectDir() (string, error) {
 	return selected, nil
 }
 
-// StartNewConversation resets the conversation and clears the selected project directory.
+// StartNewConversation resets the conversation and clears the working directory.
+// Used by New Chat button and /newtask to start a completely fresh session.
 func (c *ChatService) StartNewConversation() {
 	c.workingDir = ""
 	if c.backend.ag != nil {
@@ -397,10 +398,10 @@ func (c *ChatService) StopMessage() {
 	}
 }
 
-// NewConversation resets the agent for a new conversation.
-// Reset the conversation (used by frontend when user clicks New Chat), no dialog.
-func (c *ChatService) NewConversation() {
-	c.workingDir = ""
+// ClearConversation clears the conversation and resets the task,
+// but preserves the working directory so the user stays in the same project.
+// Used by /clear slash command.
+func (c *ChatService) ClearConversation() {
 	if c.backend.ag != nil {
 		c.backend.ag.(*agent.BaseAgent).ResetTask()
 		c.backend.ag.GetConversation().Clear()

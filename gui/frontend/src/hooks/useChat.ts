@@ -19,7 +19,7 @@ export function useChat(onLoadHistory: () => void, onLoadStatus: () => void, get
 
       switch (action) {
         case 'clear': {
-          ChatService.StartNewConversation();
+          ChatService.ClearConversation();
           setMessages([]);
           setInput('');
           setIsLoading(false);

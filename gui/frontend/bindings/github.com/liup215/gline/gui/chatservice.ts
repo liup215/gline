@@ -39,6 +39,15 @@ export function BuildHelpText(): $CancellablePromise<string> {
 }
 
 /**
+ * ClearConversation clears the conversation and resets the task,
+ * but preserves the working directory so the user stays in the same project.
+ * Used by /clear slash command.
+ */
+export function ClearConversation(): $CancellablePromise<void> {
+    return $Call.ByID(2371938731);
+}
+
+/**
  * CompactConversation triggers manual compaction of the conversation history.
  */
 export function CompactConversation(): $CancellablePromise<boolean> {
@@ -172,14 +181,6 @@ export function LoadTask(taskID: string): $CancellablePromise<storage$0.TaskReco
 }
 
 /**
- * NewConversation resets the agent for a new conversation.
- * Reset the conversation (used by frontend when user clicks New Chat), no dialog.
- */
-export function NewConversation(): $CancellablePromise<void> {
-    return $Call.ByID(1999326860);
-}
-
-/**
  * ParseSlashCommand extracts name and args from slash text.
  */
 export function ParseSlashCommand(text: string): $CancellablePromise<[string, string]> {
@@ -239,7 +240,8 @@ export function SetMode(mode: string): $CancellablePromise<void> {
 }
 
 /**
- * StartNewConversation resets the conversation and clears the selected project directory.
+ * StartNewConversation resets the conversation and clears the working directory.
+ * Used by New Chat button and /newtask to start a completely fresh session.
  */
 export function StartNewConversation(): $CancellablePromise<void> {
     return $Call.ByID(262799438);
