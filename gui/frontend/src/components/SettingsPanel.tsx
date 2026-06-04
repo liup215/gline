@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { THEME } from '../theme';
+import { useTheme } from '../ThemeContext';
 import type { RuleInfo } from '../hooks/useSettings';
 
 type TabKey = 'provider' | 'general' | 'rules';
@@ -157,19 +158,25 @@ export function SettingsPanel({
     </>
   );
 
+  const { themeName: currentTheme, setTheme } = useTheme();
+
   const renderGeneralTab = () => (
     <>
       {/* Chat Theme */}
       <div style={{ marginBottom: '14px' }}>
-        <label style={labelStyle}>Chat Theme 🚧</label>
-        <select style={{ ...selectStyle, opacity: 0.5, cursor: 'not-allowed' }} value={uiTheme} onChange={e => setUiTheme(e.target.value)} disabled>
-          <option value="default">Default</option>
+        <label style={labelStyle}>Chat Theme</label>
+        <select
+          style={selectStyle}
+          value={currentTheme}
+          onChange={e => {
+            const name = e.target.value as 'dark' | 'light';
+            setTheme(name);
+            setUiTheme(name);
+          }}
+        >
           <option value="dark">Dark</option>
           <option value="light">Light</option>
         </select>
-        <div style={{ fontSize: '0.75rem', color: THEME.textDim, marginTop: '4px' }}>
-          🚧 Theme switching is coming soon
-        </div>
       </div>
     </>
   );

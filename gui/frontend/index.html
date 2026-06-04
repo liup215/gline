@@ -5,6 +5,24 @@
     <link rel="icon" type="image/svg+xml" href="/wails.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
     <link rel="stylesheet" href="/style.css" />
+    <style>
+      /* Default dark theme — prevents FOUC before React hydrates */
+      :root {
+        --theme-bg: #0b1220;
+        --theme-bg-sidebar: #0f172a;
+        --theme-bg-chat: #0b1220;
+        --theme-border: #1e293b;
+        --theme-accent: #3b82f6;
+        --theme-accent-hover: #2563eb;
+        --theme-text: #e2e8f0;
+        --theme-text-muted: #94a3b8;
+        --theme-text-dim: #64748b;
+        --theme-assistant-bg: #111827;
+        --theme-user-bg: #1e40af;
+        --theme-tool-bg: #111827;
+        --theme-code-bg: #1e1e2e;
+      }
+    </style>
     <title>gline</title>
   </head>
   <body>
