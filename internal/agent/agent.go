@@ -700,8 +700,7 @@ func (a *BaseAgent) processStream(ctx context.Context, streamChan <-chan StreamC
 			return chunk.Error
 		}
 
-		// TEMP DIAGNOSTIC
-		log.Infof("processStream chunk: content=%d reasoning=%d toolCall=%v done=%v",
+		log.Debugf("processStream chunk: content=%d reasoning=%d toolCall=%v done=%v",
 			len(chunk.Content), len(chunk.ReasoningContent), chunk.ToolCall != nil, chunk.Done)
 
 		// Accumulate real token usage from the API whenever available

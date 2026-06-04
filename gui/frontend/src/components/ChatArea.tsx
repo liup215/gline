@@ -34,6 +34,7 @@ interface ChatAreaProps {
   filePickerState: FilePickerState;
   onFileSelect: (entry: FileEntry) => void;
   onFilePickerKeyDown: (e: React.KeyboardEvent) => { handled: boolean };
+  onFilePickerQueryChange: (query: string) => void;
   onOpenFilePicker: () => void;
   onCloseFilePicker: () => void;
 }
@@ -70,6 +71,7 @@ export function ChatArea(props: ChatAreaProps) {
         filePickerState={props.filePickerState}
         onFileSelect={props.onFileSelect}
         onFilePickerKeyDown={props.onFilePickerKeyDown}
+        onFilePickerQueryChange={props.onFilePickerQueryChange}
         onOpenFilePicker={props.onOpenFilePicker}
         onCloseFilePicker={props.onCloseFilePicker}
       />

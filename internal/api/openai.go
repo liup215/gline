@@ -9,8 +9,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -613,26 +611,7 @@ func (p *OpenAIProvider) CreateMessageStream(ctx context.Context, req *agent.Mes
 		// Build full URL by appending the chat completions path
 		fullURL := buildFullURL(p.baseURL)
 		log.Infof("CreateMessageStream: Sending request to %s (tools=%d, tool_choice=%v)", fullURL, len(openaiReq.Tools), openaiReq.ToolChoice)
-		// TEMP DIAGNOSTIC: print request body to stderr so users can capture it even without log files.
-		log.Infof("CreateMessageStream request system prompt length=%d chars", len(openaiReq.Messages[0].Content))
-		log.Debugf("CreateMessageStream request body: %s", string(jsonBody))
-
-		// EMERGENCY DIAGNOSTIC: write to a fixed location so users can always find it.
-		homeDir, _ := os.UserHomeDir()
-		diagDir := filepath.Join(homeDir, ".gline")
-		os.MkdirAll(diagDir, 0755)
-		emergencyDiagPath := filepath.Join(diagDir, "gline_diag.txt")
-		emergencyFile, err := os.OpenFile(emergencyDiagPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-		if err == nil {
-			fmt.Fprintf(emergencyFile, "[%s] URL=%s tools=%d tool_choice=%v prompt_len=%d\n",
-				time.Now().Format(time.RFC3339), fullURL, len(openaiReq.Tools), openaiReq.ToolChoice, len(openaiReq.Messages[0].Content))
-			emergencyFile.Close()
-			// Also write a pointer file beside the exe so users know where to look
-			if exePath, err := os.Executable(); err == nil {
-				pointerFile := filepath.Join(filepath.Dir(exePath), "log_location.txt")
-				os.WriteFile(pointerFile, []byte("Log written to: "+emergencyDiagPath+"\n"), 0644)
-			}
-		}
+		log.Debugf("CreateMessageStream request system prompt length=%d body=%d", len(openaiReq.Messages[0].Content), len(jsonBody))
 
 		// Create HTTP request
 		httpReq, err := http.NewRequestWithContext(ctx, "POST", fullURL, bytes.NewBuffer(jsonBody))
@@ -760,26 +739,8 @@ func (p *OpenAIProvider) CreateMessageStream(ctx context.Context, req *agent.Mes
 			choice := streamResp.Choices[0]
 			delta := choice.Delta
 
-			// TEMP DIAGNOSTIC
-			if delta.Content != "" || delta.ReasoningContent != "" || len(delta.ToolCalls) > 0 {
-				log.Infof("SSE delta: content=%d reasoning=%d toolCalls=%d finish=%s",
-					len(delta.Content), len(delta.ReasoningContent), len(delta.ToolCalls), choice.FinishReason)
-			}
-			// EMERGENCY DIAGNOSTIC
-			if homeDir, err := os.UserHomeDir(); err == nil {
-				ssePath := filepath.Join(homeDir, ".gline", "gline_diag_sse.txt")
-				emergencyFile, _ := os.OpenFile(ssePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-				if emergencyFile != nil {
-					fmt.Fprintf(emergencyFile, "[%s] content=%d reason=%d tools=%d finish=%s\n",
-						time.Now().Format(time.RFC3339), len(delta.Content), len(delta.ReasoningContent), len(delta.ToolCalls), choice.FinishReason)
-					if len(delta.ToolCalls) > 0 {
-						for _, tc := range delta.ToolCalls {
-							fmt.Fprintf(emergencyFile, "  tool idx=%d id=%s name=%s args=%s\n", tc.Index, tc.ID, tc.Function.Name, tc.Function.Arguments)
-						}
-					}
-					emergencyFile.Close()
-				}
-			}
+			log.Debugf("SSE delta: content=%d reasoning=%d toolCalls=%d finish=%s",
+				len(delta.Content), len(delta.ReasoningContent), len(delta.ToolCalls), choice.FinishReason)
 
  // Handle content
  if delta.Content != "" {

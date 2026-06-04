@@ -161,6 +161,9 @@ export function useFileReference() {
         if (entry) {
           selectEntry(entry);
           onSelectEntry?.(entry);
+          if (!entry.isDir) {
+            closePicker();
+          }
         }
       }
       return { handled: true };

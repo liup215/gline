@@ -122,6 +122,7 @@ function App() {
         filePickerState={fileRef.pickerState}
         onFileSelect={fileRef.selectEntry}
         onFilePickerKeyDown={fileRef.handlePickerKeyDown}
+        onFilePickerQueryChange={fileRef.setPickerQuery}
         onOpenFilePicker={fileRef.openPicker}
         onCloseFilePicker={fileRef.closePicker}
       />

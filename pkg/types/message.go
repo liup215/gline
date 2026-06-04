@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 // Role represents the role of a message sender
@@ -90,12 +91,14 @@ type Conversation struct {
 	Complete bool
 }
 
-// AddActualTokens adds real API token usage to the counters.
+// AddActualTokens sets real API token usage for the current turn.
+// It replaces (not accumulates) because usage from the API already
+// represents the total for the latest request.
 func (c *Conversation) AddActualTokens(input, output int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.actualInputTokens += input
-	c.actualOutputTokens += output
+	c.actualInputTokens = input
+	c.actualOutputTokens = output
 }
 
 // GetActualTokens returns the accumulated real token usage.
@@ -166,25 +169,53 @@ func (c *Conversation) IsComplete() bool {
 	return c.Complete
 }
 
-// updateTokenCount estimates the token count
-// This is a simple estimation; for production use, consider using a proper tokenizer
+// updateTokenCount estimates the token count.
+// For CJK / emoji / non-ASCII text, 1 rune ≈ 1 token.
+// For ASCII text, ~4 characters ≈ 1 token.
 func (c *Conversation) updateTokenCount() {
-	// Rough estimate: 1 token ≈ 4 characters for English text
-	totalChars := 0
+	total := 0
 	for _, msg := range c.Messages {
-		totalChars += len(msg.Content)
-		totalChars += len(string(msg.Role))
+		total += estimateTokens(msg.Content)
+		total += estimateTokens(string(msg.Role))
+		total += estimateTokens(msg.ReasoningContent)
 		for _, tc := range msg.ToolCalls {
-			totalChars += len(tc.Name)
-			totalChars += len(tc.Input)
+			total += estimateTokens(tc.Name)
+			total += estimateTokens(string(tc.Input))
 		}
 	}
-	c.CurrentTokens = totalChars / 4
+	c.CurrentTokens = total
 }
 
-// TrimToMaxTokens removes oldest messages to fit within token limit
+// estimateTokens gives a conservative per-rune token estimate.
+func estimateTokens(s string) int {
+	if s == "" {
+		return 0
+	}
+	// Fast path when everything is ASCII (English / code).
+	ascii := 0
+	for i := 0; i < len(s); {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if r < 128 {
+			ascii++
+			i += size
+			continue
+		}
+		// Non-ASCII: count remaining runes directly (~1 token per rune for CJK).
+		remaining := 0
+		for i < len(s) {
+			r, size = utf8.DecodeRuneInString(s[i:])
+			i += size
+			remaining++
+		}
+		return ascii/4 + remaining
+	}
+	return ascii / 4
+}
+
+// TrimToMaxTokens removes oldest messages to fit within token limit.
+// It uses GetTotalTokens() so real API usage has priority.
 func (c *Conversation) TrimToMaxTokens() {
-	if c.CurrentTokens <= c.MaxTokens {
+	if c.GetTotalTokens() <= c.MaxTokens || c.MaxTokens <= 0 {
 		return
 	}
 
@@ -195,11 +226,23 @@ func (c *Conversation) TrimToMaxTokens() {
 	}
 
 	// Remove messages from the start until we're under the limit
-	for c.CurrentTokens > c.MaxTokens && len(c.Messages) > startIdx+2 {
+	for c.GetTotalTokens() > c.MaxTokens && len(c.Messages) > startIdx+2 {
 		removed := c.Messages[startIdx]
+		removedTokens := estimateTokens(removed.Content) +
+			estimateTokens(string(removed.Role)) +
+			estimateTokens(removed.ReasoningContent)
+		for _, tc := range removed.ToolCalls {
+			removedTokens += estimateTokens(tc.Name)
+			removedTokens += estimateTokens(string(tc.Input))
+		}
+
 		c.Messages = append(c.Messages[:startIdx], c.Messages[startIdx+1:]...)
-		// Update token count
-		c.CurrentTokens -= (len(removed.Content) + len(string(removed.Role))) / 4
+		c.CurrentTokens -= removedTokens
+		if c.CurrentTokens < 0 {
+			c.CurrentTokens = 0
+		}
+		// Accumulated actual tokens are no longer valid after removing history.
+		c.ResetActualTokens()
 	}
 }
 

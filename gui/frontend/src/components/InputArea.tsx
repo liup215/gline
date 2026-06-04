@@ -25,6 +25,7 @@ interface InputAreaProps {
   filePickerState: FilePickerState;
   onFileSelect: (entry: FileEntry) => void;
   onFilePickerKeyDown: (e: React.KeyboardEvent) => { handled: boolean };
+  onFilePickerQueryChange: (query: string) => void;
   onOpenFilePicker: () => void;
   onCloseFilePicker: () => void;
 }
@@ -34,7 +35,8 @@ export function InputArea({
   menuState, handleInputChange, handleKeyDown, selectCommand, closeMenu,
   status, mode, onToggleMode, chatInputRef, canChat = true,
   selectedFiles, onRemoveFile,
-  filePickerState, onFileSelect, onFilePickerKeyDown, onOpenFilePicker, onCloseFilePicker,
+  filePickerState, onFileSelect, onFilePickerKeyDown, onFilePickerQueryChange,
+  onOpenFilePicker, onCloseFilePicker,
 }: InputAreaProps) {
   // Detect @ trigger in input change
   const handleInputChangeWithAt = (text: string, cursorPos: number, setInputValue: (v: string) => void, inputEl: HTMLInputElement | null) => {
@@ -102,8 +104,16 @@ export function InputArea({
             currentPath={filePickerState.currentPath}
             loading={filePickerState.loading}
             selectedIndex={filePickerState.selectedIndex}
+            query={filePickerState.query}
             onSelect={onFileSelect}
-            onNavigate={() => {}}
+            onNavigate={(path) => {
+              // navigateTo equivalent - this is handled through selectEntry for dirs
+              // but we expose a dedicated prop for consistency
+              // Currently navigation is done via selectEntry detecting isDir
+            }}
+            onQueryChange={onFilePickerQueryChange}
+            onClose={onCloseFilePicker}
+            onKeyDown={onFilePickerKeyDown}
           />
 
           {/* File tags above input */}
@@ -114,9 +124,13 @@ export function InputArea({
               gap: '6px',
               padding: '8px 12px 0',
             }}>
-              {selectedFiles.map(file => (
+              {selectedFiles.map(file => {
+                const displayName = file.path.includes('/') ? file.path : file.name;
+                const shortName = displayName.split('/').slice(-2).join('/');
+                return (
                 <span
                   key={file.path}
+                  title={file.path}
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
@@ -128,9 +142,12 @@ export function InputArea({
                     color: '#93c5fd',
                     fontSize: '0.78rem',
                     whiteSpace: 'nowrap',
+                    maxWidth: '240px',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
                   }}
                 >
-                  📄 {file.name}
+                  📄 {shortName}
                   <button
                     type="button"
                     onClick={() => onRemoveFile(file.path)}
@@ -147,7 +164,8 @@ export function InputArea({
                     ✕
                   </button>
                 </span>
-              ))}
+                );
+              })}
             </div>
           )}
 
@@ -169,7 +187,6 @@ export function InputArea({
             onBlur={e => {
               e.currentTarget.style.borderColor = THEME.border;
               setTimeout(() => closeMenu(), 200);
-              setTimeout(() => onCloseFilePicker(), 200);
             }}
           />
         </div>
