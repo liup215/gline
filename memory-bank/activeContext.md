@@ -2,7 +2,16 @@
 
 ## 当前焦点
 
-### Phase 2 全面完成（2026-06-20）
+### Phase 2.5 技术债务清偿完成（2026-06-20）
+
+| 子任务 | 说明 | 状态 | 文件 |
+|--------|------|------|------|
+| **P2.5.1 前端测试骨架** | Vitest + @testing-library/react + jsdom 安装；`format.test.ts` 10 用例通过；npm scripts 集成 | ✅ | `package.json`, `vite.config.ts`, `vitest.setup.ts`, `utils/format.test.ts` |
+| **P2.5.2 主题系统完备** | THEME 拆分为 Dark/Light 色板 + CSS 变量方案；ThemeContext 管理状态并持久化；SettingsPanel 启用切换；所有组件零修改即可响应主题 | ✅ | `theme.ts`, `ThemeContext.tsx`, `main.tsx`, `SettingsPanel.tsx`, `index.html` |
+
+### 历史焦点
+
+#### Phase 2 全面完成（2026-06-20）
 
 Phase 2 全部子任务已完成：
 - P2.2 系统托盘集成 ✅
@@ -65,9 +74,9 @@ Phase 2 全部子任务已完成：
 | 债务 | 状态 | 说明 |
 |------|------|------|
 | TUI 代码 | ✅ 已清理 | `internal/ui/` 删除 |
-| 前端测试 | ❌ 仍缺失 | 所有 .tsx 零测试覆盖 |
+| 前端测试 | ✅ 骨架已建 | Vitest 运行通过，`format.test.ts` 10 个用例 |
 | Wails v3 alpha | ⚠️ 持续跟踪 | alpha 版本，binding 需注意 |
-| 主题系统 | ⚠️ 占位 | select disabled |
+| 主题系统 | ✅ 已完备 | Dark/Light 可切换，localStorage 持久化 |
 
 ## 最新变更
 
@@ -100,7 +109,6 @@ Phase 2 全部子任务已完成：
 
 ## 下一步建议
 
-1. **前端测试补足** — Jest/Vitest 从零建立测试骨架，覆盖核心 hooks / components
-2. **Phase 3 MCP 支持** (长期) — 引入 Model Context Protocol，接入外部工具源
-3. **Phase 3 LiteLLM 多提供商统一** — `litellmcreds` 规范与引导流程
-4. **System Tray 后续增强** — 未读消息角标、快速状态预览（可选）
+1. **Phase 3 MCP 支持** (长期) — 引入 Model Context Protocol，接入外部工具源
+2. **Phase 3 LiteLLM 多提供商统一** — `litellmcreds` 规范与引导流程
+3. **System Tray 后续增强** — 未读消息角标、快速状态预览（可选）

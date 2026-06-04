@@ -113,6 +113,8 @@
 15. **P2.2 系统托盘集成** ✅ — 左键切换窗口显示/隐藏，右键菜单含 Show/Hide 动态标签 + Quit
 16. **P2.4 构建产物优化** ✅ — Taskfile `dev`/`build` 统一 + CI wails3 build 集成
 17. **Agent 构建失败** ✅ — `SubmitHandler` 中直接实例化 `*ai.Agent` 导致 `Agent` 接口不匹配。修复：恢复 `NewRuntimeAgent(auth)` 调用。
+18. **ask_followup_question 终止对话** ✅ — agent 在收到用户回答后调用 `SetComplete()` 停止运行。
+   修复：从 `SetComplete` switch 中移除 `ToolAskFollowupQuestion`；同时引入 pre-dispatch 优化（流式期间预执行工具调用）。
 
 ## 已完成工作（2026-06-19）
 
@@ -143,8 +145,29 @@
 
 ---
 
+## 已完成工作（2026-06-20 — Phase 2.5 技术债务）
+
+### P2.5.1 前端测试骨架建立 ✅
+**工具**: Vitest + @testing-library/react + @testing-library/jest-dom + jsdom
+**文件**:
+- `vite.config.ts`: `test` 区块配置（globals, jsdom environment, setup files）
+- `vitest.setup.ts`: 引入 jest-dom matchers
+- `package.json`: scripts `test` (vitest run) + `test:watch` (vitest)
+- `src/utils/format.test.ts`: 10 个用例覆盖 `parseToolInput`, `getToolHint`, `formatContent`
+
+### P2.5.2 主题系统完备化 ✅
+**方案**: CSS 变量法 — `THEME` 常量值改为 `var(--theme-*)` 引用，ThemeContext 更新 `:root` 变量。
+**优点**: 零组件文件修改，所有现有 `style={{...THEME}}` 自动响应主题切换。
+**文件**:
+- `theme.ts`: 拆分为 `THEME_DARK` / `THEME_LIGHT`，`THEME` 改为 CSS 变量引用，新增 `applyThemeColors()`
+- `ThemeContext.tsx`: React Context + `useTheme()` hook，`localStorage` 持久化
+- `main.tsx`: 用 `<ThemeProvider>` 包裹 `<App/>`
+- `index.html`: 内嵌 `<style>` 定义默认 dark CSS 变量（防止 FOUC）
+- `SettingsPanel.tsx`: Theme select 启用，绑定 `setTheme()`，即时生效
+
+---
+
 ## 建议下一步
 
-1. **前端测试补足** — .tsx 零测试覆盖技术债务
-2. **Phase 3 MCP 支持** (长期价值)
-3. **Phase 3 LiteLLM 多提供商统一** — `litellmcreds` 规范与引导流程
+1. **Phase 3 MCP 支持** (长期价值) — 引入 Model Context Protocol
+2. **Phase 3 LiteLLM 多提供商统一** — `litellmcreds` 规范与引导流程
