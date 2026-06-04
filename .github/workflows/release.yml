@@ -50,9 +50,9 @@ jobs:
           - name: darwin-arm64
             runner: macos-latest
             asset_name: gline-darwin-arm64
-          # Linux AMD64
+          # Linux AMD64 (needs Ubuntu 24.04 for GTK4/WebKitGTK-6.0)
           - name: linux-amd64
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
             asset_name: gline-linux-amd64
           # Windows AMD64
           - name: windows-amd64

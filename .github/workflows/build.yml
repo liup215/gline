@@ -52,9 +52,9 @@ jobs:
           # macOS Apple Silicon — GitHub free tier freely available
           - name: darwin-arm64
             runner: macos-latest
-          # Linux AMD64
+          # Linux AMD64 (explicit 24.04 for webkitgtk-6.0)
           - name: linux-amd64
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
           # Windows AMD64
           - name: windows-amd64
             runner: windows-latest
@@ -93,6 +93,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev build-essential pkg-config npm
+          echo "=== Installed GTK/WebKit packages ==="
+          dpkg -l | grep -E 'libgtk|libwebkit'
+          echo "=== pkg-config search path ==="
+          pkg-config --variable pc_path pkg-config || true
+          echo "=== pkg-config list (gtk/webkit) ==="
+          pkg-config --list-all | grep -E 'gtk|webkit' || true
+          echo "=== Testing pkg-config ==="
+          pkg-config --cflags gtk4 || true
+          pkg-config --cflags webkitgtk-6.0 || true
 
       - name: Build with wails3
         shell: bash
