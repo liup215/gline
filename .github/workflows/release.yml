@@ -50,16 +50,10 @@ jobs:
           - name: darwin-arm64
             runner: macos-latest
             asset_name: gline-darwin-arm64
-          # Linux AMD64 (needs Ubuntu 24.04 for GTK4/WebKitGTK-6.0)
-          - name: linux-amd64
-            runner: ubuntu-24.04
-            asset_name: gline-linux-amd64
           # Windows AMD64
           - name: windows-amd64
             runner: windows-latest
             asset_name: gline-windows-amd64
-          # NOTE: darwin-amd64 (Intel) and linux-arm64 excluded because free runners
-          # are either deprecated (macos-13) or severely capacity-constrained.
 
     steps:
       - name: Checkout code
@@ -85,12 +79,6 @@ jobs:
           go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha.95
           echo "$HOME/go/bin" >> $GITHUB_PATH
         shell: bash
-
-      - name: Install Linux dependencies
-        if: startsWith(matrix.name, 'linux')
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev build-essential pkg-config npm
 
       - name: Build with wails3
         shell: bash
@@ -144,9 +132,9 @@ jobs:
           ls -la
           # Generate aggregated SHA256SUMS
           if command -v sha256sum &> /dev/null; then
-            sha256sum gline-darwin-* gline-linux-* gline-windows-* > SHA256SUMS
+            sha256sum gline-darwin-* gline-windows-* > SHA256SUMS
           elif command -v shasum &> /dev/null; then
-            shasum -a 256 gline-darwin-* gline-linux-* gline-windows-* > SHA256SUMS
+            shasum -a 256 gline-darwin-* gline-windows-* > SHA256SUMS
           fi
           cat SHA256SUMS
 
@@ -186,13 +174,6 @@ jobs:
             > Note: Intel Macs are not supported in CI builds due to runner scarcity.
             > Apple Silicon users can use the arm64 binary.
 
-            ### Linux
-            ```bash
-            curl -L -o gline-linux-amd64 https://github.com/${{ github.repository }}/releases/download/${{ steps.changelog.outputs.version }}/gline-linux-amd64
-            chmod +x gline-linux-amd64
-            sudo mv gline-linux-amd64 /usr/local/bin/gline
-            ```
-
             ### Windows
             Download `gline-windows-amd64.exe` and place it in your PATH.
 
@@ -221,8 +202,6 @@ jobs:
           echo "| Platform | Architecture |" >> $GITHUB_STEP_SUMMARY
           echo "|----------|-------------|" >> $GITHUB_STEP_SUMMARY
           echo "| macOS    | arm64       |" >> $GITHUB_STEP_SUMMARY
-          echo "| Linux    | amd64       |" >> $GITHUB_STEP_SUMMARY
           echo "| Windows  | amd64       |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "> ⚠️ darwin-amd64 and linux-arm64 excluded due to scarce free runners." >> $GITHUB_STEP_SUMMARY
           echo "📦 [View Release](https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }})" >> $GITHUB_STEP_SUMMARY
