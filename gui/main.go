@@ -6,10 +6,14 @@ import (
 	"log"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
 )
 
 //go:embed all:frontend/dist
 var assets embed.FS
+
+//go:embed build/appicon.png
+var iconBytes []byte
 
 func main() {
 	if err := initBackend(); err != nil {
@@ -31,11 +35,12 @@ func main() {
 		Mac: application.MacOptions{
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
+		Icon: iconBytes,
 	})
 
 	chatService.SetApp(app)
 
-	app.Window.NewWithOptions(application.WebviewWindowOptions{
+	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:  "gline",
 		Width:  1400,
 		Height: 900,
@@ -47,6 +52,47 @@ func main() {
 		BackgroundColour: application.NewRGB(27, 38, 54),
 		URL:              "/",
 	})
+
+	// Intercept close button (X) → hide to system tray instead of quitting
+	window.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
+		window.Hide()
+		e.Cancel()
+	})
+
+	// --- System Tray Setup ---
+	systemTray := app.SystemTray.New()
+	systemTray.SetIcon(iconBytes)
+	systemTray.AttachWindow(window)
+
+	trayMenu := app.NewMenu()
+	toggleItem := trayMenu.Add("Hide gline")
+	toggleItem.OnClick(func(ctx *application.Context) {
+		if window.IsVisible() {
+			window.Hide()
+		} else {
+			window.Show().Focus()
+		}
+	})
+
+	// Dynamically update menu label when window is hidden/shown
+	window.RegisterHook(events.Common.WindowHide, func(e *application.WindowEvent) {
+		if toggleItem != nil {
+			toggleItem.SetLabel("Show gline")
+		}
+	})
+	window.RegisterHook(events.Common.WindowShow, func(e *application.WindowEvent) {
+		if toggleItem != nil {
+			toggleItem.SetLabel("Hide gline")
+		}
+	})
+
+	trayMenu.AddSeparator()
+	trayMenu.Add("Quit").OnClick(func(ctx *application.Context) {
+		app.Quit()
+	})
+
+	systemTray.SetMenu(trayMenu)
+	// --- End System Tray Setup ---
 
 	if err := app.Run(); err != nil {
 		log.Fatal(err)

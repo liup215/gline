@@ -329,3 +329,22 @@ func (m *MockProvider) CreateMessage(ctx context.Context, req *MessageRequest) (
     return args.Get(0).(*MessageResponse), args.Error(1)
 }
 ```
+
+---
+
+## CI/CD (GitHub Actions)
+
+**触发条件**: `push` 到 `main/master`、PR、tag `v*`
+
+**工作流文件**: `.github/workflows/build.yml` (push/PR), `.github/workflows/release.yml` (tag)
+
+**构建流程**:
+1. **test** job — `go test -v ./...` + `go vet ./...`
+2. **build-frontend** job — Node.js 20, `npm ci && npm run build` in `gui/frontend`；上传 `frontend-dist` artifact
+3. **build** job — 下载 `frontend-dist` 到 `gui/frontend/dist/` → Go 交叉编译 5 平台（`cd gui && go build -o ../bin/... .`）→ 打包 `.tar.gz`/`.zip` → `sha256sum`
+4. **release** (仅 tag 触发) — 自动创建 GitHub Release + changelog + 安装说明
+
+**关键注意事项**:
+- GUI 应用通过 `//go:embed all:frontend/dist` 嵌入前端静态资源；CI 必须先完成前端构建再编译 Go，否则二进制中缺少前端页面（白屏）。
+- CLI 入口（`cmd/gline`）已废弃，当前主入口为 `gui/` 目录下的 Wails 应用。
+- `CGO_ENABLED=0` 确保纯 Go 交叉编译（零 CGO 依赖）。

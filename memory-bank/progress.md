@@ -110,11 +110,12 @@
 12. **P2.5 错误边界** ✅
 13. **@ 文件引用** ✅
 14. **`/clear` 保留 workingDir** ✅
+15. **P2.2 系统托盘集成** ✅ — 左键切换窗口显示/隐藏，右键菜单含 Show/Hide 动态标签 + Quit
 
 ## 建议下一步
 
 Phase 2 剩余 + Phase 3:
-1. **P2.2 系统托盘集成** (1天) — Wails v3 System Tray API
-2. **P2.4 构建产物优化** (1天) — Makefile `make gui` 跨平台打包
-3. **前端测试补足** — .tsx 零测试覆盖技术债务
-4. **Phase 3 MCP 支持** (长期价值)
+1. **P2.4 构建产物优化** (0.5天) — Taskfile `dev` / `build` 目标统一
+2. **前端测试补足** — .tsx 零测试覆盖技术债务
+3. **Phase 3 MCP 支持** (长期价值)
+4. **Phase 3 LiteLLM 多提供商统一** — `litellmcreds` 规范与引导流程

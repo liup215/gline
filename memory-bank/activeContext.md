@@ -21,7 +21,7 @@
 
 ## 历史完成记录
 
-### Phase 1 & 2 完成总结（2025-01-12）
+### Phase 1 & 2 完成总结（已完整）
 
 | 子任务 | 说明 | 状态 | 文件 |
 |--------|------|------|------|
@@ -29,6 +29,7 @@
 | P1.2 `/reload` 联动 | Slash 命令 reload 显示结果提示 | ✅ | `useChat.ts`, `slash/commands.go` |
 | P1.3 移除 @ 误导 | 输入框提示移除 | ✅ | `InputArea.tsx` |
 | P1.4 主题切换占位 | Theme select disabled | ✅ | `SettingsPanel.tsx` |
+| P2.2 系统托盘集成 | 左键切换显示/隐藏，右键菜单含 Show/Hide、Quit | ✅ | `gui/main.go` |
 | P2.3 废弃 TUI 清理 | 删除 `internal/ui/` | ✅ | `cmd/gline/chat.go`, `root.go`, `go.mod` |
 | P2.5 前端错误边界 | ErrorBoundary 避免白屏 | ✅ | `ErrorBoundary.tsx`, `main.tsx` |
 
@@ -53,9 +54,17 @@
 | Wails v3 alpha | ⚠️ 持续跟踪 | alpha 版本，binding 需注意 |
 | 主题系统 | ⚠️ 占位 | select disabled |
 
+## 最新变更
+
+### GitHub Actions 构建修复（2025-07-04）
+- **问题**: `build.yml` 和 `release.yml` 只编译了 Go 后端，完全没有构建前端（React/TypeScript），导致发布的二进制中前端资源为空/不完整。
+- **修复**: 在两个工作流中新增 `build-frontend` job，Node.js 环境编译 `gui/frontend`；Go build job 通过 artifact 下载 `frontend/dist`；修正构建路径为 `cd gui && go build`。
+- **文件**: `.github/workflows/build.yml`, `.github/workflows/release.yml`
+
 ## 下一步建议
 
-1. **P2.2 系统托盘集成** (1天) — Wails v3 System Tray API
-2. **P2.4 构建优化** (1天) — Makefile/Taskfile `make gui` 目标
-3. **前端测试补足** — Jest/Vitest 从零建立测试
-4. **Phase 3 MCP 支持** (长期)
+1. **P2.4 构建优化** (0.5天) — Taskfile `dev` / `build` 目标统一
+2. **前端测试补足** — Jest/Vitest 从零建立测试
+3. **Phase 3 MCP 支持** (长期) — 引入 Model Context Protocol
+4. **Phase 3 LiteLLM 多提供商统一** — `litellmcreds` 规范与引导流程
+5. **System Tray 后续增强** — 未读消息角标、快速状态预览（可选）
