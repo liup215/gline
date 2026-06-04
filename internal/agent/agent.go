@@ -9,8 +9,10 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/liup215/gline/internal/log"
+	"github.com/liup215/gline/internal/memory"
 	"github.com/liup215/gline/internal/prompts"
 	"github.com/liup215/gline/internal/storage"
 	"github.com/liup215/gline/internal/tools"
@@ -89,6 +91,9 @@ type Options struct {
 	// Store is the optional persistent storage for conversation history
 	Store storage.Store
 
+	// MemoryEngine is the optional unified memory engine ( facts + wiki + rag )
+	MemoryEngine *memory.UnifiedEngine
+
 	// Title is the optional task title (used when creating a new task)
 	Title string
 
@@ -110,10 +115,11 @@ type BaseAgent struct {
 	consecutiveMistakes    int
 	customRules            string
 
-	store     storage.Store // persistent storage
-	taskID    string        // current task ID
-	taskTitle string        // current task title
-	workingDir string      // project working directory
+	store        storage.Store        // persistent storage
+	memoryEngine *memory.UnifiedEngine // optional unified memory engine
+	taskID       string
+	taskTitle    string
+	workingDir   string
 
 	// Stream pre-dispatch: tool calls start executing while the SSE stream is still ongoing.
 	pendingToolCallsMu     sync.Mutex
@@ -167,6 +173,7 @@ func New(opts Options) (*BaseAgent, error) {
 		maxConsecutiveMistakes: maxMistakes,
 		customRules:            opts.CustomRules,
 		store:                  opts.Store,
+		memoryEngine:           opts.MemoryEngine,
 		taskTitle:              opts.Title,
 	}, nil
 }
@@ -234,6 +241,12 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 			toolDescs = prompts.GetPlanModeToolDescriptions()
 		}
 		systemPrompt := prompts.GetSystemPrompt(string(a.mode), toolDescs, a.customRules)
+
+		// ── Memory context injection (Phase 5) ────────────────────────────
+		memoryCtx := a.buildMemoryContext(ctx, prompt)
+		if memoryCtx != "" {
+			systemPrompt += "\n\n" + memoryCtx
+		}
 
 		// Trim conversation if it exceeds token budget before sending.
 		a.conversation.TrimToMaxTokens()
@@ -504,6 +517,12 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 	}
 
 	callback.OnComplete()
+
+	// ── Post-conversation async fact extraction (Phase 4) ──────────────
+	if a.memoryEngine != nil && a.conversation.IsComplete() {
+		a.extractFactsAsync()
+	}
+
 	return nil
 }
 
@@ -731,6 +750,109 @@ func (a *BaseAgent) ReloadCustomRules() (bool, []prompts.RuleFileInfo, error) {
 // GetCustomRulesInfo returns metadata about available rule files without reloading content.
 func (a *BaseAgent) GetCustomRulesInfo() ([]prompts.RuleFileInfo, error) {
 	return prompts.GetCustomRulesInfo()
+}
+
+// buildMemoryContext queries all four memory layers and builds an
+// LLM-friendly context block. It is injected into the system prompt.
+// This is designed to be fast (<150ms) because it only reads from SQLite.
+func (a *BaseAgent) buildMemoryContext(ctx context.Context, prompt string) string {
+	if a.memoryEngine == nil {
+		return ""
+	}
+	
+	// Use a short timeout to avoid blocking the conversation
+	ctx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
+	defer cancel()
+	
+	var parts []string
+	
+	// 1. Fact layer (always include, lightweight)
+	facts, err := a.memoryEngine.FactStore.Search(ctx, prompt, memory.FactSearchOptions{TopK: 5})
+	if err == nil && len(facts) > 0 {
+		var b strings.Builder
+		b.WriteString("## Relevant Facts\n")
+		for _, f := range facts {
+			b.WriteString("- ")
+			b.WriteString(f.Sentence())
+			b.WriteString(fmt.Sprintf(" (confidence: %.2f)\n", f.Confidence))
+		}
+		parts = append(parts, b.String())
+	}
+	
+	// 2. RAG layer (if documents exist in any KB)
+	// Query each KB with default search
+	kbs, _ := a.memoryEngine.ListKB(ctx)
+	for _, kb := range kbs {
+		if kb.ChunkCount == 0 {
+			continue
+		}
+		vecs, err := memory.EmbedAndNormalize(ctx, a.memoryEngine.Embedder, []string{prompt})
+		if err != nil {
+			continue
+		}
+		chunks, err := a.memoryEngine.RAGEngine.Search(ctx, kb.ID, vecs[0], prompt, 3, 0.5)
+		if err == nil && len(chunks) > 0 {
+			var b strings.Builder
+			b.WriteString(fmt.Sprintf("## Knowledge Base: %s\n", kb.Name))
+			for _, c := range chunks {
+				b.WriteString(fmt.Sprintf("> [from %s] %s...\n", c.DocID, truncate(c.Content, 200)))
+			}
+			parts = append(parts, b.String())
+		}
+		// Only search the first KB with results to save tokens
+		break
+	}
+	
+	if len(parts) == 0 {
+		return ""
+	}
+	
+	var result strings.Builder
+	result.WriteString("═══ Memory Context ═══\n")
+	result.WriteString("The following context may help you answer. Use it if relevant.\n\n")
+	for _, p := range parts {
+		result.WriteString(p)
+		result.WriteString("\n")
+	}
+	return result.String()
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
+}
+
+// extractFactsAsync runs after a completed conversation to extract
+// semantic facts in the background. It never blocks the caller.
+func (a *BaseAgent) extractFactsAsync() {
+	// Build a simple conversation transcript
+	msgs := a.conversation.GetMessages()
+	if len(msgs) < 2 {
+		return
+	}
+	var b strings.Builder
+	for _, m := range msgs {
+		if m.Role == types.RoleUser {
+			b.WriteString("User: ")
+			b.WriteString(m.Content)
+			b.WriteString("\n")
+		} else if m.Role == types.RoleAssistant {
+			b.WriteString("Assistant: ")
+			b.WriteString(m.Content)
+			b.WriteString("\n")
+		}
+	}
+	transcript := b.String()
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		extractor := memory.NewFactExtractor()
+		// Phase 4: extract then persist via FactStore.Add when LLM integration is wired.
+		_, _ = extractor.Extract(ctx, transcript)
+	}()
 }
 
 // processStream handles the streaming response from the LLM

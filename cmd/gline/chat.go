@@ -84,6 +84,15 @@ func initializeAgent() (*agent.BaseAgent, error) {
 		Store:        store,
 	}
 
+	// Optionally initialise memory engine if embedding is configured
+	memoryEngine, err := newMemoryEngine()
+	if err != nil {
+		log.Warnf("Memory engine not initialised: %v", err)
+	} else {
+		opts.MemoryEngine = memoryEngine
+		log.Info("Memory engine initialised")
+	}
+
 	// Create agent
 	agentInstance, err := agent.New(opts)
 	if err != nil {

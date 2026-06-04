@@ -23,6 +23,9 @@ type Config struct {
 
 	// Logging settings
 	Log LogConfig `mapstructure:"log"`
+
+	// Memory / knowledge base settings
+	Memory MemoryConfig `mapstructure:"memory"`
 }
 
 // ProviderConfig holds LLM provider settings
@@ -65,6 +68,30 @@ type LogConfig struct {
 
 	// Log file path
 	File string `mapstructure:"file"`
+}
+
+// MemoryConfig holds knowledge base and memory layer settings
+type MemoryConfig struct {
+	// Embedding provider: openai, ollama
+	Embedding MemoryEmbeddingConfig `mapstructure:"embedding"`
+
+	// Retrieval parameters
+	Retrieval MemoryRetrievalConfig `mapstructure:"retrieval"`
+}
+
+// MemoryEmbeddingConfig configures the embedding model used for RAG.
+type MemoryEmbeddingConfig struct {
+	Provider string `mapstructure:"provider"` // openai | ollama
+	Model    string `mapstructure:"model"`
+	APIKey   string `mapstructure:"api_key"`
+	BaseURL  string `mapstructure:"base_url"`
+}
+
+// MemoryRetrievalConfig controls how results are fetched from memory layers.
+type MemoryRetrievalConfig struct {
+	TopK      int     `mapstructure:"top_k"`
+	MinScore  float64 `mapstructure:"min_score"`
+	MaxTokens int     `mapstructure:"max_tokens"`
 }
 
 // Manager handles configuration loading and access
@@ -116,6 +143,11 @@ func (m *Manager) setupDefaults() {
 	m.viper.SetDefault("ui.animations", true)
 	m.viper.SetDefault("log.level", "info")
 	m.viper.SetDefault("log.file", filepath.Join(getGlobalConfigDir(), "logs", "gline.log"))
+	m.viper.SetDefault("memory.embedding.provider", "openai")
+	m.viper.SetDefault("memory.embedding.model", "text-embedding-3-small")
+	m.viper.SetDefault("memory.retrieval.top_k", 5)
+	m.viper.SetDefault("memory.retrieval.min_score", 0.6)
+	m.viper.SetDefault("memory.retrieval.max_tokens", 2000)
 }
 
 // loadGlobalConfig loads configuration from global config directory
