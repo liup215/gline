@@ -1,5 +1,4 @@
 import hljs from 'highlight.js';
-import 'highlight.js/styles/github-dark.css';
 import { marked } from 'marked';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
@@ -93,7 +92,7 @@ function _renderKatex(tex: string, displayMode: boolean): string {
       strict: false,
     });
   } catch (e) {
-    return `<span style="color:#ef4444;font-family:monospace;">${displayMode ? '$$' : '$'}${tex}${displayMode ? '$$' : '$'}</span>`;
+    return `<span style="color:${THEME.toastError};font-family:monospace;">${displayMode ? '$$' : '$'}${tex}${displayMode ? '$$' : '$'}</span>`;
   }
 }
 
@@ -113,9 +112,9 @@ function _processFootnotes(content: string): string {
 
   const usedLabels = Object.keys(defs).filter(l => text.includes(`data-fn="${l}"`));
   if (usedLabels.length > 0) {
-    let footnotesHtml = '\n\n<div class="md-footnotes"><hr style="border:none;border-top:1px solid #1e293b;margin:16px 1px 8px 0;"/><h4 style="font-size:0.9rem;color:#94a3b8;margin:0 0 8px;">Footnotes</h4><ol style="padding-left:1.2em;margin:0;font-size:0.85rem;color:#94a3b8;">';
+    let footnotesHtml = `\n\n<div class="md-footnotes"><hr style="border:none;border-top:1px solid ${THEME.footnoteBorder};margin:16px 1px 8px 0;"/><h4 style="font-size:0.9rem;color:${THEME.footnoteText};margin:0 0 8px;">Footnotes</h4><ol style="padding-left:1.2em;margin:0;font-size:0.85rem;color:${THEME.footnoteText};">`;
     usedLabels.forEach(label => {
-      footnotesHtml += `<li id="fn-${label}"><span style="color:#cbd5e1;">${escapeHtml(defs[label])}</span></li>`;
+      footnotesHtml += `<li id="fn-${label}"><span style="color:${THEME.textMuted};">${escapeHtml(defs[label])}</span></li>`;
     });
     footnotesHtml += '</ol></div>';
     text = text + footnotesHtml;
@@ -182,26 +181,26 @@ export function formatContent(content: string): string {
     const rawCode = tempDiv.textContent || '';
     const b64 = btoa(unescape(encodeURIComponent(rawCode)));
     return `<pre style="position:relative;background:${THEME.codeBg};padding:14px;border-radius:8px;overflow-x:auto;margin:10px 0;border:1px solid ${THEME.border};">
-<span class="hljs-lang-label" style="position:absolute;top:0;left:0;padding:2px 8px;border-radius:8px 0 6px 0;background:rgba(255,255,255,0.06);color:#94a3b8;font-size:0.7rem;font-family:monospace;text-transform:uppercase;">${cleanLang}</span>
-<button class="hljs-copy-btn" onclick="window.__copyCode(this)" data-clipboard="${b64}" title="Copy code" style="position:absolute;top:8px;right:8px;padding:4px 10px;border-radius:6px;border:none;background:rgba(255,255,255,0.08);color:#94a3b8;font-size:0.75rem;cursor:pointer;z-index:10;">📋 Copy</button>
+<span class="hljs-lang-label" style="position:absolute;top:0;left:0;padding:2px 8px;border-radius:8px 0 6px 0;background:${THEME.optionBg};color:${THEME.textMuted};font-size:0.7rem;font-family:monospace;text-transform:uppercase;">${cleanLang}</span>
+<button class="hljs-copy-btn" onclick="window.__copyCode(this)" data-clipboard="${b64}" title="Copy code" style="position:absolute;top:8px;right:8px;padding:4px 10px;border-radius:6px;border:none;background:${THEME.optionBg};color:${THEME.textMuted};font-size:0.75rem;cursor:pointer;z-index:10;">📋 Copy</button>
 <code class="hljs language-${cleanLang}">${code}</code>
 </pre>`;
   });
 
-  html = html.replace(/<code>/g, `<code style="background:#2d2d3a;padding:2px 6px;border-radius:4px;font-size:0.9em;font-family:monospace;color:#cdd6f4;">`);
+  html = html.replace(/<code>/g, `<code style="background:${THEME.codeInlineBg};padding:2px 6px;border-radius:4px;font-size:0.9em;font-family:monospace;color:${THEME.codeInlineText};">`);
 
-  html = html.replace(/<ul>/g, `<ul style="padding-left:1.5em;margin:8px 0;color:#cbd5e1;list-style-type:disc;">`);
-  html = html.replace(/<ol>/g, `<ol style="padding-left:1.5em;margin:8px 0;color:#cbd5e1;list-style-type:decimal;">`);
-  html = html.replace(/<blockquote>/g, `<blockquote style="border-left:3px solid #3b82f6;margin:8px 0;padding-left:14px;color:#94a3b8;font-style:italic;">`);
-  html = html.replace(/<hr\s*\/?>/g, `<hr style="border:none;border-top:1px solid #1e293b;margin:12px 0;"/>`);
+  html = html.replace(/<ul>/g, `<ul style="padding-left:1.5em;margin:8px 0;color:${THEME.text};list-style-type:disc;">`);
+  html = html.replace(/<ol>/g, `<ol style="padding-left:1.5em;margin:8px 0;color:${THEME.text};list-style-type:decimal;">`);
+  html = html.replace(/<blockquote>/g, `<blockquote style="border-left:3px solid ${THEME.accent};margin:8px 0;padding-left:14px;color:${THEME.textMuted};font-style:italic;">`);
+  html = html.replace(/<hr\s*\/?>/g, `<hr style="border:none;border-top:1px solid ${THEME.border};margin:12px 0;"/>`);
 
   html = html.replace(/<table>/g, `<table style="width:100%;border-collapse:collapse;margin:10px 0;font-size:0.9em;">`);
-  html = html.replace(/<thead>/g, `<thead style="background:#1e293b;">`);
-  html = html.replace(/<th>/g, `<th style="text-align:left;padding:8px 12px;border-bottom:1px solid #334155;color:#e2e8f0;font-weight:600;">`);
-  html = html.replace(/<td>/g, `<td style="padding:8px 12px;border-bottom:1px solid #1e293b;color:#cbd5e1;">`);
+  html = html.replace(/<thead>/g, `<thead style="background:${THEME.tableHeadBg};">`);
+  html = html.replace(/<th>/g, `<th style="text-align:left;padding:8px 12px;border-bottom:1px solid ${THEME.tableBorder};color:${THEME.text};font-weight:600;">`);
+  html = html.replace(/<td>/g, `<td style="padding:8px 12px;border-bottom:1px solid ${THEME.border};color:${THEME.text};">`);
 
-  html = html.replace(/<a /g, `<a style="color:#60a5fa;text-decoration:underline;" `);
-  html = html.replace(/<code style="background:#2d2d3a;padding:2px 6px;border-radius:4px;font-size:0.9em;font-family:monospace;color:#cdd6f4;">\s*\n/g, '<code>\n');
+  html = html.replace(/<a /g, `<a style="color:${THEME.linkColor};text-decoration:underline;" `);
+  html = html.replace(new RegExp(`<code style="background:${THEME.codeInlineBg};padding:2px 6px;border-radius:4px;font-size:0.9em;font-family:monospace;color:${THEME.codeInlineText};">\\s*\\n`, 'g'), '<code>\n');
 
   html = html.replace(new RegExp(`<p>${MATH_PLACEHOLDER_BLOCK}(\\d+)<\\/p>`, 'g'), (_match, idx) => {
     return _renderKatex(blockMath[parseInt(idx)], true);

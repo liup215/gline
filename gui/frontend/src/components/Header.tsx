@@ -35,7 +35,7 @@ export function Header({ sidebarOpen, setSidebarOpen, activeTaskID, status, isLo
         {isLoading && (
           <button
             onClick={onStop}
-            style={{ padding: '6px 14px', borderRadius: '6px', border: '1px solid #ef4444', background: 'transparent', color: '#ef4444', cursor: 'pointer', fontSize: '0.8rem' }}
+            style={{ padding: '6px 14px', borderRadius: '6px', border: `1px solid ${THEME.toastError}`, background: 'transparent', color: THEME.toastError, cursor: 'pointer', fontSize: '0.8rem' }}
           >
             ⏹ Stop
           </button>

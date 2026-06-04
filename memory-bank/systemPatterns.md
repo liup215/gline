@@ -40,7 +40,9 @@ CLI 子命令 (保留): gline history / gline config / gline version
 
 ```
 gui/frontend/src/
-├── theme.ts               # THEME 常量
+├── theme.ts               # THEME 常量 + CSS 变量映射 + applyThemeColors()
+├── ThemeContext.tsx       # React Context 主题管理 (localStorage 持久化)
+├── ThemeContext.tsx       # React Context 主题管理 (localStorage 持久化)
 ├── types.ts               # Message、AppStatus 等类型
 ├── utils/
 │   └── format.ts          # formatContent、useHighlightCode、代码复制

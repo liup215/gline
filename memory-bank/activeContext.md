@@ -1,17 +1,34 @@
 # Active Context
 
-## 当前焦点
+## Current Focus
 
-### Phase 2.5 技术债务清偿完成（2026-06-20）
+### Uncommitted Changes (Working Tree)
+
+| File | Change | Notes |
+|------|--------|-------|
+| `gui/frontend/src/theme.ts` | +28 new color tokens | `inputBg`, `cardBg`, `overlayBg`, `toastBg`, `toastSuccess`, `toastError`, `codeInlineBg`, `codeInlineText`, `optionBg`, `optionHoverBg`, `linkColor`, `spinner`, `tableHeadBg`, `tableBorder`, `footnoteText`, `footnoteBorder`, `highlightJsTheme`, `userTextColor`, `statusSuccessBg`, `statusSuccessBorder`, `statusSuccessText`, `statusPendingBg`, `statusPendingBorder`, `statusPendingText`, `logoGradientStart`, `logoGradientEnd` |
+| `gui/frontend/index.html` | FOUC prevention script + hljs link | Inline `<script>` reads `localStorage.getItem('gline-theme')` and syncs all CSS variables before React mounts; `<link id="hljs-theme">` for dynamic highlight.js stylesheet |
+| `gui/frontend/src/components/*.tsx` | THEME variable adoption | All components migrated from hardcoded hex values to `THEME.*` references (stop button, sidebar, message list, settings panel, input area, etc.) |
+| `gui/frontend/src/utils/format.ts` | Refactored | Significant refactoring of formatting utilities |
+| `gui/frontend/public/styles/` | New directory | `hljs-github-dark.css` + `hljs-github-light.css` for code-block theme switching |
+
+**Scope**: P2.5.3 Theme System Component Integration — the CSS-variable-based theme system is being expanded from the initial skeleton to full component coverage, including highlight.js theme synchronization.
+
+**Status**: Code complete, uncommitted. Needs final review / commit.
+
+---
+
+### Phase 2.5 技术债务清偿完成（2026-06-04）
 
 | 子任务 | 说明 | 状态 | 文件 |
 |--------|------|------|------|
 | **P2.5.1 前端测试骨架** | Vitest + @testing-library/react + jsdom 安装；`format.test.ts` 10 用例通过；npm scripts 集成 | ✅ | `package.json`, `vite.config.ts`, `vitest.setup.ts`, `utils/format.test.ts` |
-| **P2.5.2 主题系统完备** | THEME 拆分为 Dark/Light 色板 + CSS 变量方案；ThemeContext 管理状态并持久化；SettingsPanel 启用切换；所有组件零修改即可响应主题 | ✅ | `theme.ts`, `ThemeContext.tsx`, `main.tsx`, `SettingsPanel.tsx`, `index.html` |
+| **P2.5.2 主题系统初版** | THEME 拆分为 Dark/Light 色板 + CSS 变量方案；ThemeContext 管理状态并持久化；SettingsPanel 启用切换；所有组件零修改即可响应主题 | ✅ | `theme.ts`, `ThemeContext.tsx`, `main.tsx`, `SettingsPanel.tsx`, `index.html` |
+| **P2.5.3 主题系统组件全面集成** | 新增 28 个 CSS 变量；全组件硬编码颜色迁移到 `THEME.*`；highlight.js 样式动态切换；FOUC  prevention | 🔄 未提交 | `theme.ts`, `index.html`, `components/*.tsx`, `public/styles/` |
 
 ### 历史焦点
 
-#### Phase 2 全面完成（2026-06-20）
+#### Phase 2 全面完成（2026-06-04）
 
 Phase 2 全部子任务已完成：
 - P2.2 系统托盘集成 ✅
@@ -19,7 +36,7 @@ Phase 2 全部子任务已完成：
 - P2.4 构建产物优化 ✅ （本次完成）
 - P2.5 前端错误边界 ✅
 
-接下来进入 Phase 3 规划或优先技术债务清偿。之前详细记录的 2025-07-04 性能阻塞点修复内容如下：
+接下来进入 Phase 3 规划或优先技术债务清偿。之前详细记录的 2026-06-04 性能阻塞点修复内容如下：
 
 **用户反馈**: 对话"越用越慢"，定位并修复了 3 个明确阻塞点 + 1 个隐性累加 bug。
 
@@ -56,7 +73,7 @@ Phase 2 全部子任务已完成：
 
 ---
 
-### 2026-XX-XX — Agent 构建错误修复 ✅
+### 2026-06-04 — Agent 构建错误修复 ✅
 - **问题**: `SubmitHandler` 中直接实例化 `ai.NewAgent()` 返回 `*ai.Agent`，不包含 `client` 和 `Close()`，不满足 `agent.Agent` 接口要求。
 - **修复**: 恢复为 `NewRuntimeAgent(auth)`，正确满足 `Agent` 接口（包含完整客户端和生命周期方法）。
 - **文件**: `internal/agent/agent.go`
@@ -68,6 +85,8 @@ Phase 2 全部子任务已完成：
 - **Go 版本**: 1.25.0
 - **GUI 框架**: Wails v3.0.0-alpha.95
 - **操作系统**: Windows 11
+- **Git HEAD**: `52d9db6` — docs(memory-bank): update Phase 2.5 completion and tech debt status
+- **未提交变更**: 14 files modified, 2 new files (hljs theme stylesheets)
 
 ## 技术债务
 
@@ -76,39 +95,25 @@ Phase 2 全部子任务已完成：
 | TUI 代码 | ✅ 已清理 | `internal/ui/` 删除 |
 | 前端测试 | ✅ 骨架已建 | Vitest 运行通过，`format.test.ts` 10 个用例 |
 | Wails v3 alpha | ⚠️ 持续跟踪 | alpha 版本，binding 需注意 |
-| 主题系统 | ✅ 已完备 | Dark/Light 可切换，localStorage 持久化 |
+| 主题系统 | 🔄 组件集成中 | CSS 变量初版已完备，全组件迁移已完成（未提交） |
 
 ## 最新变更
 
-### GitHub Actions 构建修复（2025-07-04）
-- **问题**: `build.yml` 和 `release.yml` 只编译了 Go 后端，完全没有构建前端（React/TypeScript），导致发布的二进制中前端资源为空/不完整。
-- **修复**: 在两个工作流中新增 `build-frontend` job，Node.js 环境编译 `gui/frontend`；Go build job 通过 artifact 下载 `frontend/dist`；修正构建路径为 `cd gui && go build`。
-- **文件**: `.github/workflows/build.yml`, `.github/workflows/release.yml`
+### ask_followup_question 终止对话修复（2026-06-04）
+- **问题**: Agent 在收到用户回答后调用 `SetComplete()` 停止运行，导致对话终止。
+- **修复**: 从 `SetComplete` switch 中移除 `ToolAskFollowupQuestion`；同时引入 pre-dispatch 优化（流式期间预执行工具调用）。
+- **影响**: 追问后对话继续正常流转。
+- **文件**: `internal/agent/agent.go`
 
-## 最新变更（2026-06-19）
-
-### GitHub Actions CI 重构
-- **问题**: `build.yml` / `release.yml` 只编译 Go 后端，不构建前端 React，导致产物中前端资源为空白。
-- **修复**:
-  - **`build.yml`**: 新建 `test` + `build` matrix（5 平台），安装 wails3 CLI，Linux 装 GTK/WebKit 依赖，wails3 build 在 `gui/` 目录下执行，上传裸二进制 artifact。
-  - **`release.yml`**: Release Artifacts 上传裸二进制（非 zip），覆盖 darwin-amd64/arm64, linux-amd64/arm64, windows-amd64。
-- **依赖约束**: `go.mod` 保持 `go 1.25.0`（`modernc.org/sqlite`/`libc`/`x/sys` 要求 `go >= 1.25.0`，无法降到 1.22）。
-
-## 已完成（本次更新）
-
-### P2.4 构建产物优化 ✅
-**范围**: Taskfile `dev` / `build` 目标统一 + CI/CD 产物路径修正  
-**对应 commits**: 系列 CI commits（`ci: refactor GitHub Actions...` 起）  
-**内容**:
-- `gui/Taskfile.yml`: `build` / `dev` / `run` / `package` 目标按 OS 分发到 `build/{OS}/Taskfile.yml`
-- `gui/build/Taskfile.yml`（common）: 统一 `build:frontend`、`generate:bindings`、`build:server`、`build:docker` 等共享目标
-- GitHub Actions 统一使用 `wails3 build`，自动集成前端构建 + 产物路径修正
-- 产物清理：移除不兼容 `-ldflags`、精简 Linux 依赖、矩阵调整为 Windows + macOS
+### 构建与 CI 修复（2026-06-04）
+- **问题**: `build.yml` 和 `release.yml` 路径与 wails3 构建流程不匹配。
+- **修复**: 合并工作流、移除 Linux 构建矩阵（runner 稀缺）、修正 artifact 下载、使用 wails3 build 统一构建。
+- **文件**: `.github/workflows/build.yml`
 
 ---
 
 ## 下一步建议
 
-1. **Phase 3 MCP 支持** (长期) — 引入 Model Context Protocol，接入外部工具源
-2. **Phase 3 LiteLLM 多提供商统一** — `litellmcreds` 规范与引导流程
-3. **System Tray 后续增强** — 未读消息角标、快速状态预览（可选）
+1. **提交未完成的 P2.5.3** — 主题系统组件集成变更（14 files）
+2. **Phase 3 MCP 支持** (长期) — 引入 Model Context Protocol，接入外部工具源
+3. **Phase 3 LiteLLM 多提供商统一** — `litellmcreds` 规范与引导流程

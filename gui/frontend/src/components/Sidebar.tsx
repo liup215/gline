@@ -23,7 +23,7 @@ export function Sidebar({ sidebarOpen, history, activeTaskID, onNewChat, onSelec
       overflow: 'hidden',
     }}>
       <div style={{ padding: '16px 20px', borderBottom: `1px solid ${THEME.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <h1 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, background: 'linear-gradient(90deg, #60a5fa, #a78bfa)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>gline</h1>
+        <h1 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, background: `linear-gradient(90deg, ${THEME.logoGradientStart}, ${THEME.logoGradientEnd})`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>gline</h1>
         <button
           style={{ background: 'transparent', border: 'none', color: THEME.textMuted, cursor: 'pointer', fontSize: '1.3rem', padding: '2px 6px', borderRadius: '6px' }}
           onClick={onNewChat}
@@ -51,7 +51,7 @@ export function Sidebar({ sidebarOpen, history, activeTaskID, onNewChat, onSelec
               borderRadius: '8px',
               marginBottom: '4px',
               cursor: 'pointer',
-              background: activeTaskID === task.ID ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
+              background: activeTaskID === task.ID ? THEME.optionBg : 'transparent',
               color: activeTaskID === task.ID ? THEME.text : THEME.textMuted,
               fontSize: '0.85rem',
               display: 'flex',
@@ -59,7 +59,7 @@ export function Sidebar({ sidebarOpen, history, activeTaskID, onNewChat, onSelec
               justifyContent: 'space-between',
               transition: 'background 0.15s',
             }}
-            onMouseEnter={e => { if (activeTaskID !== task.ID) e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+            onMouseEnter={e => { if (activeTaskID !== task.ID) e.currentTarget.style.background = THEME.optionHoverBg; }}
             onMouseLeave={e => { if (activeTaskID !== task.ID) e.currentTarget.style.background = 'transparent'; }}
           >
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
@@ -81,7 +81,7 @@ export function Sidebar({ sidebarOpen, history, activeTaskID, onNewChat, onSelec
         <button
           onClick={onOpenSettings}
           style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: `1px solid ${THEME.border}`, background: 'transparent', color: THEME.textMuted, cursor: 'pointer', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '8px', transition: 'background 0.15s' }}
-          onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
+          onMouseEnter={e => e.currentTarget.style.background = THEME.optionBg}
           onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
         >
           ⚙️ Settings

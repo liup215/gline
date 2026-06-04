@@ -30,15 +30,16 @@
 | Vite | 构建工具 | wails3 serve / npm run build |
 | Marked | Markdown 渲染 | 自定义 token 渲染器支持代码块复制、脚注 |
 | KaTeX | 数学公式 | 行内 `$$...$$` 和块级 `$$...$$` |
-| Highlight.js | 代码高亮 | 自动语言检测 + 常见语言支持 |
+| Highlight.js | 代码高亮 | 自动语言检测 + 常见语言支持；动态切换 github-dark/light 主题 |
 | Inline Style | CSS-in-JS | 所有组件使用 `style={{...}}`，无 CSS 模块 |
+| CSS Variables | 主题系统 | 28+ 个 CSS 自定义属性，ThemeContext + localStorage 持久化 |
 
 ## 项目结构
 
 ```
 gline/
 ├── cmd/
-│   └── gline/                   # CLI 命令入口
+│   └── gline/                   # CLI 命令入口（保留子命令）
 │       ├── main.go
 │       ├── root.go
 │       ├── chat.go
@@ -49,7 +50,6 @@ gline/
 │   │   ├── provider.go
 │   │   └── executor.go
 │   ├── api/                     # LLM 提供商
-│   │   ├── anthropic.go
 │   │   ├── openai.go
 │   │   └── registry.go
 │   ├── tools/                   # 工具系统
@@ -60,7 +60,6 @@ gline/
 │   │   └── search.go
 │   ├── prompts/                 # 提示词管理
 │   │   ├── system.go
-│   │   ├── tools.go
 │   │   └── rules.go             # 自定义规则加载
 │   ├── storage/                 # 数据持久化
 │   │   ├── store.go
@@ -69,20 +68,38 @@ gline/
 │   │   └── history.go
 │   ├── config/                  # 配置管理
 │   │   └── config.go
-│   ├── ui/                      # 已废弃 (Bubbletea TUI)
 │   ├── log/                     # 日志系统
-│   └── utils/                   # 工具函数
+│   ├── slash/                   # Slash 命令系统
+│   │   ├── commands.go
+│   │   ├── parser.go
+│   │   └── registry.go
+│   └── version/                 # 版本信息
 ├── pkg/
 │   └── types/                   # 共享类型
 │       ├── message.go
-│       ├── tool.go
-│       └── conversation.go
-├── gui/                         # Wails v3 GUI 应用
-│   ├── main.go                  # GUI 入口
-│   ├── backend.go               # 后端服务
-│   ├── chat_service.go          # 聊天服务
-│   ├── frontend/                # 前端资源 (Vite + React)
-│   ├── build/                   # 构建脚本
+│       ├── message_type.go
+│       ├── render_strategy.go
+│       ├── slash_command.go
+│       ├── tool_names.go
+│       └── tool_phases.go
+├── gui/                         # Wails v3 GUI 应用（主入口）
+│   ├── main.go                  # Wails 应用入口
+│   ├── backend.go               # Backend 初始化
+│   ├── chat_service.go          # ChatService（Wails Service，暴露给前端）
+│   ├── file_service.go          # FileService（@ 引用 + 目录浏览）
+│   ├── slash_service.go         # SlashCommand service（Wails bridge）
+│   ├── frontend/                # 前端资源 (Vite + React + TypeScript)
+│   │   ├── src/
+│   │   │   ├── theme.ts         # 主题色板 + CSS 变量
+│   │   │   ├── ThemeContext.tsx # 主题 Context + localStorage
+│   │   │   ├── main.tsx         # 入口（ThemeProvider 包裹 App）
+│   │   │   ├── App.tsx
+│   │   │   ├── components/      # 18+ UI 组件
+│   │   │   ├── hooks/           # 业务逻辑 Hooks
+│   │   │   └── utils/           # 格式化工具 + 测试
+│   │   ├── public/styles/       # highlight.js 主题 CSS
+│   │   └── index.html           # FOUC prevention script
+│   ├── build/                   # 构建脚本（Taskfile 按 OS 分发）
 │   └── Taskfile.yml             # GUI 构建任务
 ├── Makefile
 ├── go.mod
@@ -336,15 +353,17 @@ func (m *MockProvider) CreateMessage(ctx context.Context, req *MessageRequest) (
 
 **触发条件**: `push` 到 `main/master`、PR、tag `v*`
 
-**工作流文件**: `.github/workflows/build.yml` (push/PR), `.github/workflows/release.yml` (tag)
+**工作流文件**: `.github/workflows/build.yml` (统一工作流)
 
 **构建流程**:
-1. **test** job — `go test -v ./...` + `go vet ./...`
-2. **build-frontend** job — Node.js 20, `npm ci && npm run build` in `gui/frontend`；上传 `frontend-dist` artifact
-3. **build** job — 下载 `frontend-dist` 到 `gui/frontend/dist/` → Go 交叉编译 5 平台（`cd gui && go build -o ../bin/... .`）→ 打包 `.tar.gz`/`.zip` → `sha256sum`
-4. **release** (仅 tag 触发) — 自动创建 GitHub Release + changelog + 安装说明
+1. **test** job (ubuntu-24.04) — `go test -v ./...` + `go vet ./...`
+2. **build** matrix (macos-latest, windows-latest) — 安装 wails3 CLI → `cd gui && wails3 build` → 上传裸二进制 artifact
+3. **build-summary** (仅 PR) — 汇总 artifact 列表到 GitHub Step Summary
+4. **release** (仅 tag `v*` 触发) — 下载 artifacts → 创建 GitHub Release + changelog + 安装说明
+5. **snapshot** (仅 main/master push) — 创建/更新 `snapshot` tag 预发布版本
 
 **关键注意事项**:
-- GUI 应用通过 `//go:embed all:frontend/dist` 嵌入前端静态资源；CI 必须先完成前端构建再编译 Go，否则二进制中缺少前端页面（白屏）。
-- CLI 入口（`cmd/gline`）已废弃，当前主入口为 `gui/` 目录下的 Wails 应用。
+- GUI 应用通过 `//go:embed all:frontend/dist` 嵌入前端静态资源；wails3 build 自动集成前端编译。
+- Linux 构建已从 CI 矩阵中移除（runner 稀缺），依赖安装复杂。Linux 用户可从源码构建。
 - `CGO_ENABLED=0` 确保纯 Go 交叉编译（零 CGO 依赖）。
+- CLI 入口（`cmd/gline`）已废弃，当前主入口为 `gui/` 目录下的 Wails 应用。

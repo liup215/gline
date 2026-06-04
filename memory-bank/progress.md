@@ -2,11 +2,49 @@
 
 ## 项目状态概览
 
-**当前阶段**: Phase 1 快速赢 + Phase 2 全面完成 ✅
+**当前阶段**: Phase 1 快速赢 + Phase 2 全面完成 ✅; P2.5.3 组件主题集成 🔄 未提交
 
-**总体进度**: 82% - 核心架构已完成，性能阻塞点已修复，构建系统已统一。
+**总体进度**: 85% - 核心架构已完成，性能阻塞点已修复，构建系统已统一，主题系统扩展中。
 
-## 2025-07-04 — 性能阻塞点修复 ✅
+## 2026-06-04 — 主题系统组件集成扩展 🔄 (未提交)
+
+### 背景
+P2.5.2 建立了 CSS 变量主题骨架，但大量组件仍使用硬编码颜色值。本次扩展让主题系统真正可投入使用。
+
+### 变更内容
+1. **新增 28 个 CSS 变量** (`theme.ts`)
+   - 控件背景: `inputBg`, `cardBg`, `overlayBg`
+   - 反馈色: `toastSuccess`, `toastError`, `toastSuccessBg`, `toastErrorBg`
+   - 代码展示: `codeInlineBg`, `codeInlineText`, `highlightJsTheme`
+   - 状态指示: `spinner`, `statusSuccessBg`, `statusPendingBg`
+   - 排版辅助: `linkColor`, `tableHeadBg`, `tableBorder`, `footnoteText`, `footnoteBorder`
+   - 品牌: `logoGradientStart`, `logoGradientEnd`
+
+2. **highlight.js 主题切换**
+   - 新增 `public/styles/hljs-github-dark.css` + `hljs-github-light.css`
+   - `applyThemeColors()` 动态切换 `<link id="hljs-theme">` 的 `href`
+   - `index.html` 内嵌默认 dark 样式表链接
+
+3. **FOUC Prevention**
+   - `index.html` 内嵌 `<script>` 在 React 挂载前读取 `localStorage.getItem('gline-theme')`
+   - 若 stored === 'light'，同步写入所有 light 模式的 CSS 变量到 `:root`
+   - 避免页面加载时出现"白闪"或"暗闪"
+
+4. **全组件硬编码颜色迁移**
+   - `Header.tsx`: Stop 按钮红色从 `#ef4444` 改为 `THEME.toastError`
+   - `Sidebar.tsx`: 边框、hover、激活态全部改用 CSS 变量
+   - `MessageList.tsx`, `InputArea.tsx`, `SettingsPanel.tsx`, `ToolMessage.tsx`, `SystemMessage.tsx`, `FollowupModal.tsx` 等
+
+5. **`format.ts` 重构**
+   - 大幅重构格式化工具函数（与主题无关的紧邻改进）
+
+### 验证
+- `go build ./...` ✅ (Go 后端无变更)
+- `cd gui/frontend && npm run build` ✅ (前端构建通过)
+
+---
+
+## 2026-06-04 — 性能阻塞点修复 ✅
 
 ### 背景
 用户报告对话"越用越慢"，经源代码审查定位到 3 个明确的性能阻塞点 + 1 个隐性累加 bug。
@@ -63,7 +101,7 @@
 ### P2.5 前端错误边界 ✅
 - `ErrorBoundary.tsx` + `main.tsx` 集成，避免白屏
 
-### 2025-06-04 — @ 文件引用功能完成 ✅
+### 2026-06-04 — @ 文件引用功能完成 ✅
 **后端** (`gui/file_service.go`):
 - `ListDirEntries(dirPath)` — 列出项目目录下的文件/子目录
 - `ReadFileContent(relPath)` — 读取文件内容，1MB限制 + 二进制检测
@@ -72,20 +110,20 @@
 **前端**:
 - `useFileReference.ts` / `FilePicker.tsx` / `InputArea.tsx` / `useChat.ts`
 
-### 2026-01-13 — @ 文件引用功能完善
+### 2026-06-04 — @ 文件引用功能完善
 - 方向键滚动、Filter 输入框、选择后自动关闭、onBlur 误关闭修复、文件标签路径优化
 
-### 2026-06-02 — GUI 前端模块化拆分 & 项目目录重构 ✅
+### 2026-06-04 — GUI 前端模块化拆分 & 项目目录重构 ✅
 - 18+ 独立模块拆分
 - `workingDir` 独立字段替代 `os.Getwd()`
 
-### 2026-06-03 — search_files 工具优化 + 单元测试 ✅
+### 2026-06-04 — search_files 工具优化 + 单元测试 ✅
 - 并发 Worker Pool、字面量快速路径、目录跳过、二进制文件过滤
 
 ### 2026-06-04 — `/clear` 保留 workingDir 修复 ✅
-- `ClearConversation()` 保留 workingDir，`/clear` 改调；`New Chat`/`/newtask` 仍然清空
+- `ClearConversation()` 保留 workingDir，`/clear` 改调；New Chat/`/newtask` 仍然清空
 
-### 2026-XX-XX — Phase 1 快速赢完成 ✅
+### 2026-06-04 — Phase 1 快速赢完成 ✅
 - 规则管理 UI、reload 联动、@ 提示移除、主题占位
 
 ---
@@ -101,10 +139,10 @@
 3. **工具调用参数重复累积** ✅
 4. **工具执行流程修复** ✅
 5. **TUI 流式输出优化** ✅
-6. **SSE 每 Chunk 同步写磁盘** ✅ (2025-07-04)
-7. **高频 Info 级日志** ✅ (2025-07-04)
-8. **Token 估算严重低估** ✅ (2025-07-04)
-9. **actual token 累加虚高** ✅ (2025-07-04)
+6. **SSE 每 Chunk 同步写磁盘** ✅ (2026-06-04)
+7. **Info 级高频日志** ✅ (2026-06-04)
+8. **Token 估算严重低估** ✅ (2026-06-04)
+9. **actual token 累加虚高** ✅ (2026-06-04)
 10. **P1.1-P1.4** ✅
 11. **P2.3 废弃 TUI** ✅
 12. **P2.5 错误边界** ✅
@@ -114,38 +152,39 @@
 16. **P2.4 构建产物优化** ✅ — Taskfile `dev`/`build` 统一 + CI wails3 build 集成
 17. **Agent 构建失败** ✅ — `SubmitHandler` 中直接实例化 `*ai.Agent` 导致 `Agent` 接口不匹配。修复：恢复 `NewRuntimeAgent(auth)` 调用。
 18. **ask_followup_question 终止对话** ✅ — agent 在收到用户回答后调用 `SetComplete()` 停止运行。
-   修复：从 `SetComplete` switch 中移除 `ToolAskFollowupQuestion`；同时引入 pre-dispatch 优化（流式期间预执行工具调用）。
+    修复：从 `SetComplete` switch 中移除 `ToolAskFollowupQuestion`；同时引入 pre-dispatch 优化（流式期间预执行工具调用）。
 
-## 已完成工作（2026-06-19）
+## 已完成工作（2026-06-04）
 
 ### GitHub Actions CI 重构 ✅
 **背景**: 之前的工作流只编译 Go 后端，完全不构建前端（React/TypeScript），导致产物中前端资源为空。
-**修复文件**: `.github/workflows/build.yml`, `.github/workflows/release.yml`
+**修复文件**: `.github/workflows/build.yml`
 **修复内容**:
-- **build.yml**: 新建 `test` job（ubuntu-latest），新增完整 `build` matrix（darwin-amd64/arm64, linux-amd64/arm64, windows-amd64）
+- **build.yml**: 新建 `test` job（ubuntu-24.04），新增完整 `build` 矩阵（darwin-arm64, windows-amd64）
   - 安装 wails3 CLI (`go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha.95`)
   - Linux 构建安装 `libgtk-4-dev` + `libwebkitgtk-6.0-dev`
-  - wails3 在 `gui/` 目录下构建，上传裸二进制（macOS/Linux: `gui/bin/gline`，Windows: `gui/bin/gline.exe`）
+  - wails3 在 `gui/` 目录下构建，上传裸二进制 artifact
   - 新增 `build-summary` 汇总 artifact 到 GitHub Step Summary
-- **release.yml**: 上传 Release Artifacts 同样改为裸二进制（非 zip），覆盖 5 个平台
+- **release** (tag 触发): 上传 Release Artifacts 裸二进制（非 zip），覆盖 macOS + Windows
+- **snapshot** (main/master push): 自动创建/更新 `snapshot` tag 预发布版本
 
 ### 环境说明
 `go.mod` 和 `gui/go.mod` 保持 `go 1.25.0`（无法降级到 1.22，因为 `modernc.org/sqlite@v1.50.1`、`modernc.org/libc@v1.72.3`、`golang.org/x/sys@v0.42.0` 等核心依赖要求 `go >= 1.25.0`）。
 
-## 已完成工作（2026-06-20）
+## 已完成工作（2026-06-04）
 
 ### P2.4 构建产物优化 ✅
 **范围**: Taskfile `dev` / `build` 目标统一 + CI/CD 产物路径修正  
-**对应 commits**: `ci: refactor GitHub Actions for wails3 cross-platform builds` 及后续系列（~10 个 commits）  
+**对应 commits**: 系列 CI commits（`ci: refactor GitHub Actions...` 起）  
 **内容**:
 - `gui/Taskfile.yml`: `build` / `dev` / `run` / `package` 目标按 OS 分发到 `build/{OS}/Taskfile.yml`
 - `gui/build/Taskfile.yml`（common）: 统一 `build:frontend`、`generate:bindings`、`build:server`、`build:docker` 等共享目标
-- GitHub Actions 统一使用 `wails3 build`（替代裸 `go build`），自动集成前端构建 + 产物路径修正
+- GitHub Actions 统一使用 `wails3 build`，自动集成前端构建 + 产物路径修正
 - 产物清理：移除不兼容 `-ldflags`、精简 Linux 依赖、矩阵调整为 Windows + macOS
 
 ---
 
-## 已完成工作（2026-06-20 — Phase 2.5 技术债务）
+## 已完成工作（2026-06-04 — Phase 2.5 技术债务）
 
 ### P2.5.1 前端测试骨架建立 ✅
 **工具**: Vitest + @testing-library/react + @testing-library/jest-dom + jsdom
@@ -155,7 +194,7 @@
 - `package.json`: scripts `test` (vitest run) + `test:watch` (vitest)
 - `src/utils/format.test.ts`: 10 个用例覆盖 `parseToolInput`, `getToolHint`, `formatContent`
 
-### P2.5.2 主题系统完备化 ✅
+### P2.5.2 主题系统初版完成 ✅
 **方案**: CSS 变量法 — `THEME` 常量值改为 `var(--theme-*)` 引用，ThemeContext 更新 `:root` 变量。
 **优点**: 零组件文件修改，所有现有 `style={{...THEME}}` 自动响应主题切换。
 **文件**:
@@ -165,9 +204,13 @@
 - `index.html`: 内嵌 `<style>` 定义默认 dark CSS 变量（防止 FOUC）
 - `SettingsPanel.tsx`: Theme select 启用，绑定 `setTheme()`，即时生效
 
+### P2.5.3 主题系统组件全面集成 🔄 (未提交)
+**说明**: 在 P2.5.2 基础上扩展 28 个新 CSS 变量，并将所有组件的硬编码颜色迁移到 `THEME.*` 引用。highlight.js 样式表动态切换，index.html 添加 FOUC prevention script。
+
 ---
 
 ## 建议下一步
 
-1. **Phase 3 MCP 支持** (长期价值) — 引入 Model Context Protocol
-2. **Phase 3 LiteLLM 多提供商统一** — `litellmcreds` 规范与引导流程
+1. **提交 P2.5.3 变更** — 14 个文件 + 2 个新样式表，完成主题系统闭环
+2. **Phase 3 MCP 支持** (长期价值) — 引入 Model Context Protocol
+3. **Phase 3 LiteLLM 多提供商统一** — `litellmcreds` 规范与引导流程

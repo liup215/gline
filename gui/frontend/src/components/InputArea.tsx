@@ -137,9 +137,9 @@ export function InputArea({
                     gap: '4px',
                     padding: '3px 8px',
                     borderRadius: '6px',
-                    background: 'rgba(59,130,246,0.15)',
-                    border: '1px solid rgba(59,130,246,0.3)',
-                    color: '#93c5fd',
+                    background: THEME.optionBg,
+                    border: `1px solid ${THEME.accent}4d`,
+                    color: THEME.linkColor,
                     fontSize: '0.78rem',
                     whiteSpace: 'nowrap',
                     maxWidth: '240px',
@@ -154,7 +154,7 @@ export function InputArea({
                     style={{
                       background: 'transparent',
                       border: 'none',
-                      color: '#93c5fd',
+                      color: THEME.linkColor,
                       cursor: 'pointer',
                       fontSize: '0.85rem',
                       padding: '0 2px',
@@ -171,7 +171,7 @@ export function InputArea({
 
           <input
             ref={chatInputRef}
-            style={{ width: '100%', padding: '12px 16px', borderRadius: '10px', border: `1px solid ${THEME.border}`, background: '#1e293b', color: THEME.text, fontSize: '0.95rem', outline: 'none', transition: 'border-color 0.2s', boxSizing: 'border-box' }}
+            style={{ width: '100%', padding: '12px 16px', borderRadius: '10px', border: `1px solid ${THEME.border}`, background: THEME.inputBg, color: THEME.text, fontSize: '0.95rem', outline: 'none', transition: 'border-color 0.2s', boxSizing: 'border-box' }}
             value={input}
             onChange={e => {
               setInput(e.target.value);
@@ -192,7 +192,7 @@ export function InputArea({
         </div>
         <button
           type="submit"
-          style={{ padding: '12px 20px', borderRadius: '10px', border: 'none', background: isLoading || !input.trim() || !canChat ? '#334155' : THEME.accent, color: '#fff', cursor: isLoading || !input.trim() || !canChat ? 'not-allowed' : 'pointer', fontSize: '0.95rem', fontWeight: 500, transition: 'background 0.2s' }}
+          style={{ padding: '12px 20px', borderRadius: '10px', border: 'none', background: isLoading || !input.trim() || !canChat ? THEME.textDim + '40' : THEME.accent, color: THEME.userTextColor, cursor: isLoading || !input.trim() || !canChat ? 'not-allowed' : 'pointer', fontSize: '0.95rem', fontWeight: 500, transition: 'background 0.2s' }}
           disabled={isLoading || !input.trim() || !canChat}
         >
           {isLoading ? '⏳' : (!canChat ? 'Select Folder' : 'Send')}
@@ -207,9 +207,9 @@ export function InputArea({
         gap: '6px',
         marginTop: '8px',
         fontSize: '0.72rem',
-        color: '#636e7b',
+        color: THEME.textMuted,
       }}>
-        Type <span style={{ color: '#8B5CF6', fontWeight: 600 }}>/</span> for slash commands · <span style={{ color: '#3b82f6', fontWeight: 600 }}>@</span> for files
+        Type <span style={{ color: THEME.accent, fontWeight: 600 }}>/</span> for slash commands · <span style={{ color: THEME.accent, fontWeight: 600 }}>@</span> for files
       </div>
 
       {/* Status Bar */}
@@ -218,12 +218,12 @@ export function InputArea({
           <span title="Model">🤖 {status.model || status.provider || 'unknown'}</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span>Context</span>
-            <div style={{ width: '80px', height: '6px', borderRadius: '3px', background: '#1e293b', overflow: 'hidden' }}>
+            <div style={{ width: '80px', height: '6px', borderRadius: '3px', background: THEME.inputBg, overflow: 'hidden' }}>
               <div style={{
                 width: `${Math.min(100, (parseInt(status.currentTokens || '0') / Math.max(1, parseInt(status.maxTokens || '1'))) * 100)}%`,
                 height: '100%',
                 borderRadius: '3px',
-                background: parseInt(status.currentTokens || '0') > parseInt(status.maxTokens || '0') * 0.8 ? '#ef4444' : '#3b82f6',
+                background: parseInt(status.currentTokens || '0') > parseInt(status.maxTokens || '0') * 0.8 ? THEME.toastError : THEME.accent,
                 transition: 'width 0.3s',
               }} />
             </div>
@@ -236,9 +236,9 @@ export function InputArea({
           style={{
             padding: '3px 10px',
             borderRadius: '6px',
-            border: `1px solid ${mode === 'act' ? 'rgba(59,130,246,0.4)' : 'rgba(168,85,247,0.4)'}`,
-            background: mode === 'act' ? 'rgba(59,130,246,0.1)' : 'rgba(168,85,247,0.1)',
-            color: mode === 'act' ? '#60a5fa' : '#c084fc',
+            border: `1px solid ${mode === 'act' ? THEME.accent + '66' : 'rgba(168,85,247,0.4)'}`,
+            background: mode === 'act' ? THEME.accent + '1a' : 'rgba(168,85,247,0.1)',
+            color: mode === 'act' ? THEME.accent : '#c084fc',
             cursor: 'pointer',
             fontSize: '0.72rem',
             fontWeight: 600,

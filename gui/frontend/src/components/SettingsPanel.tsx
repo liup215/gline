@@ -87,7 +87,7 @@ export function SettingsPanel({
   /* ── shared styles ── */
   const inputStyle: React.CSSProperties = {
     width: '100%', padding: '10px 14px', borderRadius: '8px',
-    border: `1px solid ${THEME.border}`, background: '#1e293b',
+    border: `1px solid ${THEME.border}`, background: THEME.inputBg,
     color: THEME.text, fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box',
   };
   const labelStyle: React.CSSProperties = {
@@ -96,7 +96,7 @@ export function SettingsPanel({
   };
   const selectStyle: React.CSSProperties = {
     width: '100%', padding: '10px 14px', borderRadius: '8px',
-    border: `1px solid ${THEME.border}`, background: '#1e293b',
+    border: `1px solid ${THEME.border}`, background: THEME.inputBg,
     color: THEME.text, fontSize: '0.9rem', outline: 'none',
     cursor: 'pointer', boxSizing: 'border-box',
   };
@@ -210,8 +210,8 @@ export function SettingsPanel({
         <div style={{
           padding: '8px 12px',
           borderRadius: '6px',
-          background: rulesMessage.includes('✅') ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-          color: rulesMessage.includes('✅') ? '#4ade80' : '#f87171',
+          background: rulesMessage.includes('✅') ? THEME.toastSuccessBg : THEME.toastErrorBg,
+          color: rulesMessage.includes('✅') ? THEME.toastSuccess : THEME.toastError,
           fontSize: '0.8rem',
           marginBottom: '10px',
         }}>
@@ -229,15 +229,16 @@ export function SettingsPanel({
         <div style={{
           padding: '16px 14px',
           borderRadius: '8px',
-          background: 'rgba(30, 41, 59, 0.5)',
+          background: THEME.bgChat,
           color: THEME.textDim,
           fontSize: '0.85rem',
           textAlign: 'center',
+          border: `1px solid ${THEME.border}`,
         }}>
           <div style={{ marginBottom: '6px' }}>📭 No custom rules found</div>
           <div style={{ fontSize: '0.75rem' }}>
-            Create <code style={{ background: '#1e293b', padding: '2px 6px', borderRadius: '4px' }}>.clinerules</code> in your workspace
-            or <code style={{ background: '#1e293b', padding: '2px 6px', borderRadius: '4px' }}>~/.gline/clinerules</code> globally.
+            Create <code style={{ background: THEME.inputBg, padding: '2px 6px', borderRadius: '4px' }}>.clinerules</code> in your workspace
+            or <code style={{ background: THEME.inputBg, padding: '2px 6px', borderRadius: '4px' }}>~/.gline/clinerules</code> globally.
           </div>
         </div>
       ) : (
@@ -249,7 +250,7 @@ export function SettingsPanel({
               style={{
                 padding: '10px 14px',
                 borderRadius: '8px',
-                background: '#1e293b',
+                background: THEME.inputBg,
                 border: `1px solid ${THEME.border}`,
                 display: 'flex',
                 alignItems: 'center',
@@ -305,7 +306,7 @@ export function SettingsPanel({
     <div
       style={{
         position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-        background: 'rgba(0, 0, 0, 0.6)', backdropFilter: 'blur(4px)',
+        background: THEME.overlayBg, backdropFilter: 'blur(4px)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         zIndex: 1000,
       }}
@@ -314,7 +315,7 @@ export function SettingsPanel({
       <div
         style={{
           width: '520px', maxHeight: '85vh',
-          background: '#111827', border: `1px solid ${THEME.border}`,
+          background: THEME.cardBg, border: `1px solid ${THEME.border}`,
           borderRadius: '14px', padding: '24px 28px',
           color: THEME.text, boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
           display: 'flex', flexDirection: 'column',
@@ -332,8 +333,8 @@ export function SettingsPanel({
         {saveMessage && (
           <div style={{
             padding: '10px 14px', borderRadius: '8px',
-            background: saveMessage.includes('success') ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-            color: saveMessage.includes('success') ? '#4ade80' : '#f87171',
+            background: saveMessage.includes('success') ? THEME.toastSuccessBg : THEME.toastErrorBg,
+            color: saveMessage.includes('success') ? THEME.toastSuccess : THEME.toastError,
             fontSize: '0.85rem', marginBottom: '12px',
           }}>
             {saveMessage}
@@ -358,7 +359,7 @@ export function SettingsPanel({
                   padding: '10px 0',
                   background: 'transparent',
                   border: 'none',
-                  borderBottom: isActive ? '2px solid #3b82f6' : '2px solid transparent',
+                  borderBottom: isActive ? `2px solid ${THEME.accent}` : '2px solid transparent',
                   color: isActive ? THEME.text : THEME.textDim,
                   fontSize: '0.85rem',
                   fontWeight: isActive ? 600 : 400,
@@ -385,7 +386,7 @@ export function SettingsPanel({
         {/* ── Footer buttons ── */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px', paddingTop: '12px', borderTop: `1px solid ${THEME.border}` }}>
           <button onClick={onClose} style={{ padding: '10px 20px', borderRadius: '8px', border: `1px solid ${THEME.border}`, background: 'transparent', color: THEME.textMuted, cursor: 'pointer', fontSize: '0.9rem' }}>Cancel</button>
-          <button onClick={handleSave} style={{ padding: '10px 24px', borderRadius: '8px', border: 'none', background: THEME.accent, color: '#fff', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 500 }}>Save Settings</button>
+          <button onClick={handleSave} style={{ padding: '10px 24px', borderRadius: '8px', border: 'none', background: THEME.accent, color: THEME.userTextColor, cursor: 'pointer', fontSize: '0.9rem', fontWeight: 500 }}>Save Settings</button>
         </div>
       </div>
     </div>

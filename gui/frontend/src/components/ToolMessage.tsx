@@ -16,13 +16,13 @@ export function ToolMessage({ toolName, toolInput, toolResult }: ToolMessageProp
     const input = parseToolInput(toolInput);
     return (
       <div style={{ display: 'flex', justifyContent: 'flex-start', padding: '0 24px', marginBottom: '12px' }}>
-        <div style={{ maxWidth: '75%', background: 'rgba(59,130,246,0.10)', border: `1px solid rgba(59,130,246,0.30)`, borderRadius: '14px 14px 14px 4px', padding: '12px 16px', lineHeight: 1.5, fontSize: '0.92rem', color: THEME.text }}>
-          <div style={{ fontSize: '0.72rem', color: '#60a5fa', marginBottom: '6px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Question</div>
+        <div style={{ maxWidth: '75%', background: THEME.optionBg, border: `1px solid ${THEME.linkColor}4d`, borderRadius: '14px 14px 14px 4px', padding: '12px 16px', lineHeight: 1.5, fontSize: '0.92rem', color: THEME.text }}>
+          <div style={{ fontSize: '0.72rem', color: THEME.accentHover, marginBottom: '6px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Question</div>
           <div>{hint.slice(2).trim()}</div>
           {input.options && input.options.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px' }}>
               {input.options.map((opt: string, oi: number) => (
-                <span key={oi} style={{ padding: '4px 10px', borderRadius: '6px', background: 'rgba(59,130,246,0.15)', color: '#93c5fd', fontSize: '0.82rem', border: '1px solid rgba(59,130,246,0.25)' }}>{opt}</span>
+                <span key={oi} style={{ padding: '4px 10px', borderRadius: '6px', background: THEME.optionBg, color: THEME.linkColor, fontSize: '0.82rem', border: `1px solid ${THEME.linkColor}40` }}>{opt}</span>
               ))}
             </div>
           )}
@@ -41,9 +41,9 @@ export function ToolMessage({ toolName, toolInput, toolResult }: ToolMessageProp
           gap: '8px',
           padding: '4px 12px',
           borderRadius: '20px',
-          background: done ? 'rgba(74, 222, 128, 0.08)' : 'rgba(251, 191, 36, 0.08)',
-          border: `1px solid ${done ? 'rgba(74, 222, 128, 0.25)' : 'rgba(251, 191, 36, 0.25)'}`,
-          color: done ? '#4ade80' : '#fbbf24',
+          background: done ? THEME.statusSuccessBg : THEME.statusPendingBg,
+          border: `1px solid ${done ? THEME.statusSuccessBorder : THEME.statusPendingBorder}`,
+          color: done ? THEME.statusSuccessText : THEME.statusPendingText,
           fontSize: '0.78rem',
           fontFamily: '"SFMono-Regular", Consolas, monospace',
           lineHeight: 1.4,

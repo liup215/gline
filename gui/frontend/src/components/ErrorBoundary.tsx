@@ -1,4 +1,5 @@
 import { Component, ErrorInfo, ReactNode } from 'react';
+import { THEME } from '../theme';
 
 interface Props {
   children: ReactNode;
@@ -37,8 +38,8 @@ export class ErrorBoundary extends Component<Props, State> {
           justifyContent: 'center',
           height: '100vh',
           width: '100vw',
-          background: '#111827',
-          color: '#e5e7eb',
+          background: THEME.cardBg,
+          color: THEME.text,
           fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
           padding: '40px',
           textAlign: 'center',
@@ -47,15 +48,15 @@ export class ErrorBoundary extends Component<Props, State> {
           <h1 style={{ margin: '0 0 12px', fontSize: '1.5rem', fontWeight: 600 }}>
             Something went wrong
           </h1>
-          <p style={{ margin: '0 0 24px', color: '#9ca3af', maxWidth: '400px', lineHeight: 1.5 }}>
+          <p style={{ margin: '0 0 24px', color: THEME.textMuted, maxWidth: '400px', lineHeight: 1.5 }}>
             gline encountered an unexpected error. Click reload to restart the application.
           </p>
           <pre style={{
-            background: '#1e293b',
+            background: THEME.inputBg,
             padding: '16px',
             borderRadius: '8px',
             fontSize: '0.8rem',
-            color: '#ef4444',
+            color: THEME.toastError,
             maxWidth: '600px',
             maxHeight: '200px',
             overflow: 'auto',
@@ -70,8 +71,8 @@ export class ErrorBoundary extends Component<Props, State> {
               padding: '10px 24px',
               borderRadius: '8px',
               border: 'none',
-              background: '#3b82f6',
-              color: '#fff',
+              background: THEME.accent,
+              color: THEME.userTextColor,
               fontSize: '0.95rem',
               fontWeight: 500,
               cursor: 'pointer',
