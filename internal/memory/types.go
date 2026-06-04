@@ -60,7 +60,10 @@ type FactSearchOptions struct {
 
 // FactStore is the Layer-1 persistence interface.
 type FactStore interface {
+	// Add takes raw text, extracts facts, and stores them.
 	Add(ctx context.Context, text string, source ConversationRef) ([]FactChange, error)
+	// Apply persists pre-extracted fact changes directly.
+	Apply(ctx context.Context, changes []FactChange) error
 	Search(ctx context.Context, query string, opts FactSearchOptions) ([]Fact, error)
 	GetByEntity(ctx context.Context, entity string) ([]Fact, error)
 	GetByCategory(ctx context.Context, cat FactCategory) ([]Fact, error)

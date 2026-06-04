@@ -9,10 +9,13 @@ import (
 	"time"
 )
 
-// FactExtractor uses an LLM to extract, compare, and categorise semantic facts.
+// FactExtractor uses an LLM (or fallback rules) to extract semantic facts.
 type FactExtractor struct {
 	MinConfidence float64
 	MaxFacts      int
+	// Caller is invoked when set; otherwise ruleBasedExtract is used as fallback.
+	// Signature: func(ctx, systemPrompt, userContent string) (response string, err error)
+	Caller func(ctx context.Context, systemPrompt, userContent string) (string, error)
 }
 
 // NewFactExtractor creates an extractor with defaults.
@@ -47,11 +50,27 @@ Output ONLY a JSON array. No markdown, no explanation outside the array.`
 
 // Extract turns a conversation into a list of FactChange objects.
 // This is designed to be called once per turn in a background goroutine.
+// If Caller is set, it uses the LLM for extraction; otherwise falls back to
+// a lightweight rule-based heuristic.
 func (e *FactExtractor) Extract(ctx context.Context, conversationText string) ([]FactChange, error) {
-	// Phase 4: the actual LLM call will be wired up through the agent's Provider interface.
-	// For now this is a stub that does a lightweight rule-based extraction
-	// so the layer works end-to-end before LLM integration.
-	return e.ruleBasedExtract(conversationText)
+	if e.Caller == nil {
+		return e.ruleBasedExtract(conversationText)
+	}
+	resp, err := e.Caller(ctx, ExtractPrompt, conversationText)
+	if err != nil {
+		return nil, err
+	}
+	changes, err := e.ParseFactChanges(resp)
+	if err != nil {
+		return nil, err
+	}
+	if len(changes) == 0 {
+		return nil, nil
+	}
+	if e.MaxFacts > 0 && len(changes) > e.MaxFacts {
+		changes = changes[:e.MaxFacts]
+	}
+	return changes, nil
 }
 
 // ruleBasedExtract is a lightweight fallback that doesn't require LLM.

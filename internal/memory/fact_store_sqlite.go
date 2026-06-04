@@ -84,6 +84,36 @@ func (s *SQLiteFactStore) Add(ctx context.Context, text string, source Conversat
 	return nil, fmt.Errorf("Add not yet implemented — Phase 4")
 }
 
+// Apply persists pre-extracted fact changes directly (used by LLM-driven extraction).
+func (s *SQLiteFactStore) Apply(ctx context.Context, changes []FactChange) error {
+	if len(changes) == 0 {
+		return nil
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	for _, ch := range changes {
+		switch ch.Action {
+		case "ADD", "UPDATE":
+			if err := s.upsertFact(ctx, tx, &ch.Fact); err != nil {
+				_ = tx.Rollback()
+				return err
+			}
+		case "DELETE":
+			_, err := tx.ExecContext(ctx, `DELETE FROM facts WHERE id = ?`, ch.Fact.ID)
+			if err != nil {
+				_ = tx.Rollback()
+				return err
+			}
+			_, _ = tx.ExecContext(ctx, `DELETE FROM facts_fts WHERE fact_id = ?`, ch.Fact.ID)
+		}
+	}
+	return tx.Commit()
+}
+
 // upsertFact inserts or replaces a fact.
 func (s *SQLiteFactStore) upsertFact(ctx context.Context, tx *sql.Tx, f *Fact) error {
 	var execer interface {

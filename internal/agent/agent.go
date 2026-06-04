@@ -827,6 +827,9 @@ func truncate(s string, n int) string {
 // extractFactsAsync runs after a completed conversation to extract
 // semantic facts in the background. It never blocks the caller.
 func (a *BaseAgent) extractFactsAsync() {
+	if a.memoryEngine == nil || a.memoryEngine.FactStore == nil || a.provider == nil {
+		return
+	}
 	// Build a simple conversation transcript
 	msgs := a.conversation.GetMessages()
 	if len(msgs) < 2 {
@@ -849,9 +852,31 @@ func (a *BaseAgent) extractFactsAsync() {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
+
 		extractor := memory.NewFactExtractor()
-		// Phase 4: extract then persist via FactStore.Add when LLM integration is wired.
-		_, _ = extractor.Extract(ctx, transcript)
+		extractor.Caller = func(ctx context.Context, systemPrompt, userContent string) (string, error) {
+			req := &MessageRequest{
+				Messages: []types.Message{
+					{Role: types.RoleUser, Content: userContent},
+				},
+				SystemPrompt: systemPrompt,
+				MaxTokens:    2048,
+				Temperature:  0.0,
+			}
+			resp, err := a.provider.CreateMessage(ctx, req)
+			if err != nil {
+				return "", err
+			}
+			return resp.Content, nil
+		}
+
+		changes, err := extractor.Extract(ctx, transcript)
+		if err != nil || len(changes) == 0 {
+			return
+		}
+		if err := a.memoryEngine.FactStore.Apply(ctx, changes); err != nil {
+			log.Warnf("fact extraction persist failed: %v", err)
+		}
 	}()
 }
 
