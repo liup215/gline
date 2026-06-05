@@ -11,3 +11,15 @@ func genID() string {
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
 }
+
+// Truncate limits s to maxRunes runes, appending "…" if truncated.
+func Truncate(s string, maxRunes int) string {
+	runes := []rune(s)
+	if len(runes) <= maxRunes {
+		return s
+	}
+	if maxRunes <= 3 {
+		return string(runes[:maxRunes])
+	}
+	return string(runes[:maxRunes-1]) + "…"
+}

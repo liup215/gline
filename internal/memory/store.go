@@ -8,6 +8,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/gob"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -88,6 +89,19 @@ func (s *VectorStore) migrate() error {
 		}
 	}
 	return nil
+}
+
+// GetDocumentIDByName returns the document ID for a given name in a KB, or empty if not found.
+func (s *VectorStore) GetDocumentIDByName(ctx context.Context, kbID, name string) (string, error) {
+	var id string
+	row := s.db.QueryRowContext(ctx, `SELECT id FROM documents WHERE kb_id = ? AND name = ?`, kbID, name)
+	if err := row.Scan(&id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", nil
+		}
+		return "", err
+	}
+	return id, nil
 }
 
 // StoreDocument inserts a document and its chunks.

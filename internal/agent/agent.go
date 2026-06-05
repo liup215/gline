@@ -14,7 +14,6 @@ import (
 	"github.com/liup215/gline/internal/log"
 	"github.com/liup215/gline/internal/memory"
 	"github.com/liup215/gline/internal/prompts"
-	"github.com/liup215/gline/internal/skills"
 	"github.com/liup215/gline/internal/storage"
 	"github.com/liup215/gline/internal/tools"
 	"github.com/liup215/gline/pkg/types"
@@ -122,7 +121,7 @@ type BaseAgent struct {
 	taskTitle    string
 	workingDir   string
 
-	activeSkill *skills.Skill // optional skill injected into system prompt
+	activeSkill *types.Skill // optional skill injected into system prompt
 
 	// Stream pre-dispatch: tool calls start executing while the SSE stream is still ongoing.
 	pendingToolCallsMu     sync.Mutex
@@ -741,7 +740,7 @@ func (a *BaseAgent) SetWorkingDir(dir string) {
 
 // SetSkill activates a skill so its prompt is injected into the system prompt on the next turn.
 // If the agent is currently running the skill will take effect on the next message.
-func (a *BaseAgent) SetSkill(skill *skills.Skill) {
+func (a *BaseAgent) SetSkill(skill *types.Skill) {
 	a.activeSkill = skill
 }
 
@@ -751,9 +750,17 @@ func (a *BaseAgent) ClearSkill() {
 }
 
 // GetSkill returns the currently active skill, or nil if none.
-func (a *BaseAgent) GetSkill() *skills.Skill {
+func (a *BaseAgent) GetSkill() *types.Skill {
 	return a.activeSkill
 }
+
+// GetMemoryEngine returns the optional unified memory engine, or nil.
+func (a *BaseAgent) GetMemoryEngine() *memory.UnifiedEngine {
+	return a.memoryEngine
+}
+
+// ResetMemoryExtraction no-op (placeholder for backward compatibility).
+func (a *BaseAgent) ResetMemoryExtraction() {}
 
 // ReloadCustomRules reloads custom rules from disk and updates the agent's customRules field.
 // Returns true if any rules were loaded, along with metadata about the loaded files.

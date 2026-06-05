@@ -57,7 +57,7 @@ func (c *ChatService) StartNewConversation() {
 		c.backend.ag.(*agent.BaseAgent).ResetTask()
 		c.backend.ag.(*agent.BaseAgent).SetWorkingDir("")
 		c.backend.ag.GetConversation().Clear()
-		c.backend.ag.(*agent.BaseAgent).ResetMemoryExtraction()
+		// Note: Memory system reset removed (incompatible with current agent architecture)
 	}
 }
 
@@ -109,8 +109,6 @@ func (c *ChatService) InitSlashRegistry() {
 			}
 			return len(infos), prompts.FormatRulesInfo(infos), nil
 		},
-		// Memory operations – wire into the unified memory engine via the agent
-		Memory: &memoryService{chat: c},
 	}
 	for _, cmd := range slash.DefaultCommands(ctx) {
 		c.cmdReg.Register(cmd)
