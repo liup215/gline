@@ -102,11 +102,11 @@ func (b *Backend) initAgent() error {
 	registry := tools.InitDefaultRegistry()
 
 	// Initialize and load skills
-	skillRegistry := skills.NewRegistry()
+	b.skillRegistry = skills.NewRegistry()
 	if _, err := skills.InitBuiltinSkills(); err != nil {
 		log.Warnf("Failed to init built-in skills: %v", err)
 	}
-	skillRegistry.LoadFromDirs(skills.DefaultSkillDirs...)
+	b.skillRegistry.LoadFromDirs(skills.DefaultSkillDirs...)
 
 	ag, err := agent.New(agent.Options{
 		Provider:     provider,
