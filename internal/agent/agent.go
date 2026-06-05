@@ -14,6 +14,7 @@ import (
 	"github.com/liup215/gline/internal/log"
 	"github.com/liup215/gline/internal/memory"
 	"github.com/liup215/gline/internal/prompts"
+	"github.com/liup215/gline/internal/skills"
 	"github.com/liup215/gline/internal/storage"
 	"github.com/liup215/gline/internal/tools"
 	"github.com/liup215/gline/pkg/types"
@@ -120,6 +121,8 @@ type BaseAgent struct {
 	taskID       string
 	taskTitle    string
 	workingDir   string
+
+	activeSkill *skills.Skill // optional skill injected into system prompt
 
 	// Stream pre-dispatch: tool calls start executing while the SSE stream is still ongoing.
 	pendingToolCallsMu     sync.Mutex
@@ -240,7 +243,7 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 		if a.mode == ModePlan {
 			toolDescs = prompts.GetPlanModeToolDescriptions()
 		}
-		systemPrompt := prompts.GetSystemPrompt(string(a.mode), toolDescs, a.customRules)
+		systemPrompt := prompts.GetSystemPrompt(string(a.mode), toolDescs, a.customRules, a.activeSkill)
 
 		// ── Memory context injection (Phase 5) ────────────────────────────
 		memoryCtx := a.buildMemoryContext(ctx, prompt)
@@ -734,6 +737,22 @@ func (a *BaseAgent) GetWorkingDir() string {
 // SetWorkingDir sets the working directory.
 func (a *BaseAgent) SetWorkingDir(dir string) {
 	a.workingDir = dir
+}
+
+// SetSkill activates a skill so its prompt is injected into the system prompt on the next turn.
+// If the agent is currently running the skill will take effect on the next message.
+func (a *BaseAgent) SetSkill(skill *skills.Skill) {
+	a.activeSkill = skill
+}
+
+// ClearSkill de-activates any currently active skill.
+func (a *BaseAgent) ClearSkill() {
+	a.activeSkill = nil
+}
+
+// GetSkill returns the currently active skill, or nil if none.
+func (a *BaseAgent) GetSkill() *skills.Skill {
+	return a.activeSkill
 }
 
 // ReloadCustomRules reloads custom rules from disk and updates the agent's customRules field.

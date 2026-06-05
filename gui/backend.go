@@ -10,6 +10,7 @@ import (
 	"github.com/liup215/gline/internal/api"
 	"github.com/liup215/gline/internal/config"
 	"github.com/liup215/gline/internal/log"
+	"github.com/liup215/gline/internal/skills"
 	"github.com/liup215/gline/internal/storage"
 	"github.com/liup215/gline/internal/tools"
 	"github.com/liup215/gline/pkg/types"
@@ -49,9 +50,10 @@ func initBackend() error {
 
 // Backend exposes the gline core to Wails frontend
 type Backend struct {
-	cfg   *config.Manager
-	store storage.Store
-	ag    agent.Agent
+	cfg            *config.Manager
+	store          storage.Store
+	ag             agent.Agent
+	skillRegistry  *skills.Registry
 }
 
 func (b *Backend) initConfig() error {
@@ -98,6 +100,13 @@ func (b *Backend) initAgent() error {
 
 	customRules := loadCustomRules()
 	registry := tools.InitDefaultRegistry()
+
+	// Initialize and load skills
+	skillRegistry := skills.NewRegistry()
+	if _, err := skills.InitBuiltinSkills(); err != nil {
+		log.Warnf("Failed to init built-in skills: %v", err)
+	}
+	skillRegistry.LoadFromDirs(skills.DefaultSkillDirs...)
 
 	ag, err := agent.New(agent.Options{
 		Provider:     provider,

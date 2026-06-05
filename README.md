@@ -27,7 +27,7 @@ Cline 的 Go 语言实现版本。
 
 ## 技术栈
 
-- **语言**: Go 1.21+
+- **语言**: Go 1.25+
 - **架构**: 模块化设计
 - **依赖管理**: Go Modules
 
@@ -38,6 +38,74 @@ go get github.com/liup215/gline
 ```
 
 ## 使用
+
+### Skill 系统（技能切换）
+
+gline 支持「Skill」系统，可以通过 `/skill-name` 命令快速切换 AI 的角色和专业能力，无需修改任何代码。
+
+#### Skill 存放位置
+
+| 范围 | 路径 | 说明 |
+|------|------|------|
+| 用户自定义 | `~/.gline/skills/` | 用户自己编写的 skill |
+| 通用 Agent | `~/.agents/skills/` | 多 Agent 共享的 skill（优先级更高） |
+
+#### 支持的文件格式
+- `.yaml` / `.yml` — YAML 格式（推荐，易于手写）
+- `.json` — JSON 格式
+
+#### Skill 文件格式（YAML）
+
+```yaml
+name: explain
+description: "Explain code or technical concepts in detail"
+prompt: |
+  You are an expert educator. When the user asks about code:
+  1. Start with a high-level summary.
+  2. Provide concrete code examples with comments.
+  3. Highlight common pitfalls and best practices.
+
+tags:
+  - education
+author: "your-name"
+version: "1.0.0"
+```
+
+#### 内置 Skill
+
+首次启动时，gline 会自动将以下内置 skill 复制到 `~/.gline/skills/`：
+
+| Skill | 命令 | 说明 |
+|-------|------|------|
+| `explain` | `/explain` | 详细解释代码或技术概念 |
+| `code-review` | `/code-review` | 代码审查专家 |
+| `refactor` | `/refactor` | 重构建议专家 |
+| `debug` | `/debug` | 系统性调试助手 |
+| `doc` | `/doc` | 生成结构化文档 |
+
+#### 使用示例
+
+1. **查看所有可用 skill**：
+   ```
+   /skill
+   ```
+
+2. **激活 code-review skill**：
+   ```
+   /code-review
+   ```
+
+3. **取消当前 skill**：
+   ```
+   /skill-off
+   ```
+
+#### Skill 与系统提示词的优先级
+
+系统提示词的拼接顺序（后面优先级更高）：
+1. 默认系统提示词
+2. Custom rules (`~/.gline/rules/`, `.gline/rules/`)
+3. **Active skill prompt** ← 你激活的 skill
 
 ### 自定义规则 / 系统提示词
 

@@ -6,11 +6,15 @@ import (
 	"os"
 	"runtime"
 	"strings"
+
+	"github.com/liup215/gline/pkg/types"
 )
 
 // GetSystemPrompt returns the appropriate system prompt for the given mode.
-// If customRules is non-empty, it is appended at the end of the prompt.
-func GetSystemPrompt(mode string, tools []ToolDescription, customRules string) string {
+// If customRules is non-empty, it is appended before the skill section.
+// If activeSkill is non-nil, its prompt is appended at the very end so that
+// it takes the highest precedence in shaping the assistant's behaviour.
+func GetSystemPrompt(mode string, tools []ToolDescription, customRules string, activeSkill *types.Skill) string {
 	var prompt strings.Builder
 
 	// Agent Role
@@ -69,6 +73,12 @@ func GetSystemPrompt(mode string, tools []ToolDescription, customRules string) s
 	if customRules != "" {
 		prompt.WriteString("\n\n# Custom Rules\n\n")
 		prompt.WriteString(customRules)
+	}
+
+	// Append active skill prompt at the very end (highest precedence)
+	if activeSkill != nil && strings.TrimSpace(activeSkill.Prompt) != "" {
+		prompt.WriteString(fmt.Sprintf("\n\n# Active Skill: %s\n\n", activeSkill.Name))
+		prompt.WriteString(activeSkill.Prompt)
 	}
 
 	return prompt.String()

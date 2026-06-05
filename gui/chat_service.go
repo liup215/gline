@@ -14,8 +14,10 @@ import (
 	"github.com/liup215/gline/internal/log"
 	"github.com/liup215/gline/internal/memory"
 	"github.com/liup215/gline/internal/prompts"
+	"github.com/liup215/gline/internal/skills"
 	"github.com/liup215/gline/internal/slash"
 	"github.com/liup215/gline/internal/storage"
+	"github.com/liup215/gline/pkg/types"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -112,6 +114,36 @@ func (c *ChatService) InitSlashRegistry() {
 	}
 	for _, cmd := range slash.DefaultCommands(ctx) {
 		c.cmdReg.Register(cmd)
+	}
+
+	// Register skill commands
+	if c.backend.skillRegistry != nil {
+		skillCmds := skills.BuildSlashCommands(
+			c.backend.skillRegistry,
+			func(skill *types.Skill) {
+				if c.backend.ag == nil {
+					return
+				}
+				baseAg, ok := c.backend.ag.(*agent.BaseAgent)
+				if !ok {
+					return
+				}
+				baseAg.SetSkill(skill)
+			},
+			func() {
+				if c.backend.ag == nil {
+					return
+				}
+				baseAg, ok := c.backend.ag.(*agent.BaseAgent)
+				if !ok {
+					return
+				}
+				baseAg.ClearSkill()
+			},
+		)
+		for _, cmd := range skillCmds {
+			c.cmdReg.Register(cmd)
+		}
 	}
 }
 
