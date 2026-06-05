@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/liup215/gline/internal/agent"
 	"github.com/liup215/gline/internal/log"
+	"github.com/liup215/gline/internal/memory"
 	"github.com/liup215/gline/internal/prompts"
 	"github.com/liup215/gline/internal/slash"
 	"github.com/liup215/gline/internal/storage"
@@ -53,6 +55,7 @@ func (c *ChatService) StartNewConversation() {
 		c.backend.ag.(*agent.BaseAgent).ResetTask()
 		c.backend.ag.(*agent.BaseAgent).SetWorkingDir("")
 		c.backend.ag.GetConversation().Clear()
+		c.backend.ag.(*agent.BaseAgent).ResetMemoryExtraction()
 	}
 }
 
@@ -104,10 +107,208 @@ func (c *ChatService) InitSlashRegistry() {
 			}
 			return len(infos), prompts.FormatRulesInfo(infos), nil
 		},
+		// Memory operations – wire into the unified memory engine via the agent
+		Memory: &memoryService{chat: c},
 	}
 	for _, cmd := range slash.DefaultCommands(ctx) {
 		c.cmdReg.Register(cmd)
 	}
+}
+
+func (c *ChatService) memoryEngine() (*memory.UnifiedEngine, error) {
+	if c.backend == nil || c.backend.ag == nil {
+		return nil, fmt.Errorf("agent not initialised")
+	}
+	baseAg, ok := c.backend.ag.(*agent.BaseAgent)
+	if !ok {
+		return nil, fmt.Errorf("agent type mismatch")
+	}
+	e := baseAg.GetMemoryEngine()
+	if e == nil {
+		return nil, fmt.Errorf("memory system not configured")
+	}
+	return e, nil
+}
+
+// ─── memoryService adapts ChatService to slash.MemoryService ───────────────
+
+type memoryService struct {
+	chat *ChatService
+}
+
+func (m *memoryService) engine() (*memory.UnifiedEngine, error) {
+	return m.chat.memoryEngine()
+}
+
+func (m *memoryService) Note(content string) error {
+	eng, err := m.engine()
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, err = eng.FactStore.Add(ctx, content, memory.ConversationRef{})
+	return err
+}
+
+func (m *memoryService) Recall(query string) (string, error) {
+	eng, err := m.engine()
+	if err != nil {
+		return "", err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	var parts []string
+	// Fact layer
+	if facts, err := eng.FactStore.Search(ctx, query, memory.FactSearchOptions{TopK: 5}); err == nil && len(facts) > 0 {
+		parts = append(parts, "### Facts")
+		for _, f := range facts {
+			parts = append(parts, fmt.Sprintf("- **%s**: %s %s %s (%.0f%%)", f.Category, f.Subject, f.Predicate, f.Object, f.Confidence*100))
+		}
+	}
+	// Wiki layer – scan all KB wiki directories for matching content
+	wikis, _ := eng.ListKB(ctx)
+	for _, kb := range wikis {
+		wikiRoot := filepath.Join(memory.KBDir(kb.ID), "wiki")
+		_ = filepath.Walk(wikiRoot, func(path string, info os.FileInfo, err error) error {
+			if err != nil || info.IsDir() || !strings.HasSuffix(info.Name(), ".md") {
+				return nil
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return nil
+			}
+			if strings.Contains(strings.ToLower(string(data)), strings.ToLower(query)) {
+				rel, _ := filepath.Rel(wikiRoot, path)
+				parts = append(parts, fmt.Sprintf("### Wiki: %s", rel))
+				parts = append(parts, memory.Truncate(string(data), 200))
+				return filepath.SkipDir // stop after first match per KB
+			}
+			return nil
+		})
+	}
+	// KB layer
+	kbs, _ := eng.ListKB(ctx)
+	if len(kbs) > 0 {
+		for _, kb := range kbs {
+			if kb.ChunkCount == 0 {
+				continue
+			}
+			vecs, err := memory.EmbedAndNormalize(ctx, eng.Embedder, []string{query})
+			if err == nil {
+				chunks, _ := eng.RAGEngine.Search(ctx, kb.ID, vecs[0], query, 3, 0.5)
+				if len(chunks) > 0 {
+					parts = append(parts, fmt.Sprintf("### Knowledge Base: %s", kb.Name))
+					for _, c := range chunks {
+						parts = append(parts, fmt.Sprintf("- [%s] %s", c.DocID, memory.Truncate(c.Content, 200)))
+					}
+					break
+				}
+			}
+		}
+	}
+	if len(parts) == 0 {
+		return "", nil
+	}
+	return strings.Join(parts, "\n"), nil
+}
+
+func (m *memoryService) Status() (string, error) {
+	eng, err := m.engine()
+	if err != nil {
+		return "", err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var b strings.Builder
+	// Fact stats
+	b.WriteString("**Memory Status**\n\n")
+	b.WriteString("📌 Facts: enabled\n")
+	// Wiki stats – count files in wiki dir
+	home, _ := os.UserHomeDir()
+	wikiDir := filepath.Join(home, ".gline", "memory", "wiki")
+	wikiFiles, _ := filepath.Glob(filepath.Join(wikiDir, "*.md"))
+	b.WriteString(fmt.Sprintf("📚 Wiki: %d pages\n", len(wikiFiles)))
+	// KB stats
+	kbs, _ := eng.ListKB(ctx)
+	if len(kbs) > 0 {
+		b.WriteString(fmt.Sprintf("📄 Knowledge Bases: %d", len(kbs)))
+		for _, kb := range kbs {
+			b.WriteString(fmt.Sprintf(" (%s: %d chunks)", kb.Name, kb.ChunkCount))
+		}
+		b.WriteString("\n")
+	} else {
+		b.WriteString("📄 Knowledge Bases: 0\n")
+	}
+	return b.String(), nil
+}
+
+// ─── Exported KB APIs ────────────────────────────────────────────────────────
+
+// KBCreate creates a new knowledge base.
+func (c *ChatService) KBCreate(name, description, kbType string) (string, error) {
+	eng, err := c.memoryEngine()
+	if err != nil {
+		return "", err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	t := memory.KBType(kbType)
+	if t != memory.KBTypeRAG {
+		t = memory.KBTypeRAG
+	}
+	kb, err := eng.InitKB(ctx, name, description, t)
+	if err != nil {
+		return "", err
+	}
+	return kb.ID, nil
+}
+
+// KBList returns the list of knowledge bases as a JSON string.
+func (c *ChatService) KBList() (string, error) {
+	eng, err := c.memoryEngine()
+	if err != nil {
+		return "", err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	kbs, err := eng.ListKB(ctx)
+	if err != nil {
+		return "", err
+	}
+	data, _ := json.Marshal(kbs)
+	return string(data), nil
+}
+
+// KBIngestFile ingests a file (e.g. PDF, DOCX, MD) into a knowledge base.
+// Only performs RAG ingestion (chunk + embed + store).
+func (c *ChatService) KBIngestFile(kbNameOrID, filePath string) error {
+	eng, err := c.memoryEngine()
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	kb, err := eng.GetKB(ctx, kbNameOrID)
+	if err != nil {
+		return fmt.Errorf("knowledge base not found: %s", kbNameOrID)
+	}
+	return eng.IngestFile(ctx, kb.ID, filePath)
+}
+
+// WikiIngestFile triggers LLM-based wiki generation for a file.
+// This is completely separate from RAG ingestion and requires a configured LLM provider.
+func (c *ChatService) WikiIngestFile(filePath, kbID string) error {
+	eng, err := c.memoryEngine()
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	return eng.WikiIngestFile(ctx, filePath, kbID)
 }
 
 // SetApp sets the application reference (called after app creation).
@@ -489,6 +690,7 @@ func (c *ChatService) GetStatus() (map[string]string, error) {
 }
 
 // GetConversationState returns the current messages in JSON form.
+// Messages are truncated to avoid exceeding Wails IPC payload limits.
 func (c *ChatService) GetConversationState() string {
 	if c.backend.ag == nil {
 		return "[]"
@@ -499,9 +701,24 @@ func (c *ChatService) GetConversationState() string {
 		Role    string `json:"role"`
 		Content string `json:"content"`
 	}
-	views := make([]msgView, len(msgs))
-	for i, m := range msgs {
-		views[i] = msgView{Role: string(m.Role), Content: m.Content}
+	const maxMsgContent = 16000   // per-message limit
+	const maxMsgs = 200          // hard cap on number of messages returned
+	start := 0
+	if len(msgs) > maxMsgs {
+		start = len(msgs) - maxMsgs
+	}
+	viewsCap := len(msgs) - start
+	if viewsCap > maxMsgs {
+		viewsCap = maxMsgs
+	}
+	views := make([]msgView, 0, viewsCap)
+	for i := start; i < len(msgs); i++ {
+		m := msgs[i]
+		content := m.Content
+		if len(content) > maxMsgContent {
+			content = content[:maxMsgContent] + "\n\n[… truncated]"
+		}
+		views = append(views, msgView{Role: string(m.Role), Content: content})
 	}
 	data, _ := json.Marshal(views)
 	return string(data)
@@ -525,6 +742,7 @@ func (g *guiStreamCallback) OnStreamStart() {
 	g.app.Event.Emit("chat:streamStart", "")
 }
 
+// OnToolCallStart is called when a tool call starts
 func (g *guiStreamCallback) OnToolCallStart(toolCall agent.ToolCall) {
 	g.app.Event.Emit("chat:toolStart", map[string]string{
 		"id":    toolCall.ID,
@@ -533,37 +751,50 @@ func (g *guiStreamCallback) OnToolCallStart(toolCall agent.ToolCall) {
 	})
 }
 
+// maxEventPayload is the maximum bytes we will emit through the Wails event
+// bus in a single call.  Anything larger is truncated to avoid IPC buffer
+// issues on Windows.
+const maxEventPayload = 2 << 20 // 2 MB
+
+func truncateEventPayload(s string) string {
+	if len(s) > maxEventPayload {
+		return s[:maxEventPayload] + "\n\n[… truncated: result too large for UI display]"
+	}
+	return s
+}
+
 func (g *guiStreamCallback) OnToolCallComplete(toolCall agent.ToolCall, result string) {
 	g.app.Event.Emit("chat:toolComplete", map[string]interface{}{
 		"id":     toolCall.ID,
 		"name":   toolCall.Name,
-		"result": result,
+		"result": truncateEventPayload(result),
 	})
 	// Special tools whose result should be shown directly to the user
 	// (not hidden behind a tool-call badge).
+	safeResult := truncateEventPayload(result)
 	switch toolCall.Name {
 	case "plan_mode_respond":
-		if result != "" {
+		if safeResult != "" {
 			g.app.Event.Emit("chat:systemMessage", map[string]interface{}{
 				"role":    "system",
-				"content": result,
+				"content": safeResult,
 			})
 		}
 	case "attempt_completion":
-		if result != "" {
+		if safeResult != "" {
 			g.app.Event.Emit("chat:systemMessage", map[string]interface{}{
 				"role":    "system",
-				"content": "📋 " + result,
+				"content": "📋 " + safeResult,
 			})
 		}
 	case "ask_followup_question":
 		// The question itself is already emitted via chat:followupQuestion
 		// but we also show the answer prompt as a system message so the user
 		// sees the question inline without needing the popup.
-		if result != "" {
+		if safeResult != "" {
 			g.app.Event.Emit("chat:systemMessage", map[string]interface{}{
 				"role":    "system",
-				"content": "💬 " + result,
+				"content": "💬 " + safeResult,
 			})
 		}
 	}

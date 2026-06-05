@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/liup215/gline/internal/log"
 )
 
 // DefaultPaths computes standard paths under ~/.gline/memory/.
@@ -93,6 +95,9 @@ func (e *UnifiedEngine) InitKB(ctx context.Context, name, description string, kb
 		Type:        kbType,
 		CreatedAt:   time.Now().UTC(),
 	}
+	if kbType != KBTypeRAG {
+		return nil, fmt.Errorf("unsupported kb type: %s (only 'rag' is supported)", kbType)
+	}
 	if err := e.Registry.Create(ctx, kb); err != nil {
 		return nil, err
 	}
@@ -100,11 +105,6 @@ func (e *UnifiedEngine) InitKB(ctx context.Context, name, description string, kb
 	dir := KBDir(kb.ID)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, err
-	}
-	if kbType == KBTypeWiki || kbType == KBTypeHybrid {
-		if err := InitWikiDirectory(kb.ID, ""); err != nil {
-			return nil, err
-		}
 	}
 	// Create RAG database
 	ragPath := filepath.Join(dir, "rag.db")
@@ -138,17 +138,41 @@ func (e *UnifiedEngine) RemoveKB(ctx context.Context, id string) error {
 	return nil
 }
 
+// findDocByName looks up an existing document by filename inside a KB.
+func (e *UnifiedEngine) findDocByName(ctx context.Context, kbID, name string) string {
+	ragPath := filepath.Join(KBDir(kbID), "rag.db")
+	vs, err := NewVectorStore(ragPath, 0)
+	if err != nil {
+		return ""
+	}
+	defer vs.Close()
+	id, _ := vs.GetDocumentIDByName(ctx, kbID, name)
+	return id
+}
+
 // ListKB returns all knowledge bases.
 func (e *UnifiedEngine) ListKB(ctx context.Context) ([]KnowledgeBase, error) {
 	return e.Registry.List(ctx)
 }
 
+// EnsureDefaultKB creates a default KB named "default" if none exists.
+func EnsureDefaultKB(ctx context.Context, e *UnifiedEngine) error {
+	list, err := e.ListKB(ctx)
+	if err != nil {
+		return err
+	}
+	if len(list) > 0 {
+		return nil // already have at least one KB
+	}
+	_, err = e.InitKB(ctx, "default", "Auto-created default KB", KBTypeRAG)
+	return err
+}
+
 // ─── High-level Ingest (add document to KB) ──────────────────────────────────
 
 // IngestFile reads a file, parses it, chunks it, embeds it, and stores in RAG.
-// For wiki/hybrid KBs it also triggers async wiki ingest and fact extraction.
 func (e *UnifiedEngine) IngestFile(ctx context.Context, kbID, filePath string) error {
-	kb, err := e.Registry.GetByID(ctx, kbID)
+	_, err := e.Registry.GetByID(ctx, kbID)
 	if err != nil {
 		return err
 	}
@@ -169,6 +193,19 @@ func (e *UnifiedEngine) IngestFile(ctx context.Context, kbID, filePath string) e
 	content, err := ParseDocument(rawPath)
 	if err != nil {
 		return err
+	}
+
+	// Deduplication: remove existing document with same name
+	oldDocID := e.findDocByName(ctx, kbID, base)
+	if oldDocID != "" {
+		ragPath := filepath.Join(KBDir(kbID), "rag.db")
+		vs, err := NewVectorStore(ragPath, e.Embedder.Dimension())
+		if err == nil {
+			_ = vs.DeleteDocument(ctx, oldDocID)
+			vs.Close()
+		}
+		_ = e.Registry.IncrementCounters(ctx, kbID, -1, 0, 0, 0) // counters fixed on re-ingest
+		// Note: chunk count adjustment happens naturally via StoreDocument below
 	}
 
 	// Build document record
@@ -214,11 +251,29 @@ func (e *UnifiedEngine) IngestFile(ctx context.Context, kbID, filePath string) e
 	}
 
 	_ = e.Registry.IncrementCounters(ctx, kbID, 1, len(chunks), 0, 0)
+	return nil
+}
 
-	// For wiki/hybrid: trigger async wiki ingest
-	if kb.Type == KBTypeWiki || kb.Type == KBTypeHybrid {
-		go e.WikiEngine.IngestAsync(kbID, doc, e.Caller)
+// WikiIngestFile parses a file and triggers LLM-based wiki generation.
+// This is completely separate from RAG ingestion — the caller must manage
+// which KB / wiki target the results belong to.
+func (e *UnifiedEngine) WikiIngestFile(ctx context.Context, filePath, kbID string) error {
+	if e.Caller == nil {
+		return fmt.Errorf("wiki ingestion requires e.Caller to be set")
 	}
-
+	content, err := ParseDocument(filePath)
+	if err != nil {
+		return fmt.Errorf("parse %s: %w", filePath, err)
+	}
+	doc := Document{
+		ID:        genID(),
+		KBID:      kbID,
+		Name:      filepath.Base(filePath),
+		Content:   content,
+		CharCount: len(content),
+		CreatedAt: time.Now().UTC(),
+	}
+	log.Infof("[Wiki] triggering standalone wiki ingest for %s (kb=%s)", doc.Name, kbID)
+	go e.WikiEngine.IngestAsync(kbID, doc, e.Caller)
 	return nil
 }

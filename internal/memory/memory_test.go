@@ -82,7 +82,7 @@ func TestKBRegistry(t *testing.T) {
 	defer reg.Close()
 
 	ctx := context.Background()
-	kb := &KnowledgeBase{Name: "test-kb", Type: KBTypeHybrid}
+	kb := &KnowledgeBase{Name: "test-kb", Type: KBTypeRAG}
 	if err := reg.Create(ctx, kb); err != nil {
 		t.Fatal(err)
 	}

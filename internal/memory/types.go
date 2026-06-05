@@ -7,6 +7,7 @@ package memory
 
 import (
 	"context"
+	"fmt"
 	"time"
 )
 
@@ -103,6 +104,7 @@ type WikiEngine interface {
 type WikiSearchOptions struct {
 	TopK     int
 	MinScore float64
+	Caller   func(ctx context.Context, systemPrompt, userContent string) (string, error)
 }
 
 // Issue reported by wiki lint.
@@ -194,6 +196,14 @@ type ConversationRef struct {
 	MessageID int64  `json:"message_id"`
 }
 
+// String returns a compact string representation for storage.
+func (c ConversationRef) String() string {
+	if c.TaskID == "" {
+		return fmt.Sprintf("msg:%d", c.MessageID)
+	}
+	return fmt.Sprintf("%s:%d", c.TaskID, c.MessageID)
+}
+
 // MessageExt are fields that can be added to the existing storage.Message
 // (migration in storage package).
 type MessageExt struct {
@@ -207,10 +217,9 @@ type MessageExt struct {
 // KBType selects the active memory layers for a knowledge base.
 type KBType string
 
+// KB 只支持 RAG 类型；Wiki 是独立操作，不通过 KB 类型耦合。
 const (
-	KBTypeRAG    KBType = "rag"
-	KBTypeWiki   KBType = "wiki"
-	KBTypeHybrid KBType = "hybrid"
+	KBTypeRAG KBType = "rag"
 )
 
 // KnowledgeBase is a user-created knowledge container.

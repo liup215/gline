@@ -22,7 +22,7 @@ var kbCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(kbCmd)
 
-	kbInitCmd.Flags().String("type", "hybrid", "KB type: rag | wiki | hybrid")
+	kbInitCmd.Flags().String("type", "rag", "KB type: rag")
 	kbCmd.AddCommand(kbInitCmd)
 	kbCmd.AddCommand(kbListCmd)
 	kbCmd.AddCommand(kbRemoveCmd)
@@ -42,8 +42,8 @@ var kbInitCmd = &cobra.Command{
 			desc = strings.Join(args[1:], " ")
 		}
 		kbType := memory.KBType(cmd.Flag("type").Value.String())
-		if kbType != memory.KBTypeRAG && kbType != memory.KBTypeWiki && kbType != memory.KBTypeHybrid {
-			fmt.Fprintf(os.Stderr, "Invalid type: %s\n", kbType)
+		if kbType != memory.KBTypeRAG {
+			fmt.Fprintf(os.Stderr, "Invalid type: %s (only 'rag' is supported)\n", kbType)
 			os.Exit(1)
 		}
 
@@ -167,7 +167,7 @@ var kbStatusCmd = &cobra.Command{
 
 var kbAddCmd = &cobra.Command{
 	Use:   "add <id|name> <file/dir>...",
-	Short: "Index files into a knowledge base",
+	Short: "Index files into a knowledge base (RAG only)",
 	Args:  cobra.MinimumNArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
 		engine, err := newMemoryEngine()
@@ -195,25 +195,27 @@ var kbAddCmd = &cobra.Command{
 				continue
 			}
 			if info.IsDir() {
-				// Recursively add supported files
-				entries, err := os.ReadDir(path)
-				if err != nil {
-					log.Warnf("Skip %s: %v", path, err)
-					continue
-				}
-				for _, entry := range entries {
-					if entry.IsDir() {
-						continue
+					// Deep-recursively add all supported files under the directory.
+					err := filepath.Walk(path, func(filePath string, fi os.FileInfo, err error) error {
+						if err != nil || fi.IsDir() {
+							return err
+						}
+						if !isSupportedDoc(filePath) {
+							return nil // silently skip unsupported files
+						}
+						rel, _ := filepath.Rel(path, filePath)
+						if err := engine.IngestFile(ctx, kb.ID, filePath); err != nil {
+							fmt.Fprintf(os.Stderr, "  ❌ %s: %v\n", rel, err)
+						} else {
+							fmt.Printf("  ✅ %s\n", rel)
+							succeeded++
+						}
+						return nil
+					})
+					if err != nil {
+						log.Warnf("Walk %s: %v", path, err)
 					}
-					filePath := filepath.Join(path, entry.Name())
-					if err := engine.IngestFile(ctx, kb.ID, filePath); err != nil {
-						fmt.Fprintf(os.Stderr, "  ❌ %s: %v\n", entry.Name(), err)
-					} else {
-						fmt.Printf("  ✅ %s\n", entry.Name())
-						succeeded++
-					}
-				}
-			} else {
+				} else {
 				if err := engine.IngestFile(ctx, kb.ID, path); err != nil {
 					fmt.Fprintf(os.Stderr, "  ❌ %s: %v\n", filepath.Base(path), err)
 				} else {
@@ -290,40 +292,14 @@ func newMemoryEngine() (*memory.UnifiedEngine, error) {
 	cfg := configManager.Get()
 	memCfg := cfg.Memory
 	
-	var embedder memory.Embedder
-	
-	switch memCfg.Embedding.Provider {
-	case "ollama":
-		embedder = memory.NewOllamaEmbedder(memCfg.Embedding.Model)
-	case "openai":
-		apiKey := memCfg.Embedding.APIKey
-		if apiKey == "" {
-			apiKey = os.Getenv("GLINE_OPENAI_API_KEY")
-		}
-		if apiKey == "" {
-			// Fall back to main provider OpenAI key
-			apiKey = cfg.Provider.OpenAI.APIKey
-		}
-		if apiKey == "" {
-			apiKey = os.Getenv("GLINE_OPENAI_API_KEY")
-		}
-		if apiKey == "" {
-			return nil, fmt.Errorf("no OpenAI API key: set memory.embedding.api_key, provider.openai.api_key, or GLINE_OPENAI_API_KEY")
-		}
-		baseURL := memCfg.Embedding.BaseURL
-		if baseURL == "" {
-			baseURL = cfg.Provider.OpenAI.BaseURL
-		}
-		emb := memory.NewOpenAIEmbedder(apiKey, memCfg.Embedding.Model)
-		if baseURL != "" {
-			emb.BaseURL = baseURL
-		}
-		embedder = emb
-	default:
-		return nil, fmt.Errorf("unknown embedding provider: %s", memCfg.Embedding.Provider)
+	embCfg := memory.EmbeddingConfig{
+		Provider:  memCfg.Embedding.Provider,
+		Model:     memCfg.Embedding.Model,
+		APIKey:    memCfg.Embedding.APIKey,
+		BaseURL:   memCfg.Embedding.BaseURL,
+		Dimension: memCfg.Embedding.Dimension,
 	}
-	
-	return memory.NewUnifiedEngine(embedder)
+	return memory.NewEngineFromConfig(embCfg, cfg.Provider.OpenAI.APIKey, cfg.Provider.OpenAI.BaseURL)
 }
 
 func truncate(s string, n int) string {
@@ -331,4 +307,21 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "..."
+}
+
+// isSupportedDoc checks whether a file extension is supported by ParseDocument.
+func isSupportedDoc(path string) bool {
+	ext := strings.ToLower(filepath.Ext(path))
+	supported := []string{
+		".md", ".txt", ".go", ".js", ".ts", ".py", ".rs", ".java",
+		".c", ".cpp", ".h", ".json", ".yaml", ".yml", ".xml", ".toml",
+		".html", ".htm",
+		".pdf", ".docx", ".xlsx", ".pptx", ".doc", ".xls", ".ppt",
+	}
+	for _, s := range supported {
+		if ext == s {
+			return true
+		}
+	}
+	return false
 }
