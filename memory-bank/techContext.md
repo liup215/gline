@@ -68,6 +68,20 @@ gline/
 │   │   └── history.go
 │   ├── config/                  # 配置管理
 │   │   └── config.go
+│   ├── memory/                  # 四层记忆引擎（Fact / Wiki / RAG / Conversation）
+│   │   ├── types.go             # 四层类型契约
+│   │   ├── engine.go            # UnifiedEngine 统一入口
+│   │   ├── store.go             # 纯 Go SQLite 向量存储（KNN + FTS5 + RRF）
+│   │   ├── wiki_engine.go       # Wiki 层 LLM 驱动 Markdown 生成
+│   │   ├── wiki_fs.go           # Wiki Markdown 文件系统
+│   │   ├── rag_engine.go        # RAG 管理器
+│   │   ├── fact_store_sqlite.go # Fact 层 SQLite 实现
+│   │   ├── fact_extractor.go    # 事实提取器
+│   │   ├── embedder.go          # 嵌入器接口 + 归一化
+│   │   ├── embedder_openai.go   # OpenAI 兼容嵌入客户端
+│   │   ├── chunk.go             # Token 感知分块
+│   │   ├── parser.go            # 文档解析器
+│   │   └── kb_registry.go       # 知识库注册表
 │   ├── log/                     # 日志系统
 │   ├── slash/                   # Slash 命令系统
 │   │   ├── commands.go
@@ -143,7 +157,54 @@ behavior:
 # 存储
 storage:
   data_dir: "~/.gline"
+
+# Memory 配置
+memory:
+  embedding:
+    provider: openai
+    model: text-embedding-3-small
 ```
+
+---
+
+## KB (RAG) 与 Wiki 解耦技术说明
+
+### 调用方式对比
+
+| 维度 | KB (RAG) | Wiki |
+|------|----------|------|
+| **依赖** | 纯本地（SQLite + Go 内存） | 强依赖 LLM |
+| **入口** | `IngestFile(kbID, filePath)` | `WikiIngestFile(filePath, kbID)` |
+| **流程** | Parse → Chunk → Embed → Store(RAG DB) | Parse → LLM(IngestPrompt) → JSON → Write markdown |
+| **触发** | 用户显式调用（工具/CLI/GUI） | 用户显式调用（独立 API） |
+| **失败行为** | 同步返回 error | Caller nil 时立即返回 error |
+| **搜索** | 向量相似度 + FTS5 + RRF | 关键词扫描 + 可选 LLM rerank |
+
+### 前端调用示例
+
+```typescript
+// RAG 知识库加入
+await KBIngestFile(kbNameOrID, filePath);
+
+// Wiki 生成（独立操作，需 LLM 配置正确）
+await WikiIngestFile(filePath, kbID);
+```
+
+### 后端调用示例
+
+```go
+// 只做 RAG
+go engine.IngestFile(ctx, kb.ID, filePath)
+
+// 只做 Wiki（必须 e.Caller != nil，否则错误）
+go engine.WikiIngestFile(ctx, filePath, kb.ID)
+```
+
+### KB 类型变更
+
+- `KBTypeRAG` ✅（唯一支持类型）
+- `KBTypeWiki` ❌（已删除）
+- `KBTypeHybrid` ❌（已删除）
 
 ### 环境变量
 

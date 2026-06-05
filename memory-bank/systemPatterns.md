@@ -160,7 +160,36 @@ func (m *ModeManager) CanUseTool(mode Mode, toolName string) bool {
 }
 ```
 
-### 4. 工具注册表模式
+### 4. KB (RAG) 与 Wiki 解耦模式（2026-06-05）
+
+**核心原则**: KB 只做本地精确检索（RAG），Wiki 走 LLM 生成。两者完全独立调用。
+
+**架构变更**:
+- KB 类型只保留 `rag`，删除 `hybrid`/`wiki`。
+- `IngestFile()` → 纯 RAG（chunk → embed → store），无 wiki 副作用。
+- `WikiIngestFile()` → 独立显式入口，直接调用 `WikiEngine.IngestAsync()`，强依赖 `e.Caller`（LLM）。
+
+**调用路径对比**:
+
+```
+KB/RAG 路径（本地，无 LLM）:
+  User: "把这文件加入知识库"
+  → KBIngestFile(kbID, filePath)
+  → ParseDocument → Chunk → Embed → StoreDocument(RAG DB)
+  ✓ Chunk + FTS5 本地搜索即可
+
+Wiki 路径（需 LLM）:
+  User: "生成 wiki 笔记"
+  → WikiIngestFile(filePath, kbID)
+  → ParseDocument → LLM(IngestPrompt) → JSON → Write markdown pages
+  要求 e.Caller != nil，否则直接返回 error
+```
+
+**前端预留**: GUI `ChatService` 同时暴露 `KBIngestFile()` 和 `WikiIngestFile()`，后续前端可添加独立 Wiki 操作面板。
+
+---
+
+### 5. 工具注册表模式
 
 ```go
 type Registry struct {

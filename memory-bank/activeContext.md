@@ -2,6 +2,23 @@
 
 ## Current Focus
 
+### KB/RAG 与 Wiki 解耦（2026-06-05）
+
+**状态**: 已完成并提交 ✅
+
+**背景**: 用户要求彻底分离 KB（RAG）和 Wiki 的调用逻辑。RAG 是纯本地精确检索，可完全由代码执行；Wiki 强依赖 LLM，涉及资料整合、Markdown 生成。两者不应耦合在同一个 `kb_ingest` 流程中。
+
+**变更内容**:
+- KB 类型只保留 `rag`，删除 `hybrid` 和 `wiki` 类型。
+- `IngestFile()` 只做 RAG（chunk + embed + store），不再自动触发 wiki 生成。
+- 新增 `WikiIngestFile()` 作为独立的显式入口，由前端或用户主动调用。
+- CLI `kb init` 默认类型改为 `rag`。
+- GUI `ChatService` 新增 `WikiIngestFile()` API 方法。
+
+**文件**: `internal/memory/types.go`, `internal/memory/engine.go`, `cmd/gline/kb.go`, `gui/chat_service.go`, `internal/memory/memory_test.go`
+
+---
+
 ### 四层记忆与知识引擎（2026-06-05）
 
 **状态**: Phases 1-6 已完成，所有测试通过 ✅；Phase 7（Fact Extractor LLM 集成）待开始。
