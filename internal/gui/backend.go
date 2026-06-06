@@ -275,10 +275,12 @@ func (b *Backend) LoadTask(taskID string) (*storage.TaskRecord, error) {
 	// Load messages from storage into the conversation
 	b.ag.GetConversation().Clear()
 	for _, m := range msgs {
-		b.ag.GetConversation().AddMessage(types.Message{
-			Role:    types.Role(m.Role),
-			Content: m.Content,
-		})
+		msg, err := m.ToTypesMessage()
+		if err != nil {
+			log.Warnf("failed to convert message record: %v", err)
+			continue
+		}
+		b.ag.GetConversation().AddMessage(msg)
 	}
 	return task, nil
 }

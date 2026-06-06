@@ -2,6 +2,9 @@
 cline/
 .claude/
 
+# Embedded frontend build artifacts (generated at build time)
+cmd/gline/frontend/dist/
+
 # Go build artifacts
 *.exe
 *.exe~
