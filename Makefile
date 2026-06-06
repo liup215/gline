@@ -8,10 +8,16 @@ COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME := $(shell date -u '+%Y-%m-%d_%H:%M:%S' 2>/dev/null || echo "unknown")
 
 # 构建参数
-LDFLAGS := -ldflags "-X github.com/liup215/gline/internal/version.Version=$(VERSION) \
+LDFLAGS_BASE := -X github.com/liup215/gline/internal/version.Version=$(VERSION) \
 	-X github.com/liup215/gline/internal/version.Commit=$(COMMIT) \
 	-X github.com/liup215/gline/internal/version.BuildTime=$(BUILD_TIME) \
-	-s -w"
+	-s -w
+
+ifeq ($(shell go env GOOS),windows)
+LDFLAGS := -ldflags "$(LDFLAGS_BASE) -H=windowsgui"
+else
+LDFLAGS := -ldflags "$(LDFLAGS_BASE)"
+endif
 
 # 目标平台
 PLATFORMS := darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64

@@ -66,9 +66,9 @@ Get started:
 		return nil
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		// If no subcommand, start interactive mode
+		// If no subcommand, launch GUI
 		if len(args) == 0 {
-			startInteractiveMode()
+			runGUI()
 		}
 	},
 }
@@ -158,19 +158,9 @@ Or start an interactive TUI chat session (default):
 			// Single message mode - non-interactive
 			runSingleMessage(agentInstance, message)
 		} else {
-			// GUI mode (TUI deprecated)
-			log.Info("Starting GUI mode - TUI deprecated")
-			fmt.Println("🚀 gline GUI Application")
-			fmt.Println("=======================")
-			fmt.Println()
-			fmt.Println("The TUI mode has been deprecated. Please use the GUI version:")
-			fmt.Println()
-			fmt.Println("  1. Build GUI: cd gui && go build -o ../bin/gline-gui.exe .")
-			fmt.Println("  2. Run GUI:   ./bin/gline-gui.exe")
-			fmt.Println()
-			fmt.Println("Or use single-message mode:")
-			fmt.Println("  gline chat \"your question here\"")
-			fmt.Println()
+			// No message argument → launch GUI
+			log.Info("No chat message provided; launching GUI")
+			runGUI()
 		}
 	},
 }

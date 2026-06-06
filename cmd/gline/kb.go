@@ -291,15 +291,23 @@ var kbSearchCmd = &cobra.Command{
 func newMemoryEngine() (*memory.UnifiedEngine, error) {
 	cfg := configManager.Get()
 	memCfg := cfg.Memory
-	
-	embCfg := memory.EmbeddingConfig{
-		Provider:  memCfg.Embedding.Provider,
-		Model:     memCfg.Embedding.Model,
-		APIKey:    memCfg.Embedding.APIKey,
-		BaseURL:   memCfg.Embedding.BaseURL,
-		Dimension: memCfg.Embedding.Dimension,
+
+	var embedder memory.Embedder
+	switch memCfg.Embedding.Provider {
+	case "ollama":
+		embedder = memory.NewOllamaEmbedder(memCfg.Embedding.Model)
+	default:
+		// Default to OpenAI-compatible embedding
+		apiKey := memCfg.Embedding.APIKey
+		if apiKey == "" {
+			apiKey = cfg.Provider.OpenAI.APIKey
+		}
+		embedder = memory.NewOpenAIEmbedder(apiKey, memCfg.Embedding.Model)
+		if memCfg.Embedding.BaseURL != "" {
+			embedder.(*memory.OpenAIEmbedder).BaseURL = memCfg.Embedding.BaseURL
+		}
 	}
-	return memory.NewEngineFromConfig(embCfg, cfg.Provider.OpenAI.APIKey, cfg.Provider.OpenAI.BaseURL)
+	return memory.NewUnifiedEngine(embedder)
 }
 
 func truncate(s string, n int) string {

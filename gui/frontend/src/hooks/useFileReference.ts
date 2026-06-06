@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { ChatService } from '../../bindings/github.com/liup215/gline/gui';
+import { ChatService } from '../../bindings/github.com/liup215/gline/internal/gui';
 import type { FileRef } from '../types';
 
 export interface FileEntry {

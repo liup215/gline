@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { Events, WML } from '@wailsio/runtime';
-import { ChatService } from '../../bindings/github.com/liup215/gline/gui';
+import { ChatService } from '../../bindings/github.com/liup215/gline/internal/gui';
 import { Message, FileRef } from '../types';
 
 export function useChat(onLoadHistory: () => void, onLoadStatus: () => void, getFileRefs?: () => FileRef[], clearFileRefs?: () => void) {

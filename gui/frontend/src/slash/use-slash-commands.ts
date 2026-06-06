@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ChatService } from '../../bindings/github.com/liup215/gline/gui';
+import { ChatService } from '../../bindings/github.com/liup215/gline/internal/gui';
 
 export interface SlashCommand {
   name: string;

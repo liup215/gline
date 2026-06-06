@@ -12,13 +12,13 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as prompts$0 from "../internal/prompts/models.js";
+import * as prompts$0 from "../prompts/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as storage$0 from "../internal/storage/models.js";
+import * as storage$0 from "../storage/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as application$0 from "../../../wailsapp/wails/v3/pkg/application/models.js";
+import * as application$0 from "../../../../wailsapp/wails/v3/pkg/application/models.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -28,14 +28,14 @@ import * as $models from "./models.js";
  * AnswerFollowupQuestion sends the user's answer back to a pending AskFollowupQuestion call.
  */
 export function AnswerFollowupQuestion(answer: string): $CancellablePromise<void> {
-    return $Call.ByID(1944089549, answer);
+    return $Call.ByID(2763467677, answer);
 }
 
 /**
  * BuildHelpText returns formatted help for slash commands.
  */
 export function BuildHelpText(): $CancellablePromise<string> {
-    return $Call.ByID(711945389);
+    return $Call.ByID(1706870077);
 }
 
 /**
@@ -44,28 +44,28 @@ export function BuildHelpText(): $CancellablePromise<string> {
  * Used by /clear slash command.
  */
 export function ClearConversation(): $CancellablePromise<void> {
-    return $Call.ByID(2371938731);
+    return $Call.ByID(1733260091);
 }
 
 /**
  * CompactConversation triggers manual compaction of the conversation history.
  */
 export function CompactConversation(): $CancellablePromise<boolean> {
-    return $Call.ByID(3517242699);
+    return $Call.ByID(4150294459);
 }
 
 /**
  * DeleteTask deletes a task and its messages
  */
 export function DeleteTask(taskID: string): $CancellablePromise<void> {
-    return $Call.ByID(2653465909, taskID);
+    return $Call.ByID(2816975205, taskID);
 }
 
 /**
  * ExecuteSlashCommand runs a slash command and returns the result.
  */
 export function ExecuteSlashCommand(name: string, args: string): $CancellablePromise<$models.SlashActionResult | null> {
-    return $Call.ByID(2115491496, name, args).then(($result: any) => {
+    return $Call.ByID(2920061560, name, args).then(($result: any) => {
         return $$createType1($result);
     });
 }
@@ -74,7 +74,7 @@ export function ExecuteSlashCommand(name: string, args: string): $CancellablePro
  * FilterSlashCommands returns commands matching the given prefix.
  */
 export function FilterSlashCommands(prefix: string): $CancellablePromise<$models.SlashCommandInfo[]> {
-    return $Call.ByID(1206819056, prefix).then(($result: any) => {
+    return $Call.ByID(712799040, prefix).then(($result: any) => {
         return $$createType3($result);
     });
 }
@@ -83,28 +83,29 @@ export function FilterSlashCommands(prefix: string): $CancellablePromise<$models
  * GetConfig returns the current configuration
  */
 export function GetConfig(): $CancellablePromise<string> {
-    return $Call.ByID(889101375);
+    return $Call.ByID(1074815567);
 }
 
 /**
  * GetConversationState returns the current messages in JSON form.
+ * Messages are truncated to avoid exceeding Wails IPC payload limits.
  */
 export function GetConversationState(): $CancellablePromise<string> {
-    return $Call.ByID(2856922691);
+    return $Call.ByID(3454410515);
 }
 
 /**
  * GetMode returns the current agent mode ("plan" or "act").
  */
 export function GetMode(): $CancellablePromise<string> {
-    return $Call.ByID(371492154);
+    return $Call.ByID(1926049162);
 }
 
 /**
  * GetRulesInfo returns metadata about available custom rule files.
  */
 export function GetRulesInfo(): $CancellablePromise<prompts$0.RuleFileInfo[]> {
-    return $Call.ByID(2145237972).then(($result: any) => {
+    return $Call.ByID(1836671012).then(($result: any) => {
         return $$createType5($result);
     });
 }
@@ -113,7 +114,7 @@ export function GetRulesInfo(): $CancellablePromise<prompts$0.RuleFileInfo[]> {
  * GetSlashCommands returns all available slash commands.
  */
 export function GetSlashCommands(): $CancellablePromise<$models.SlashCommandInfo[]> {
-    return $Call.ByID(2712373680).then(($result: any) => {
+    return $Call.ByID(3443469184).then(($result: any) => {
         return $$createType3($result);
     });
 }
@@ -122,7 +123,7 @@ export function GetSlashCommands(): $CancellablePromise<$models.SlashCommandInfo
  * GetStatus returns current provider, model, working directory, mode and token usage.
  */
 export function GetStatus(): $CancellablePromise<{ [_ in string]?: string }> {
-    return $Call.ByID(4059966519).then(($result: any) => {
+    return $Call.ByID(769312231).then(($result: any) => {
         return $$createType6($result);
     });
 }
@@ -131,7 +132,7 @@ export function GetStatus(): $CancellablePromise<{ [_ in string]?: string }> {
  * GetTaskSummary returns a task with its messages
  */
 export function GetTaskSummary(taskID: string): $CancellablePromise<[storage$0.TaskRecord | null, storage$0.MessageRecord[]]> {
-    return $Call.ByID(3884067532, taskID).then(($result: any) => {
+    return $Call.ByID(2564082748, taskID).then(($result: any) => {
         $result[0] = $$createType8($result[0]);
         $result[1] = $$createType10($result[1]);
         return $result;
@@ -142,14 +143,36 @@ export function GetTaskSummary(taskID: string): $CancellablePromise<[storage$0.T
  * InitSlashRegistry initialises the slash command registry for this service.
  */
 export function InitSlashRegistry(): $CancellablePromise<void> {
-    return $Call.ByID(1139163529);
+    return $Call.ByID(448534841);
 }
 
 /**
  * IsSlashCommand checks if text is a standalone slash command.
  */
 export function IsSlashCommand(text: string): $CancellablePromise<boolean> {
-    return $Call.ByID(4200936369, text);
+    return $Call.ByID(387659809, text);
+}
+
+/**
+ * KBCreate creates a new knowledge base.
+ */
+export function KBCreate(name: string, description: string, kbType: string): $CancellablePromise<string> {
+    return $Call.ByID(1003922426, name, description, kbType);
+}
+
+/**
+ * KBIngestFile ingests a file (e.g. PDF, DOCX, MD) into a knowledge base.
+ * Only performs RAG ingestion (chunk + embed + store).
+ */
+export function KBIngestFile(kbNameOrID: string, filePath: string): $CancellablePromise<void> {
+    return $Call.ByID(2399687764, kbNameOrID, filePath);
+}
+
+/**
+ * KBList returns the list of knowledge bases as a JSON string.
+ */
+export function KBList(): $CancellablePromise<string> {
+    return $Call.ByID(4035429994);
 }
 
 /**
@@ -157,7 +180,7 @@ export function IsSlashCommand(text: string): $CancellablePromise<boolean> {
  * dirPath is relative to the project's working directory; empty string means root.
  */
 export function ListDirEntries(dirPath: string): $CancellablePromise<$models.DirEntry[]> {
-    return $Call.ByID(1442448370, dirPath).then(($result: any) => {
+    return $Call.ByID(3326127938, dirPath).then(($result: any) => {
         return $$createType12($result);
     });
 }
@@ -166,7 +189,7 @@ export function ListDirEntries(dirPath: string): $CancellablePromise<$models.Dir
  * ListTasks returns conversation history
  */
 export function ListTasks(limit: number, offset: number): $CancellablePromise<storage$0.TaskRecord[]> {
-    return $Call.ByID(2917519979, limit, offset).then(($result: any) => {
+    return $Call.ByID(2963132795, limit, offset).then(($result: any) => {
         return $$createType13($result);
     });
 }
@@ -175,7 +198,7 @@ export function ListTasks(limit: number, offset: number): $CancellablePromise<st
  * LoadTask restores agent state for an existing task.
  */
 export function LoadTask(taskID: string): $CancellablePromise<storage$0.TaskRecord | null> {
-    return $Call.ByID(3581714498, taskID).then(($result: any) => {
+    return $Call.ByID(183112338, taskID).then(($result: any) => {
         return $$createType8($result);
     });
 }
@@ -184,7 +207,7 @@ export function LoadTask(taskID: string): $CancellablePromise<storage$0.TaskReco
  * ParseSlashCommand extracts name and args from slash text.
  */
 export function ParseSlashCommand(text: string): $CancellablePromise<[string, string]> {
-    return $Call.ByID(34237656, text);
+    return $Call.ByID(3023945064, text);
 }
 
 /**
@@ -193,7 +216,7 @@ export function ParseSlashCommand(text: string): $CancellablePromise<[string, st
  * Files larger than maxFileReadSize are truncated.
  */
 export function ReadFileContent(relPath: string): $CancellablePromise<string> {
-    return $Call.ByID(2901970126, relPath);
+    return $Call.ByID(1751419230, relPath);
 }
 
 /**
@@ -201,7 +224,7 @@ export function ReadFileContent(relPath: string): $CancellablePromise<string> {
  * Returns the number of rule files loaded and a formatted description.
  */
 export function ReloadRules(): $CancellablePromise<[number, string]> {
-    return $Call.ByID(3702964733);
+    return $Call.ByID(472429229);
 }
 
 /**
@@ -209,11 +232,11 @@ export function ReloadRules(): $CancellablePromise<[number, string]> {
  * If a task is currently active, it also updates the task's working_dir in the database.
  */
 export function SelectProjectDir(): $CancellablePromise<string> {
-    return $Call.ByID(623065575);
+    return $Call.ByID(3629349623);
 }
 
 export function SendMessage(prompt: string): $CancellablePromise<void> {
-    return $Call.ByID(1063940756, prompt);
+    return $Call.ByID(3096290212, prompt);
 }
 
 /**
@@ -222,21 +245,21 @@ export function SendMessage(prompt: string): $CancellablePromise<void> {
  * The referenced file contents are read and prepended to the prompt as context.
  */
 export function SendMessageWithContext(prompt: string, fileRefsJSON: string): $CancellablePromise<void> {
-    return $Call.ByID(3385566703, prompt, fileRefsJSON);
+    return $Call.ByID(3750166975, prompt, fileRefsJSON);
 }
 
 /**
  * SetApp sets the application reference (called after app creation).
  */
 export function SetApp(app: application$0.App | null): $CancellablePromise<void> {
-    return $Call.ByID(893176384, app);
+    return $Call.ByID(3364874960, app);
 }
 
 /**
  * SetMode switches the agent between plan and act modes.
  */
 export function SetMode(mode: string): $CancellablePromise<void> {
-    return $Call.ByID(663171742, mode);
+    return $Call.ByID(1041154766, mode);
 }
 
 /**
@@ -244,21 +267,29 @@ export function SetMode(mode: string): $CancellablePromise<void> {
  * Used by New Chat button and /newtask to start a completely fresh session.
  */
 export function StartNewConversation(): $CancellablePromise<void> {
-    return $Call.ByID(262799438);
+    return $Call.ByID(2070387902);
 }
 
 /**
  * StopMessage aborts the current agent run.
  */
 export function StopMessage(): $CancellablePromise<void> {
-    return $Call.ByID(1744506322);
+    return $Call.ByID(2438960290);
 }
 
 /**
  * UpdateConfig updates a config key
  */
 export function UpdateConfig(key: string, value: string): $CancellablePromise<void> {
-    return $Call.ByID(4274389964, key, value);
+    return $Call.ByID(756022332, key, value);
+}
+
+/**
+ * WikiIngestFile triggers LLM-based wiki generation for a file.
+ * This is completely separate from RAG ingestion and requires a configured LLM provider.
+ */
+export function WikiIngestFile(filePath: string, kbID: string): $CancellablePromise<void> {
+    return $Call.ByID(2380960205, filePath, kbID);
 }
 
 // Private type creation functions
