@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"github.com/liup215/gline/internal/api"
 	"github.com/liup215/gline/internal/config"
 	"github.com/liup215/gline/internal/log"
+	"github.com/liup215/gline/internal/memory"
 	"github.com/liup215/gline/internal/skills"
 	"github.com/liup215/gline/internal/storage"
 	"github.com/liup215/gline/internal/tools"
@@ -101,7 +103,51 @@ func (b *Backend) initAgent() error {
 	}
 
 	customRules := loadCustomRules()
-	registry := tools.InitDefaultRegistry()
+
+	// Try to initialize memory engine if embedding is configured
+	var memoryEngine *memory.UnifiedEngine
+	memCfg := cfg.Memory
+	if memCfg.Embedding.Provider != "" || memCfg.Embedding.APIKey != "" {
+		var embedder memory.Embedder
+		switch memCfg.Embedding.Provider {
+		case "ollama":
+			embedder = memory.NewOllamaEmbedder(memCfg.Embedding.Model)
+		default:
+			apiKey := memCfg.Embedding.APIKey
+			if apiKey == "" {
+				apiKey = cfg.Provider.OpenAI.APIKey
+			}
+			embedder = memory.NewOpenAIEmbedder(apiKey, memCfg.Embedding.Model)
+			if memCfg.Embedding.BaseURL != "" {
+				embedder.(*memory.OpenAIEmbedder).BaseURL = memCfg.Embedding.BaseURL
+			}
+		}
+		var err error
+		memoryEngine, err = memory.NewUnifiedEngine(embedder)
+		if err != nil {
+			log.Warnf("Memory engine not initialised: %v", err)
+		} else {
+			// Wire LLM caller for wiki ingest and future memory layers
+			memoryEngine.Caller = func(ctx context.Context, systemPrompt, userContent string) (string, error) {
+				req := &agent.MessageRequest{
+					Messages: []types.Message{
+						{Role: types.RoleUser, Content: userContent},
+					},
+					SystemPrompt:  systemPrompt,
+					MaxTokens:     2048,
+					Temperature:   0.0,
+				}
+				resp, err := provider.CreateMessage(ctx, req)
+				if err != nil {
+					return "", err
+				}
+				return resp.Content, nil
+			}
+			log.Info("Memory engine initialised")
+		}
+	}
+
+	registry := tools.InitDefaultRegistry(memoryEngine)
 
 	// Initialize and load skills
 	b.skillRegistry = skills.NewRegistry()
@@ -112,12 +158,13 @@ func (b *Backend) initAgent() error {
 
 	ag, err := agent.New(agent.Options{
 		Provider:     provider,
-		ToolRegistry: registry,
-		Mode:         agent.ModeAct,
-		AutoApprove:  false,
-		CustomRules:  customRules,
-		Store:        b.store,
-		MaxTokens:    maxTokens,
+		ToolRegistry:   registry,
+		Mode:           agent.ModeAct,
+		AutoApprove:    false,
+		CustomRules:    customRules,
+		Store:          b.store,
+		MaxTokens:      maxTokens,
+		MemoryEngine:   memoryEngine,
 	})
 	if err != nil {
 		return err

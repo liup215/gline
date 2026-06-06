@@ -56,11 +56,6 @@ func initializeAgent() (*agent.BaseAgent, error) {
 		return nil, fmt.Errorf("unknown provider: %s", providerName)
 	}
 
-	// Create tool registry with all built-in tools
-	registry := tools.InitDefaultRegistry()
-
-	log.Infof("Initialized %d tools", registry.Count())
-
 	// Load custom rules from global and workspace directories
 	customRules, err := prompts.LoadCustomRules()
 	if err != nil {
@@ -78,11 +73,10 @@ func initializeAgent() (*agent.BaseAgent, error) {
 
 	// Create agent options
 	opts := agent.Options{
-		Provider:     provider,
-		ToolRegistry: registry,
-		Mode:         agent.ModeAct,
-		CustomRules:  customRules,
-		Store:        store,
+		Provider:    provider,
+		Mode:        agent.ModeAct,
+		CustomRules: customRules,
+		Store:       store,
 	}
 
 	// Optionally initialise memory engine if embedding is configured
@@ -109,6 +103,17 @@ func initializeAgent() (*agent.BaseAgent, error) {
 		opts.MemoryEngine = memoryEngine
 		log.Info("Memory engine initialised")
 	}
+
+	// Create tool registry with all built-in tools (including memory if available)
+	var registry *tools.Registry
+	if memoryEngine != nil {
+		registry = tools.InitDefaultRegistry(memoryEngine)
+	} else {
+		registry = tools.InitDefaultRegistry()
+	}
+	opts.ToolRegistry = registry
+
+	log.Infof("Initialized %d tools", registry.Count())
 
 	// Create agent
 	agentInstance, err := agent.New(opts)
