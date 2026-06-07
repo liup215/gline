@@ -31,7 +31,8 @@ type UnifiedEngine struct {
 	// Caller is injected by the application layer for LLM-driven tasks (wiki ingest, fact extraction).
 	Caller func(ctx context.Context, systemPrompt, userContent string) (string, error)
 
-	mu sync.RWMutex
+	mu       sync.RWMutex
+	ingestMu sync.Mutex
 }
 
 // NewUnifiedEngine builds the engine with the provided embedder.
@@ -172,6 +173,9 @@ func EnsureDefaultKB(ctx context.Context, e *UnifiedEngine) error {
 
 // IngestFile reads a file, parses it, chunks it, embeds it, and stores in RAG.
 func (e *UnifiedEngine) IngestFile(ctx context.Context, kbID, filePath string) error {
+	e.ingestMu.Lock()
+	defer e.ingestMu.Unlock()
+
 	_, err := e.Registry.GetByID(ctx, kbID)
 	if err != nil {
 		return err

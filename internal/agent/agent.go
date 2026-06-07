@@ -1041,6 +1041,13 @@ func (a *BaseAgent) preDispatchToolCall(ctx context.Context, tc ToolCall) {
 		return
 	}
 
+	// Skip pre-dispatch for tools with side effects (writes, DB updates,
+	// command execution) to avoid race conditions and duplicate actions.
+	switch tc.Name {
+	case "kb_ingest", "write_to_file", "replace_in_file", "execute_command", "memory_note":
+		return
+	}
+
 	res, execErr := tool.Execute(ctx, []byte(tc.Input))
 	if execErr != nil {
 		res = fmt.Sprintf("Error: %v", execErr)

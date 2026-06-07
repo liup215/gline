@@ -2,6 +2,20 @@
 
 ## Current Focus
 
+### 修复 kb_ingest 并行调用导致数据库锁死（2026-06-07）
+
+**状态**: 已完成并提交 ✅
+
+**背景**: 聊天流式响应中 LLM 可能同时返回多个 `kb_ingest` tool calls，`preDispatchToolCall` 为每个都启动后台 goroutine，所有 goroutine 并行打开同一 `rag.db` WAL 数据库执行写事务，触发 `database is locked`。
+
+**修复内容**:
+- `internal/agent/agent.go` — `preDispatchToolCall` 扩大 side-effect 工具黑名单（`kb_ingest` / `write_to_file` / `replace_in_file` / `execute_command` / `memory_note`），禁止这些工具在 SSE 流期间后台预分发，只允许在主循环串行执行一次。
+- `internal/memory/engine.go` — `UnifiedEngine` 增加 `ingestMu sync.Mutex`，在 `IngestFile` 入口处加锁，确保同一引擎实例内所有写入 RAG/SQLite 的操作串行化。
+
+**验证**: `go build ./...` ✅, `go test ./internal/agent/... ./internal/memory/...` ✅
+
+---
+
 ### 构建系统重构（2026-06-07）
 
 **状态**: 已完成 ✅
