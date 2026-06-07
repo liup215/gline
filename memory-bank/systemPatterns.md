@@ -4,30 +4,34 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    gline GUI (Wails v3)                     │
+│              gline (CLI + GUI 共用入口)                      │
+│                    cmd/gline/main.go                         │
+│                    (无参数 → GUI, 有参数 → CLI)              │
 ├─────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
-│  │  Frontend   │  │   Backend   │  │      Config       │  │
-│  │  (Webview)  │  │ (ChatService│  │      Layer        │  │
-│  │             │  │  /Backend)  │  │     (viper)       │  │
-│  └──────┬──────┘  └──────┬──────┘  └─────────┬───────────┘  │
-│         │                │                   │              │
-│         └────────────────┴───────────────────┘              │
-│                          │                                  │
-│                   ┌──────┴──────┐                          │
-│                   │   Agent     │                           │
-│                   │   Core      │                           │
-│                   └──────┬──────┘                           │
-│                          │                                  │
-│         ┌────────────────┼────────────────┐              │
-│         │                │                │              │
-│    ┌────┴────┐    ┌─────┴─────┐    ┌────┴────┐        │
-│    │  Tools  │    │   LLM     │    │ Storage │        │
-│    │Registry │    │ Providers │    │  Layer  │        │
-│    └─────────┘    └───────────┘    └─────────┘        │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │  GUI 模式 (Wails v3)                                │   │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐ │   │
+│  │  │  Frontend   │  │  internal/  │  │    Config   │ │   │
+│  │  │ (Webview)   │  │  gui/*      │  │   (viper)   │ │   │
+│  │  │ frontend/   │  │  Services   │  │             │ │   │
+│  │  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘ │   │
+│  │         │                │                │        │   │
+│  │         └────────────────┴────────────────┘        │   │
+│  │                          │                         │   │
+│  │                   ┌──────┴──────┐                   │   │
+│  │                   │  Agent Core │                   │   │
+│  │                   │  (internal/)│                   │   │
+│  │                   └──────┬──────┘                   │   │
+│  └────────────────────────┼──────────────────────────┘   │
+│                           │                                │
+│    ┌──────────────────────┼──────────────────────┐        │
+│    │                      │                      │        │
+│    ├────Tools────┬────LLM Providers────┬───Storage───┤   │
+│    │  Registry   │                     │  (SQLite)   │   │
+│    └─────────────┴─────────────────────┴─────────────┘    │
 └─────────────────────────────────────────────────────────────┘
 
-CLI 子命令 (保留): gline history / gline config / gline version
+CLI 子命令: gline chat / gline history / gline kb / gline wiki / gline mem
 ```
 
 ## 核心设计模式
@@ -39,15 +43,14 @@ CLI 子命令 (保留): gline history / gline config / gline version
 前端代码按 **共享层 → Hooks 层 → 基础组件 → 复合组件 → 入口层** 分层拆分：
 
 ```
-gui/frontend/src/
-├── theme.ts               # THEME 常量 + CSS 变量映射 + applyThemeColors()
-├── ThemeContext.tsx       # React Context 主题管理 (localStorage 持久化)
-├── ThemeContext.tsx       # React Context 主题管理 (localStorage 持久化)
-├── types.ts               # Message、AppStatus 等类型
+frontend/src/                    # 前端源码目录（原 desktop/frontend/）
+├── theme.ts                    # THEME 常量 + CSS 变量映射 + applyThemeColors()
+├── ThemeContext.tsx            # React Context 主题管理 (localStorage 持久化)
+├── types.ts                    # Message、AppStatus 等类型
 ├── utils/
-│   └── format.ts          # formatContent、useHighlightCode、代码复制
+│   └── format.ts               # formatContent、useHighlightCode、代码复制
 ├── hooks/
-│   ├── useChat.ts           # 聊天状态 + 事件监听 + slash/追问
+│   ├── useChat.ts              # 聊天状态 + 事件监听 + slash/追问
 │   ├── useTaskHistory.ts    # 历史任务加载/选择/删除
 │   ├── useAppStatus.ts      # mode/status 管理
 │   ├── useSettings.ts       # 设置弹窗状态
@@ -328,23 +331,39 @@ gline/
 ### 目录结构
 
 ```
-gui/
-├── main.go              # Wails 应用入口，窗口配置
-├── backend.go           # Backend 初始化（Config / Storage / Agent）
-├── chat_service.go      # ChatService（Wails Service，暴露给前端）
-├── frontend/            # 前端资源（Vite + React/Vue/Svelte）
-│   ├── dist/            # 构建产物（嵌入 Go 二进制）
-│   └── ...
-└── build/               # 构建脚本（Taskfile）
+cmd/gline/
+├── main.go              # 路由入口：无参数→GUI，有参数→CLI
+├── gui.go               # Wails v3 应用初始化 + 窗口配置
+├── root.go              # cobra root 命令
+├── chat.go              # CLI chat 命令
+├── history.go           # CLI history 命令
+├── kb.go                # CLI kb 命令
+├── wiki.go              # CLI wiki 命令
+├── mem.go               # CLI mem 命令
+└── frontend/dist/       # 前端构建产物（//go:embed all:frontend/dist）
+
+frontend/                # 前端源码（React 19 + TypeScript + Vite）
+├── src/                 # 组件、Hooks、Utils
+├── public/styles/       # highlight.js 主题 CSS
+├── bindings/            # wails3 generate bindings --ts 输出
+└── dist/                # npm run build 产物
+
+build-desktop/           # Wails 构建资产（图标、manifest、各平台配置）
+├── windows/
+├── macos/
+├── linux/
+└── android/
 
 internal/
-├── agent/               # Agent 核心（与 GUI/CLI 复用）
+├── agent/               # Agent 核心（GUI/CLI 复用）
 ├── api/                 # LLM Provider
 ├── tools/               # 工具系统
 ├── prompts/             # 提示词 + 自定义规则
 ├── storage/             # SQLite 持久化
 ├── config/              # 配置管理
-└── ui/                  # 已废弃 (原 Bubbletea TUI，现由 GUI 替代)
+├── memory/              # 四层记忆引擎
+├── slash/               # Slash 命令系统
+└── gui/                 # Wails Services（chat_service.go, file_service.go, slash_service.go）
 ```
 
 ### 核心分层原则

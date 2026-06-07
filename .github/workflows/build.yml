@@ -89,23 +89,52 @@ jobs:
           echo "$HOME/go/bin" >> $GITHUB_PATH
         shell: bash
 
-      - name: Build with wails3
+      - name: Generate Wails bindings
         shell: bash
-        working-directory: gui
-        run: wails3 build
+        run: |
+          cd cmd/gline
+          wails3 generate bindings --ts -d "../../frontend/bindings"
+
+      - name: Install frontend dependencies
+        run: cd frontend && npm install
+
+      - name: Build frontend
+        run: cd frontend && npm run build
+
+      - name: Sync frontend to embed dir
+        shell: bash
+        run: |
+          mkdir -p cmd/gline/frontend/dist
+          cp -r frontend/dist/* cmd/gline/frontend/dist/
+
+      - name: Build Go binary
+        shell: bash
+        run: |
+          version=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
+          commit=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+          build_time=$(date -u '+%Y-%m-%d_%H:%M:%S' 2>/dev/null || date)
+          ldflags_base="-X github.com/liup215/gline/internal/version.Version=$version -X github.com/liup215/gline/internal/version.Commit=$commit -X github.com/liup215/gline/internal/version.BuildTime=$build_time -s -w"
+          mkdir -p bin
+          binary="bin/gline"
+          if [[ "${{ matrix.name }}" == windows-* ]]; then
+            GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "${ldflags_base} -H=windowsgui" -o "${binary}.exe" ./cmd/gline
+          else
+            # macOS requires CGO for Wails WebKit bindings
+            go build -ldflags "$ldflags_base" -o "$binary" ./cmd/gline
+          fi
 
       - name: Rename & generate checksum
         shell: bash
         run: |
-          cd gui/bin
           asset_name="gline-${{ matrix.name }}"
+          cd bin
           if [[ "${{ matrix.name }}" == windows-* ]]; then
             mv gline.exe "${asset_name}.exe"
             sha256sum "${asset_name}.exe" > "${asset_name}.sha256"
             cat "${asset_name}.sha256"
           else
-            mv gline "${asset_name}"
-            sha256sum "${asset_name}" > "${asset_name}.sha256"
+            mv gline "$asset_name"
+            sha256sum "$asset_name" > "${asset_name}.sha256"
             cat "${asset_name}.sha256"
           fi
 
@@ -113,7 +142,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: gline-${{ matrix.name }}
-          path: gui/bin/gline-${{ matrix.name }}*
+          path: bin/gline-${{ matrix.name }}*
           if-no-files-found: error
 
   build-summary:
@@ -140,8 +169,8 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Platform | Architecture | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|----------|-------------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| macOS    | arm64       | ✅ |" >> $GITHUB_STEP_SUMMARY
-          echo "| Windows  | amd64       | ✅ |" >> $GITHUB_STEP_SUMMARY
+          echo "| macOS    | ARM64       | ✅ |" >> $GITHUB_STEP_SUMMARY
+          echo "| Windows  | AMD64       | ✅ |" >> $GITHUB_STEP_SUMMARY
 
   release:
     name: Create Release
@@ -210,8 +239,7 @@ jobs:
             chmod +x gline-darwin-arm64
             sudo mv gline-darwin-arm64 /usr/local/bin/gline
             ```
-            > Note: Intel Macs are not supported in CI builds due to runner scarcity.
-            > Apple Silicon users can use the arm64 binary.
+            > Note: Intel Mac (amd64) users can build from source: `go build ./cmd/gline`
 
             ### Windows
             Download `gline-windows-amd64.exe` and place it in your PATH.

@@ -2,6 +2,31 @@
 
 ## Current Focus
 
+### 构建系统重构（2026-06-07）
+
+**状态**: 已完成 ✅
+
+**背景**: CLI 与 Wails GUI 共用 `cmd/gline/main.go` 入口，但构建脚本分散混乱（`desktop/build.ps1` 为旧独立 Wails 项目残留，`gui/` 目录残余），导致无法一键编译成功。
+
+**变更内容**:
+- 删除废弃的 `desktop/` 目录（含旧 `build.ps1`、`Taskfile.yml`、前端源码副本）
+- 前端源码从 `desktop/frontend/` 移动到根目录 `frontend/`
+- Wails 构建资产（图标、manifest）移到 `build-desktop/`
+- `build-all.ps1` 更新为项目根目录下一键构建脚本
+- `Makefile` 更新：前端路径改为 `frontend/`，bindings 生成从 `gui/` 改为 `cmd/gline`
+- `.github/workflows/build.yml` 更新：CI 步骤从 `cd desktop && wails3 build` 改为 `npm install` + `npm run build` + `go build ./cmd/gline`
+- 清理根目录下 4 个测试 EXE (`gline-diag.exe`, `gline-search-fix.exe`, `gline-test.exe`, `gline.exe`)
+
+**关键构建发现**:
+- `wails3 build` **不可直接使用** — 项目非标准 Wails 结构（入口在 `cmd/gline/main.go`，不是 `gui/main.go`）
+- `wails3 generate bindings --ts` **必须在 `cmd/gline` 目录执行** 才能扫描到 `internal/gui` 的 `ChatService`（1 Service / 34 Methods / 21 Models）；根目录执行报 "0 Services"
+- Bindings 输出路径需要显式指定 `-d "../../frontend/bindings"`，否则会在 `cmd/gline/frontend/bindings` 创建
+
+**文件**: `build-all.ps1`, `build-all.sh`, `Makefile`, `.github/workflows/build.yml`
+**验证**: `build-all.ps1` → `bin/gline.exe` 一键编译成功 ✅
+
+---
+
 ### KB/RAG 与 Wiki 解耦（2026-06-05）
 
 **状态**: 已完成并提交 ✅

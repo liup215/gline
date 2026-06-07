@@ -25,10 +25,40 @@ PLATFORMS := darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64
 # 默认目标
 .DEFAULT_GOAL := build
 
-# 本地构建
+# 前端目录
+FRONTEND_DIR := frontend
+EMBED_DIR    := cmd/gline/frontend/dist
+
+# ─── 前端构建 ──────────────────────────────
+
+.PHONY: bindings
+bindings:
+	@echo "Generating Wails bindings..."
+	@wails3 generate bindings --ts
+
+.PHONY: frontend
+frontend: bindings
+	@echo "Building frontend..."
+	@cd $(FRONTEND_DIR) && npm run build
+	@echo "Syncing frontend to embed dir..."
+	@mkdir -p $(EMBED_DIR)
+	@cp -r $(FRONTEND_DIR)/dist/* $(EMBED_DIR)/
+
+# ─── Go 构建 ───────────────────────────────
+
+# 本地构建（包含前端）
 .PHONY: build
-build:
+build: frontend
 	@echo "Building $(BINARY_NAME) $(VERSION)..."
+	@mkdir -p bin
+	go build $(LDFLAGS) -o bin/$(BINARY_NAME) ./cmd/gline
+	@echo "Build complete: bin/$(BINARY_NAME)"
+
+# 仅 Go 构建（跳过前端）
+.PHONY: build-go
+build-go:
+	@echo "Building $(BINARY_NAME) $(VERSION)..."
+	@mkdir -p bin
 	go build $(LDFLAGS) -o bin/$(BINARY_NAME) ./cmd/gline
 	@echo "Build complete: bin/$(BINARY_NAME)"
 
@@ -123,7 +153,10 @@ version:
 .PHONY: help
 help:
 	@echo "Available targets:"
-	@echo "  build      - Build for current platform"
+	@echo "  build      - Full build: generate bindings, build frontend, build Go binary"
+	@echo "  build-go   - Build Go binary only (skip frontend)"
+	@echo "  frontend   - Build frontend and sync to embed dir"
+	@echo "  bindings   - Generate Wails TypeScript bindings"
 	@echo "  build-all  - Cross-compile for all platforms"
 	@echo "  package    - Package all binaries"
 	@echo "  checksum   - Generate SHA256 checksums"
