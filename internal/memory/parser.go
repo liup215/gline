@@ -2,11 +2,17 @@
 package memory
 
 import (
+	"archive/zip"
+	"bytes"
+	"encoding/xml"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/ledongthuc/pdf"
+	"github.com/xuri/excelize/v2"
 	"golang.org/x/net/html"
 )
 
@@ -22,9 +28,158 @@ func ParseDocument(path string) (string, error) {
 		return string(data), nil
 	case ".html", ".htm":
 		return stripHTML(string(data)), nil
+	case ".pdf":
+		return parsePDF(path)
+	case ".docx":
+		return parseDOCX(data)
+	case ".xlsx":
+		return parseXLSX(path)
+	case ".pptx":
+		return parsePPTX(data)
 	default:
 		return "", fmt.Errorf("unsupported file type: %s", ext)
 	}
+}
+
+// parsePDF extracts plain text from a PDF file.
+func parsePDF(path string) (string, error) {
+	f, r, err := pdf.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("pdf open: %w", err)
+	}
+	defer f.Close()
+
+	pr, err := r.GetPlainText()
+	if err != nil {
+		return "", fmt.Errorf("pdf extract text: %w", err)
+	}
+	data, err := io.ReadAll(pr)
+	if err != nil {
+		return "", fmt.Errorf("pdf read text: %w", err)
+	}
+	return strings.TrimSpace(string(data)), nil
+}
+
+// parseDOCX extracts plain text from a DOCX (OOXML) file.
+func parseDOCX(data []byte) (string, error) {
+	r, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return "", fmt.Errorf("docx open: %w", err)
+	}
+	f, err := r.Open("word/document.xml")
+	if err != nil {
+		return "", fmt.Errorf("docx missing document.xml: %w", err)
+	}
+	defer f.Close()
+
+	dec := xml.NewDecoder(f)
+	var out strings.Builder
+	var inText bool
+	for {
+		tok, err := dec.Token()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return "", fmt.Errorf("docx xml decode: %w", err)
+		}
+		switch se := tok.(type) {
+		case xml.StartElement:
+			if se.Name.Local == "t" {
+				inText = true
+			}
+		case xml.EndElement:
+			if se.Name.Local == "t" {
+				inText = false
+			}
+			if se.Name.Local == "p" {
+				out.WriteString("\n")
+			}
+		case xml.CharData:
+			if inText {
+				out.Write(se)
+			}
+		}
+	}
+	return strings.TrimSpace(out.String()), nil
+}
+
+// parseXLSX extracts plain text from an XLSX file (concatenates all cells).
+func parseXLSX(path string) (string, error) {
+	f, err := excelize.OpenFile(path)
+	if err != nil {
+		return "", fmt.Errorf("xlsx open: %w", err)
+	}
+	defer f.Close()
+
+	var out strings.Builder
+	for _, sheet := range f.GetSheetList() {
+		out.WriteString(fmt.Sprintf("--- Sheet: %s ---\n", sheet))
+		rows, err := f.GetRows(sheet)
+		if err != nil {
+			continue
+		}
+		for _, row := range rows {
+			for i, cell := range row {
+				if i > 0 {
+					out.WriteString("\t")
+				}
+				out.WriteString(cell)
+			}
+			out.WriteString("\n")
+		}
+	}
+	return strings.TrimSpace(out.String()), nil
+}
+
+// parsePPTX extracts plain text from a PPTX file.
+func parsePPTX(data []byte) (string, error) {
+	r, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return "", fmt.Errorf("pptx open: %w", err)
+	}
+
+	var out strings.Builder
+	for _, f := range r.File {
+		if !strings.HasPrefix(f.Name, "ppt/slides/slide") || !strings.HasSuffix(f.Name, ".xml") {
+			continue
+		}
+		rc, err := f.Open()
+		if err != nil {
+			continue
+		}
+		dec := xml.NewDecoder(rc)
+		var inText bool
+		for {
+			tok, err := dec.Token()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				break
+			}
+			switch se := tok.(type) {
+			case xml.StartElement:
+				if se.Name.Local == "t" {
+					inText = true
+				}
+			case xml.EndElement:
+				if se.Name.Local == "t" {
+					inText = false
+				}
+				if se.Name.Local == "p" {
+					out.WriteString("\n")
+				}
+			case xml.CharData:
+				if inText {
+					out.Write(se)
+				}
+			}
+		}
+		rc.Close()
+		out.WriteString("\n")
+	}
+	return strings.TrimSpace(out.String()), nil
 }
 
 // stripHTML extracts visible text from HTML.

@@ -1,11 +1,17 @@
 package memory
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
+	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/xuri/excelize/v2"
 )
 
 func TestChunker(t *testing.T) {
@@ -245,6 +251,129 @@ func (d *dummyEmbedder) Embed(ctx context.Context, texts []string) ([][]float32,
 	}
 	return out, nil
 }
-func (d *dummyEmbedder) Dimension() int   { return d.dim }
-func (d *dummyEmbedder) ModelName() string { return "dummy" }
-func (d *dummyEmbedder) MaxBatchSize() int { return 10 }
+func (d *dummyEmbedder) Dimension() int      { return d.dim }
+func (d *dummyEmbedder) ModelName() string  { return "dummy" }
+func (d *dummyEmbedder) MaxBatchSize() int    { return 10 }
+
+// Helper: create a minimal Docx in memory
+func makeDocx(text string) []byte {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	// [Content_Types].xml
+	ct, _ := zw.Create("[Content_Types].xml")
+	ct.Write([]byte(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="xml" ContentType="application/xml"/>
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`))
+	// _rels/.rels
+	rels, _ := zw.Create("_rels/.rels")
+	rels.Write([]byte(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`))
+	// word/_rels/document.xml.rels
+	wrels, _ := zw.Create("word/_rels/document.xml.rels")
+	wrels.Write([]byte(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+</Relationships>`))
+	// word/document.xml
+	doc, _ := zw.Create("word/document.xml")
+	doc.Write([]byte(fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+<w:body><w:p><w:r><w:t>%s</w:t></w:r></w:p></w:body>
+</w:document>`, text)))
+	zw.Close()
+	return buf.Bytes()
+}
+
+// Helper: create a minimal PPTX in memory
+func makePPTX(slideText string) []byte {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	ct, _ := zw.Create("[Content_Types].xml")
+	ct.Write([]byte(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="xml" ContentType="application/xml"/>
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>
+</Types>`))
+	rels, _ := zw.Create("_rels/.rels")
+	rels.Write([]byte(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/>
+</Relationships>`))
+	// ppt/slides/slide1.xml (uses a:t for text)
+	slide, _ := zw.Create("ppt/slides/slide1.xml")
+	slide.Write([]byte(fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<a:spTree xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+<a:sp><a:txBody><a:p><a:r><a:t>%s</a:t></a:r></a:p></a:txBody></a:sp>
+</a:spTree>`, slideText)))
+	zw.Close()
+	return buf.Bytes()
+}
+
+func TestParseDocument_DOCX(t *testing.T) {
+	data := makeDocx("Hello from DOCX")
+	tmp := filepath.Join(t.TempDir(), "test.docx")
+	if err := os.WriteFile(tmp, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	text, err := ParseDocument(tmp)
+	if err != nil {
+		t.Fatalf("parse docx: %v", err)
+	}
+	if !strings.Contains(text, "Hello from DOCX") {
+		t.Fatalf("expected 'Hello from DOCX' in output, got: %s", text)
+	}
+}
+
+func TestParseDocument_PPTX(t *testing.T) {
+	data := makePPTX("Hello from PPTX")
+	tmp := filepath.Join(t.TempDir(), "test.pptx")
+	if err := os.WriteFile(tmp, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	text, err := ParseDocument(tmp)
+	if err != nil {
+		t.Fatalf("parse pptx: %v", err)
+	}
+	if !strings.Contains(text, "Hello from PPTX") {
+		t.Fatalf("expected 'Hello from PPTX' in output, got: %s", text)
+	}
+}
+
+func TestParseDocument_XLSX(t *testing.T) {
+	tmp := filepath.Join(t.TempDir(), "test.xlsx")
+	f := excelize.NewFile()
+	defer f.Close()
+	_ = f.SetCellValue("Sheet1", "A1", "Hello")
+	_ = f.SetCellValue("Sheet1", "B1", "XLSX")
+	_ = f.SetCellValue("Sheet1", "A2", "Row2")
+	if err := f.SaveAs(tmp); err != nil {
+		t.Fatal(err)
+	}
+	text, err := ParseDocument(tmp)
+	if err != nil {
+		t.Fatalf("parse xlsx: %v", err)
+	}
+	if !strings.Contains(text, "Hello") || !strings.Contains(text, "XLSX") {
+		t.Fatalf("expected 'Hello' and 'XLSX' in output, got: %s", text)
+	}
+}
+
+func TestParseDocument_PDF(t *testing.T) {
+	// PDF parsing requires a real PDF file; test is skipped if no fixture exists.
+	fixture := filepath.Join("testdata", "sample.pdf")
+	if _, err := os.Stat(fixture); os.IsNotExist(err) {
+		t.Skip("no PDF test fixture at testdata/sample.pdf")
+	}
+	text, err := ParseDocument(fixture)
+	if err != nil {
+		t.Fatalf("parse pdf: %v", err)
+	}
+	if text == "" {
+		t.Fatal("expected non-empty text from PDF")
+	}
+}
