@@ -170,5 +170,5 @@ func runGUIChat(agentInstance *agent.BaseAgent) {
 	// Import gui package and start the application
 	// This is done through the gui main package, not directly here
 	fmt.Println("Please run 'gline-gui' or use the desktop shortcut to start the GUI.")
-	fmt.Println("The gline GUI is built as a separate application in the gui/ directory.")
+	fmt.Println("The gline GUI is started by running 'gline' without any arguments.")
 }

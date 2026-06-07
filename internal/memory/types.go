@@ -149,7 +149,6 @@ type Document struct {
 	ID         string    `json:"id"`
 	KBID       string    `json:"kb_id"`
 	Name       string    `json:"name"`
-	SourcePath string    `json:"source_path"`
 	FileType   string    `json:"file_type"`
 	Content    string    `json:"content"`
 	CharCount  int       `json:"char_count"`

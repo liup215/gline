@@ -53,18 +53,17 @@ func (s *VectorStore) Close() error { return s.db.Close() }
 func (s *VectorStore) migrate() error {
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS documents (
-			id TEXT PRIMARY KEY,
-			kb_id TEXT NOT NULL,
-			name TEXT NOT NULL,
-			source_path TEXT,
-			file_type TEXT,
-			content TEXT,
-			char_count INTEGER,
-			chunk_count INTEGER,
-			status TEXT DEFAULT 'indexed',
-			fact_ids TEXT,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-		)`,
+				id TEXT PRIMARY KEY,
+				kb_id TEXT NOT NULL,
+				name TEXT NOT NULL,
+				file_type TEXT,
+				content TEXT,
+				char_count INTEGER,
+				chunk_count INTEGER,
+				status TEXT DEFAULT 'indexed',
+				fact_ids TEXT,
+				created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+			)`,
 		`CREATE TABLE IF NOT EXISTS chunks (
 			id TEXT PRIMARY KEY,
 			doc_id TEXT NOT NULL,
@@ -114,9 +113,9 @@ func (s *VectorStore) StoreDocument(ctx context.Context, doc *Document, chunks [
 
 	_, err = tx.ExecContext(ctx, `
 		INSERT OR REPLACE INTO documents
-		(id, kb_id, name, source_path, file_type, content, char_count, chunk_count, status, fact_ids, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		doc.ID, doc.KBID, doc.Name, doc.SourcePath, doc.FileType, doc.Content,
+		(id, kb_id, name, file_type, content, char_count, chunk_count, status, fact_ids, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		doc.ID, doc.KBID, doc.Name, doc.FileType, doc.Content,
 		doc.CharCount, doc.ChunkCount, doc.Status, strings.Join(doc.FactIDs, ","), doc.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("insert doc: %w", err)
@@ -206,10 +205,23 @@ func (s *VectorStore) Search(ctx context.Context, kbID string, queryEmbedding []
 
 	// 3. RRF merge
 	merged := rrfMerge(vecResults, ftsResults, topK)
+
+	// 4. Apply minScore filter using original vector similarities, not RRF scores.
+	// RRF scores are in a completely different range (~0.01–0.03) and should not
+	// be compared against cosine-similarity thresholds like 0.5.
 	if minScore > 0 {
+		vecSim := make(map[string]float64)
+		for _, r := range vecResults {
+			vecSim[r.ID] = r.sim
+		}
 		var filtered []Chunk
 		for _, c := range merged {
-			if c.sim >= minScore {
+			if sim, ok := vecSim[c.ID]; ok {
+				if sim >= minScore {
+					filtered = append(filtered, c.Chunk)
+				}
+			} else {
+				// FTS-only result: no vector similarity available, include it.
 				filtered = append(filtered, c.Chunk)
 			}
 		}
@@ -383,7 +395,7 @@ func splitNull(s string) []string {
 // ListDocuments returns all documents for a knowledge base.
 func (s *VectorStore) ListDocuments(ctx context.Context, kbID string) ([]Document, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, kb_id, name, source_path, file_type, content, char_count, chunk_count, status, fact_ids, created_at
+		SELECT id, kb_id, name, file_type, content, char_count, chunk_count, status, fact_ids, created_at
 		FROM documents WHERE kb_id = ?`, kbID)
 	if err != nil {
 		return nil, err
@@ -394,7 +406,7 @@ func (s *VectorStore) ListDocuments(ctx context.Context, kbID string) ([]Documen
 		var d Document
 		var factStr string
 		var created time.Time
-		err := rows.Scan(&d.ID, &d.KBID, &d.Name, &d.SourcePath, &d.FileType, &d.Content, &d.CharCount, &d.ChunkCount, &d.Status, &factStr, &created)
+		err := rows.Scan(&d.ID, &d.KBID, &d.Name, &d.FileType, &d.Content, &d.CharCount, &d.ChunkCount, &d.Status, &factStr, &created)
 		if err != nil {
 			continue
 		}

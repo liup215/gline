@@ -4,6 +4,7 @@ cline/
 
 # Embedded frontend build artifacts (generated at build time)
 cmd/gline/frontend/dist/
+frontend/dist/
 
 # Go build artifacts
 *.exe

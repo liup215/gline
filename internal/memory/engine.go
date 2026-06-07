@@ -210,15 +210,14 @@ func (e *UnifiedEngine) IngestFile(ctx context.Context, kbID, filePath string) e
 
 	// Build document record
 	doc := Document{
-		ID:         genID(),
-		KBID:       kbID,
-		Name:       base,
-		SourcePath: rawPath,
-		FileType:   filepath.Ext(base),
-		Content:    content,
-		CharCount:  len(content),
-		Status:     "indexing",
-		CreatedAt:  time.Now().UTC(),
+		ID:        genID(),
+		KBID:      kbID,
+		Name:      base,
+		FileType:  filepath.Ext(base),
+		Content:   content,
+		CharCount: len(content),
+		Status:    "indexing",
+		CreatedAt: time.Now().UTC(),
 	}
 
 	// Chunk + embed + store in RAG
