@@ -43,6 +43,29 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev build-essential pkg-config npm
 
+      - name: Install wails3 CLI
+        run: |
+          go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha.95
+          echo "$HOME/go/bin" >> $GITHUB_PATH
+
+      - name: Generate Wails bindings
+        shell: bash
+        run: |
+          cd cmd/gline
+          wails3 generate bindings --ts -d "../../frontend/bindings"
+
+      - name: Install frontend dependencies
+        run: cd frontend && npm install
+
+      - name: Build frontend
+        run: cd frontend && npm run build
+
+      - name: Sync frontend to embed dir
+        shell: bash
+        run: |
+          mkdir -p cmd/gline/frontend/dist
+          cp -r frontend/dist/* cmd/gline/frontend/dist/
+
       - name: Run tests
         run: go test -v ./...
 
