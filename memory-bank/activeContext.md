@@ -11,7 +11,7 @@
 **变更内容**:
 - 删除废弃的 `desktop/` 目录（含旧 `build.ps1`、`Taskfile.yml`、前端源码副本）
 - 前端源码从 `desktop/frontend/` 移动到根目录 `frontend/`
-- Wails 构建资产（图标、manifest）移到 `build-desktop/`
+- Wails 构建资产（图标、manifest）通过 `wails3` 命令按需生成，不再常驻仓库
 - `build-all.ps1` 更新为项目根目录下一键构建脚本
 - `Makefile` 更新：前端路径改为 `frontend/`，bindings 生成从 `gui/` 改为 `cmd/gline`
 - `.github/workflows/build.yml` 更新：CI 步骤从 `cd desktop && wails3 build` 改为 `npm install` + `npm run build` + `go build ./cmd/gline`

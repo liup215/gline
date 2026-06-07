@@ -78,7 +78,8 @@ gline/
 │   ├── public/styles/           # highlight.js 主题 CSS
 │   └── bindings/                # wails3 generate bindings --ts 输出
 │       └── github.com/
-├── build-desktop/               # Wails 构建资产（图标、manifest、各平台配置）
+├── build-all.sh                 # 统一构建脚本（macOS/Linux）
+├── build-all.ps1                # 统一构建脚本（Windows）
 │   ├── windows/
 │   ├── macos/
 │   ├── linux/
@@ -93,7 +94,8 @@ gline/
 
 | 时间 | 变更 | 说明 |
 |------|------|------|
-| 2026-06-07 | `desktop/` 删除 | 旧独立 Wails 项目残留，前端移至 `frontend/`，构建资产移至 `build-desktop/` |
+| 2026-06-07 | `desktop/` 删除 | 旧独立 Wails 项目残留，前端移至 `frontend/` |
+| 2026-06-07 | `build-desktop/` 删除 | Wails 构建模板未实际使用，由 `build-all.sh`/`build-all.ps1` 负责构建流程 |
 | 2026-06-07 | 入口统一 | 主入口从 `gui/main.go` 改为 `cmd/gline/main.go`（CLI/GUI 共用） |
 | 2026-06-07 | `gui/` 删除 | `gui/*.go` 移至 `internal/gui/`，由 `cmd/gline/gui.go` 注册 |
 

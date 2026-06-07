@@ -348,7 +348,8 @@ frontend/                # 前端源码（React 19 + TypeScript + Vite）
 ├── bindings/            # wails3 generate bindings --ts 输出
 └── dist/                # npm run build 产物
 
-build-desktop/           # Wails 构建资产（图标、manifest、各平台配置）
+build-all.sh             # 统一构建脚本（macOS/Linux）
+build-all.ps1            # 统一构建脚本（Windows）
 ├── windows/
 ├── macos/
 ├── linux/
