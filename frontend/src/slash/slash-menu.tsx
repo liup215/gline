@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import type { SlashCommand } from './use-slash-commands';
 
 interface SlashMenuProps {
@@ -22,6 +22,17 @@ const THEME = {
 };
 
 export function SlashMenu({ active, filtered, selectedIndex, onSelect, inputRef }: SlashMenuProps) {
+  const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
+
+  useEffect(() => {
+    if (active && filtered.length > 0) {
+      const el = itemRefs.current[selectedIndex];
+      if (el) {
+        el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+    }
+  }, [active, selectedIndex, filtered.length]);
+
   if (!active || filtered.length === 0) return null;
 
   return (
@@ -47,6 +58,7 @@ export function SlashMenu({ active, filtered, selectedIndex, onSelect, inputRef 
         return (
           <div
             key={cmd.name}
+            ref={(el) => { itemRefs.current[idx] = el; }}
             onClick={() => onSelect(cmd)}
             onMouseEnter={() => {
               // Optional: highlight on hover (would require lifting hover state)

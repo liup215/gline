@@ -222,8 +222,7 @@ type ListFilesTool struct {
 
 // ListFilesInput represents the input for list_files tool
 type ListFilesInput struct {
-	Path      string `json:"path"`
-	Recursive bool   `json:"recursive"`
+	Path string `json:"path"`
 }
 
 // NewListFilesTool creates a new list_files tool
@@ -234,11 +233,6 @@ func NewListFilesTool() *ListFilesTool {
 			"path": {
 				"type": "string",
 				"description": "The directory path to list"
-			},
-			"recursive": {
-				"type": "boolean",
-				"description": "Whether to list recursively",
-				"default": false
 			}
 		},
 		"required": ["path"]
@@ -283,11 +277,7 @@ func (t *ListFilesTool) Execute(ctx context.Context, input json.RawMessage) (str
 	var result strings.Builder
 	result.WriteString(fmt.Sprintf("Contents of %s:\n\n", path))
 
-	if req.Recursive {
-		err = listFilesRecursive(path, "", &result)
-	} else {
-		err = listFiles(path, &result)
-	}
+	err = listFiles(path, &result)
 
 	if err != nil {
 		return "", err
@@ -315,23 +305,3 @@ func listFiles(path string, result *strings.Builder) error {
 	return nil
 }
 
-func listFilesRecursive(path string, indent string, result *strings.Builder) error {
-	entries, err := os.ReadDir(path)
-	if err != nil {
-		return fmt.Errorf("failed to read directory: %w", err)
-	}
-
-	for _, entry := range entries {
-		fullPath := filepath.Join(path, entry.Name())
-		if entry.IsDir() {
-			result.WriteString(fmt.Sprintf("%s📁 %s/\n", indent, entry.Name()))
-			if err := listFilesRecursive(fullPath, indent+"  ", result); err != nil {
-				return err
-			}
-		} else {
-			result.WriteString(fmt.Sprintf("%s📄 %s\n", indent, entry.Name()))
-		}
-	}
-
-	return nil
-}

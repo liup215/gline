@@ -419,6 +419,42 @@ func (c *ChatService) ExecuteSlashCommand(name string, args string) (*SlashActio
 		return nil, err
 	}
 
+	// Skill commands only print to stdout in TUI mode, which is invisible in GUI.
+	// Provide GUI-friendly feedback when no other result was captured.
+	if capturedAction == slash.ResultNone && capturedMessage == "" {
+		if c.Backend.skillRegistry != nil {
+			switch name {
+			case "skill":
+				infos := c.Backend.skillRegistry.GetAllInfo()
+				if len(infos) == 0 {
+					capturedMessage = "No skills loaded."
+				} else {
+					var b strings.Builder
+					b.WriteString("Available skills:\n")
+					for _, info := range infos {
+						marker := " "
+						if info.Active {
+							marker = "*"
+						}
+						b.WriteString(fmt.Sprintf("  [%s] /%-15s %s\n", marker, info.Name, info.Description))
+					}
+					b.WriteString("\nUse /skill-name to activate, /skill-off to deactivate.")
+					capturedMessage = b.String()
+				}
+			case "skill-off":
+				if _, ok := c.Backend.skillRegistry.GetActive(); !ok {
+					capturedMessage = "No skill is currently active."
+				} else {
+					capturedMessage = "Skill deactivated."
+				}
+			default:
+				if s, ok := c.Backend.skillRegistry.Get(name); ok {
+					capturedMessage = fmt.Sprintf("Skill activated: %s\n%s", s.Name, s.Description)
+				}
+			}
+		}
+	}
+
 	actionStr := commandResultToString(capturedAction)
 	return &SlashActionResult{
 		Action:  actionStr,
