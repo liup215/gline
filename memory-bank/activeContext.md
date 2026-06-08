@@ -210,6 +210,28 @@ Phase 2 全部子任务已完成：
 
 ---
 
+---
+
+### Skill 系统迁移到 cline agent 规范（2026-06-08）
+
+**状态**: 已完成并提交 ✅
+
+**背景**: gline 原有自定义 skill 格式（扁平 `.yaml` 文件）无法复用成千上万的第三方 skill。需要迁移到 cline 的 agent skill 规范。
+
+**变更内容**:
+- **Skill 格式**: 扁平 `.yaml` → `skill-name/SKILL.md`（YAML frontmatter + markdown body）
+- **加载方式**: `internal/skills/loader.go` 重写为扫描子目录并解析 frontmatter
+- **激活方式**: 移除 `activeSkill` 预注入；系统提示只列出 skill 元数据，LLM 调用 `use_skill` 工具按需加载完整指令
+- **新工具**: `internal/tools/use_skill.go` 实现 `use_skill` 工具，作为工具结果消息返回 skill 内容
+- **Registry**: 移除激活状态方法，新增 `GetMeta()` / `GetInstructions()`
+- **Agent**: 移除 `activeSkill`，替换为 `skills []SkillMeta` + `SetSkills()`
+- **GUI/CLI**: `backend.go`/`chat_service.go`/`cmd/gline/chat.go` 更新注册 `use_skill` 并同步 skills
+- **目录扩展**: `~/.gline/skills/`, `~/.agents/skills/`, `~/.cline/skills/`, `~/.claude/skills/`
+- **清理**: 删除 `builtin_embed.go`，移除 `InitBuiltinSkills()`
+
+**文件**: `pkg/types/skill.go`, `internal/skills/*.go`, `internal/tools/use_skill.go`, `internal/prompts/system.go`, `internal/agent/agent.go`, `internal/gui/backend.go`, `internal/gui/chat_service.go`, `cmd/gline/chat.go`
+**验证**: `go build ./...` ✅, `go test ./...` ✅, `build-all.ps1` ✅
+
 ## 下一步建议
 
 1. **提交未完成的 P2.5.3** — 主题系统组件集成变更（14 files）

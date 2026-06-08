@@ -393,6 +393,88 @@ type Message struct {
 }
 ```
 
+## Skill 系统架构 (cline agent spec)
+
+### 目录格式
+
+每个 skill 是一个独立目录，名称即为 skill 标识（kebab-case）：
+
+```
+~/.gline/skills/
+├── explain/
+│   ├── SKILL.md          # 必须：YAML frontmatter + markdown body
+│   ├── docs/             # 可选：补充文档
+│   ├── templates/        # 可选：模板文件
+│   └── scripts/          # 可选：脚本
+└── code-review/
+    └── SKILL.md
+```
+
+### SKILL.md 格式
+
+```markdown
+---
+name: explain
+description: Explain complex code in simple terms
+---
+
+# Explain Skill
+
+When asked to explain code...
+```
+
+Frontmatter 字段：
+- `name`: 必须与目录名一致（大小写不敏感）
+- `description`: 告诉 LLM 何时使用该 skill（max 1024 chars）
+
+### 加载与激活流程
+
+**加载时**（Agent 启动 / 首次对话）：
+1. `skills.NewRegistry()` 创建注册表
+2. `LoadFromDirs()` 扫描所有 skill 目录
+3. `parseSkillMarkdown()` 提取 frontmatter + body
+4. 验证 name 与目录名匹配，description 非空
+5. 注册到 registry：`reg.Register(skill)`
+
+**运行时**（每轮对话 system prompt）：
+1. `agent.GetSystemPrompt()` 接收 `skills []SkillMeta`
+2. `buildSkillsSection()` 生成 `# SKILLS` 节（仅 name + description，~100 tokens/skill）
+3. 系统提示告诉 LLM："用 `use_skill` 工具加载匹配的 skill"
+
+**激活时**（LLM 调用 use_skill）：
+1. `UseSkillTool.Execute()` 解析 `skill_name` 参数
+2. `registry.Get(name)` 查找完整 skill（含 Contents）
+3. 返回格式化结果：`# Skill "name" is now active\n\n{markdown contents}`
+4. 结果作为 **tool result message** 进入对话历史
+5. LLM 获得完整指令后执行任务
+
+### 与旧架构对比
+
+| 维度 | 旧架构 (自定义) | 新架构 (cline spec) |
+|------|---------------|-------------------|
+| 格式 | 扁平 `.yaml` | `SKILL.md` + 目录 |
+| 加载方式 | 启动时全部加载 | 按需 `use_skill` 工具 |
+| 激活方式 | `activeSkill` 预注入 system prompt | 工具结果消息注入 |
+| 可复用性 | 仅 gline | 兼容 cline/.agents/.claude |
+| Token 开销 | 全部 skill prompt 常驻 | 仅元数据常驻，指令按需 |
+
+### 核心文件
+
+| 文件 | 职责 |
+|------|------|
+| `pkg/types/skill.go` | `Skill` (name/desc/contents/source) / `SkillMeta` (name/desc) |
+| `internal/skills/loader.go` | `LoadSkillsFromDir()` 扫描 + `parseSkillMarkdown()` 解析 |
+| `internal/skills/registry.go` | 线程安全存储：`Register/Get/GetAll/GetMeta/GetInstructions` |
+| `internal/skills/commands.go` | Slash 命令：`/skill` 列表，`/skill-name` 提示用 use_skill |
+| `internal/tools/use_skill.go` | `UseSkillTool`：LLM 调用时返回完整 skill contents |
+| `internal/prompts/system.go` | `buildSkillsSection()` 生成系统提示中的 skill 列表 |
+
+### 扩展点
+
+**添加新的 skill**：
+1. 在任意 skill 目录（如 `~/.gline/skills/`）创建 `my-skill/SKILL.md`
+2. 无需重启 gline — 新对话自动发现
+
 ### 渲染优先级
 
 ViewModel.renderSystemMessage 的三层渲染优先级：
