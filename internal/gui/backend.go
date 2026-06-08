@@ -147,14 +147,13 @@ func (b *Backend) initAgent() error {
 		}
 	}
 
-	registry := tools.InitDefaultRegistry(memoryEngine)
-
-	// Initialize and load skills
+	// Initialize and load skills FIRST so they are available for the use_skill tool
 	b.skillRegistry = skills.NewRegistry()
-	if _, err := skills.InitBuiltinSkills(); err != nil {
-		log.Warnf("Failed to init built-in skills: %v", err)
-	}
 	b.skillRegistry.LoadFromDirs(skills.DefaultSkillDirs...)
+
+	// Initialize tool registry and register use_skill with the skill registry
+	registry := tools.InitDefaultRegistry(memoryEngine)
+	tools.RegisterSkillTool(registry, b.skillRegistry)
 
 	ag, err := agent.New(agent.Options{
 		Provider:     provider,
@@ -165,6 +164,7 @@ func (b *Backend) initAgent() error {
 		Store:          b.store,
 		MaxTokens:      maxTokens,
 		MemoryEngine:   memoryEngine,
+		Skills:         b.skillRegistry.GetMeta(),
 	})
 	if err != nil {
 		return err

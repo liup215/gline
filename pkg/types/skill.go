@@ -1,42 +1,49 @@
 // Package types defines skill types shared across the codebase.
+// Skill file format follows the cline agent skill specification:
+// Each skill is a directory containing a SKILL.md file.
+//
+// Example directory structure:
+//   my-skill/
+//   ├── SKILL.md          # Required: frontmatter + markdown instructions
+//   ├── docs/             # Optional: additional documentation
+//   ├── templates/        # Optional: templates
+//   └── scripts/          # Optional: utility scripts
+//
+// SKILL.md format:
+//   ---
+//   name: my-skill
+//   description: Brief description of what this skill does.
+//   ---
+//
+//   # My Skill
+//
+//   Detailed instructions...
 package types
 
-// Skill describes an externally-defined capability that modifies the
-// system prompt when activated.  Skills are discovered from well-known
-// directories (e.g. ~/.gline/skills, ~/.agents/skills) and exposed as
-// slash commands (/<name>).
+// Skill describes an externally-defined capability loaded from a
+// SKILL.md file. Skills follow the cline agent skill specification:
+// each skill is a directory containing a SKILL.md with YAML frontmatter
+// (name, description) and markdown instructions.
 type Skill struct {
-	// Name is the command identifier without the leading slash.
-	// Must match the YAML/JSON file stem in most cases.
+	// Name is the canonical skill identifier (kebab-case).
+	// Must match the directory name exactly.
 	Name string `yaml:"name" json:"name"`
 
-	// Description is shown in the slash-command menu and help text.
+	// Description tells the LLM when to use this skill (max 1024 chars).
 	Description string `yaml:"description" json:"description"`
 
-	// Prompt is injected into the system prompt when this skill is active.
-	// It may contain multi-line instructions, examples, or role definitions.
-	Prompt string `yaml:"prompt" json:"prompt"`
+	// Contents are the full skill instructions (Markdown body after frontmatter).
+	// This is loaded on-demand when the use_skill tool is called.
+	Contents string `yaml:"contents,omitempty" json:"contents,omitempty"`
 
-	// Tools optionally restricts the tool set available while this skill
-	// is active.  When empty all registered tools are available.
-	Tools []string `yaml:"tools,omitempty" json:"tools,omitempty"`
-
-	// Tags is an optional list of category labels for grouping skills.
-	Tags []string `yaml:"tags,omitempty" json:"tags,omitempty"`
-
-	// Author is optional attribution.
-	Author string `yaml:"author,omitempty" json:"author,omitempty"`
-
-	// Version is an optional version string (semver recommended).
-	Version string `yaml:"version,omitempty" json:"version,omitempty"`
-
-	// Source records the absolute path of the file this skill was loaded from.
+	// Source is the absolute path to the SKILL.md file this skill was loaded from.
 	Source string `yaml:"source,omitempty" json:"source,omitempty"`
 }
 
-// SkillInfo is a lightweight summary of a skill for UI lists.
-type SkillInfo struct {
+// SkillMeta is a lightweight summary of a skill for listing in the
+// system prompt and slash-command menus. It contains only name and
+// description so that the prompt stays small (~100 tokens per skill).
+type SkillMeta struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
-	Active      bool   `json:"active"`
 }

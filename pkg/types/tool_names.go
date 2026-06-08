@@ -14,6 +14,7 @@ const (
 	ToolPlanModeRespond      ToolName = "plan_mode_respond"
 	ToolUseMcpTool           ToolName = "use_mcp_tool"
 	ToolAccessMcpResource    ToolName = "access_mcp_resource"
+	ToolUseSkill             ToolName = "use_skill"
 )
 
 func (t ToolName) String() string {

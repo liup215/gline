@@ -13,7 +13,6 @@ import (
 type Registry struct {
 	mu     sync.RWMutex
 	skills map[string]*types.Skill
-	active string // name of the currently active skill (empty = none)
 }
 
 // NewRegistry creates an empty skill registry.
@@ -40,9 +39,6 @@ func (r *Registry) Unregister(name string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	name = strings.ToLower(strings.TrimSpace(name))
-	if r.active == name {
-		r.active = ""
-	}
 	delete(r.skills, name)
 }
 
@@ -70,23 +66,40 @@ func (r *Registry) GetAll() []*types.Skill {
 	return result
 }
 
-// GetAllInfo returns lightweight SkillInfo summaries for UI lists.
-func (r *Registry) GetAllInfo() []types.SkillInfo {
+// GetMeta returns lightweight SkillMeta summaries for UI lists and system prompts.
+func (r *Registry) GetMeta() []types.SkillMeta {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	result := make([]types.SkillInfo, 0, len(r.skills))
+	result := make([]types.SkillMeta, 0, len(r.skills))
 	for _, s := range r.skills {
-		result = append(result, types.SkillInfo{
+		result = append(result, types.SkillMeta{
 			Name:        s.Name,
 			Description: s.Description,
-			Active:      r.active == s.Name,
 		})
 	}
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].Name < result[j].Name
 	})
 	return result
+}
+
+// GetInstructions returns the full instructions (Markdown body) for a skill.
+// If the skill is not found, it returns an error with available skill names.
+func (r *Registry) GetInstructions(name string) (string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	name = strings.ToLower(strings.TrimSpace(name))
+	s, ok := r.skills[name]
+	if !ok {
+		var names []string
+		for n := range r.skills {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		return "", fmt.Errorf("skill %q not found. Available skills: %s", name, strings.Join(names, ", "))
+	}
+	return s.Contents, nil
 }
 
 // Count returns the number of registered skills.
@@ -97,7 +110,7 @@ func (r *Registry) Count() int {
 }
 
 // LoadFromDirs walks the provided directories in order and loads every
-// valid skill file found.  Later directories override earlier ones when
+// valid skill found.  Later directories override earlier ones when
 // skill names collide.
 func (r *Registry) LoadFromDirs(dirs ...string) error {
 	for _, dir := range dirs {
@@ -114,43 +127,4 @@ func (r *Registry) LoadFromDirs(dirs ...string) error {
 		}
 	}
 	return nil
-}
-
-// Activate sets the named skill as the currently active one.
-// Returns an error if the skill is not registered.
-func (r *Registry) Activate(name string) (*types.Skill, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	name = strings.ToLower(strings.TrimSpace(name))
-	s, ok := r.skills[name]
-	if !ok {
-		return nil, fmt.Errorf("skill %q not found", name)
-	}
-	r.active = name
-	return s, nil
-}
-
-// Deactivate clears the currently active skill.
-func (r *Registry) Deactivate() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.active = ""
-}
-
-// GetActive returns the currently active skill, or (nil, false) if none.
-func (r *Registry) GetActive() (*types.Skill, bool) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	if r.active == "" {
-		return nil, false
-	}
-	s, ok := r.skills[r.active]
-	return s, ok
-}
-
-// IsActive reports whether name is the currently active skill.
-func (r *Registry) IsActive(name string) bool {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	return r.active == strings.ToLower(strings.TrimSpace(name))
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/liup215/gline/internal/api"
 	"github.com/liup215/gline/internal/log"
 	"github.com/liup215/gline/internal/prompts"
+	"github.com/liup215/gline/internal/skills"
 	"github.com/liup215/gline/internal/storage"
 	"github.com/liup215/gline/internal/tools"
 	"github.com/liup215/gline/pkg/types"
@@ -111,7 +112,16 @@ func initializeAgent() (*agent.BaseAgent, error) {
 	} else {
 		registry = tools.InitDefaultRegistry()
 	}
+
+	// Initialize skills registry and wire up use_skill tool
+	skillReg := skills.NewRegistry()
+	skillReg.LoadFromDirs(skills.DefaultSkillDirs...)
+	if skillReg.Count() > 0 {
+		log.Infof("Loaded %d skills", skillReg.Count())
+	}
+	tools.RegisterSkillTool(registry, skillReg)
 	opts.ToolRegistry = registry
+	opts.Skills = skillReg.GetMeta()
 
 	log.Infof("Initialized %d tools", registry.Count())
 

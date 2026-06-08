@@ -133,6 +133,18 @@ func InitDefaultRegistry(engine ...*memory.UnifiedEngine) *Registry {
 	return registry
 }
 
+// RegisterSkillTool registers the use_skill tool with a skill registry instance.
+// This must be called after InitDefaultRegistry and after the skill registry is
+// created so the tool can look up skills on-demand.
+func RegisterSkillTool(registry *Registry, skillRegistry SkillRegistry) {
+	registry.Register(&ToolInfo{
+		Tool:                 NewUseSkillTool(skillRegistry),
+		Category:             CategoryInteraction,
+		AllowedModes:         []string{"plan", "act"},
+		RequiresConfirmation: false,
+	})
+}
+
 // GetDefaultTools returns a list of all default tools
 func GetDefaultTools() []Tool {
 	return []Tool{

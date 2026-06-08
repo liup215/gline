@@ -88,6 +88,11 @@ type Options struct {
 	// CustomRules is extra text appended to the system prompt
 	CustomRules string
 
+	// Skills is the list of available skills for the system prompt.
+	// Only metadata (name + description) is passed; actual skill contents
+	// are loaded on-demand via the use_skill tool.
+	Skills []types.SkillMeta
+
 	// Store is the optional persistent storage for conversation history
 	Store storage.Store
 
@@ -121,7 +126,7 @@ type BaseAgent struct {
 	taskTitle    string
 	workingDir   string
 
-	activeSkill *types.Skill // optional skill injected into system prompt
+	skills []types.SkillMeta // available skills metadata for system prompt
 
 	// Stream pre-dispatch: tool calls start executing while the SSE stream is still ongoing.
 	pendingToolCallsMu     sync.Mutex
@@ -177,6 +182,7 @@ func New(opts Options) (*BaseAgent, error) {
 		store:                  opts.Store,
 		memoryEngine:           opts.MemoryEngine,
 		taskTitle:              opts.Title,
+		skills:                 opts.Skills,
 	}, nil
 }
 
@@ -242,7 +248,7 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 		if a.mode == ModePlan {
 			toolDescs = prompts.GetPlanModeToolDescriptions()
 		}
-		systemPrompt := prompts.GetSystemPrompt(string(a.mode), toolDescs, a.customRules, a.activeSkill)
+		systemPrompt := prompts.GetSystemPrompt(string(a.mode), toolDescs, a.customRules, a.skills)
 
 		// ── Memory context injection (Phase 5) ────────────────────────────
 		memoryCtx := a.buildMemoryContext(ctx, prompt)
@@ -738,20 +744,12 @@ func (a *BaseAgent) SetWorkingDir(dir string) {
 	a.workingDir = dir
 }
 
-// SetSkill activates a skill so its prompt is injected into the system prompt on the next turn.
-// If the agent is currently running the skill will take effect on the next message.
-func (a *BaseAgent) SetSkill(skill *types.Skill) {
-	a.activeSkill = skill
-}
-
-// ClearSkill de-activates any currently active skill.
-func (a *BaseAgent) ClearSkill() {
-	a.activeSkill = nil
-}
-
-// GetSkill returns the currently active skill, or nil if none.
-func (a *BaseAgent) GetSkill() *types.Skill {
-	return a.activeSkill
+// SetSkills updates the available skills metadata for the system prompt.
+// This should be called when the skill registry changes (e.g. after installing
+// a new skill).  The actual skill contents are loaded on-demand via the
+// use_skill tool, not pre-injected into the system prompt.
+func (a *BaseAgent) SetSkills(skills []types.SkillMeta) {
+	a.skills = skills
 }
 
 // GetMemoryEngine returns the optional unified memory engine, or nil.

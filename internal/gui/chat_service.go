@@ -17,7 +17,6 @@ import (
 	"github.com/liup215/gline/internal/skills"
 	"github.com/liup215/gline/internal/slash"
 	"github.com/liup215/gline/internal/storage"
-	"github.com/liup215/gline/pkg/types"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -114,33 +113,17 @@ func (c *ChatService) InitSlashRegistry() {
 		c.cmdReg.Register(cmd)
 	}
 
-	// Register skill commands
+	// Register skill slash commands
 	if c.Backend.skillRegistry != nil {
-		skillCmds := skills.BuildSlashCommands(
-			c.Backend.skillRegistry,
-			func(skill *types.Skill) {
-				if c.Backend.ag == nil {
-					return
-				}
-				baseAg, ok := c.Backend.ag.(*agent.BaseAgent)
-				if !ok {
-					return
-				}
-				baseAg.SetSkill(skill)
-			},
-			func() {
-				if c.Backend.ag == nil {
-					return
-				}
-				baseAg, ok := c.Backend.ag.(*agent.BaseAgent)
-				if !ok {
-					return
-				}
-				baseAg.ClearSkill()
-			},
-		)
+		skillCmds := skills.BuildSlashCommands(c.Backend.skillRegistry)
 		for _, cmd := range skillCmds {
 			c.cmdReg.Register(cmd)
+		}
+		// Keep the agent's skills metadata in sync with the registry.
+		if c.Backend.ag != nil {
+			if baseAg, ok := c.Backend.ag.(*agent.BaseAgent); ok {
+				baseAg.SetSkills(c.Backend.skillRegistry.GetMeta())
+			}
 		}
 	}
 }
@@ -425,31 +408,25 @@ func (c *ChatService) ExecuteSlashCommand(name string, args string) (*SlashActio
 		if c.Backend.skillRegistry != nil {
 			switch name {
 			case "skill":
-				infos := c.Backend.skillRegistry.GetAllInfo()
-				if len(infos) == 0 {
+				metas := c.Backend.skillRegistry.GetMeta()
+				if len(metas) == 0 {
 					capturedMessage = "No skills loaded."
 				} else {
 					var b strings.Builder
 					b.WriteString("Available skills:\n")
-					for _, info := range infos {
-						marker := " "
-						if info.Active {
-							marker = "*"
-						}
-						b.WriteString(fmt.Sprintf("  [%s] /%-15s %s\n", marker, info.Name, info.Description))
+					for _, meta := range metas {
+						b.WriteString(fmt.Sprintf("  /%-15s %s\n", meta.Name, meta.Description))
 					}
-					b.WriteString("\nUse /skill-name to activate, /skill-off to deactivate.")
+					b.WriteString("\nSkills are loaded on-demand via the use_skill tool.")
 					capturedMessage = b.String()
-				}
-			case "skill-off":
-				if _, ok := c.Backend.skillRegistry.GetActive(); !ok {
-					capturedMessage = "No skill is currently active."
-				} else {
-					capturedMessage = "Skill deactivated."
 				}
 			default:
 				if s, ok := c.Backend.skillRegistry.Get(name); ok {
-					capturedMessage = fmt.Sprintf("Skill activated: %s\n%s", s.Name, s.Description)
+					var b strings.Builder
+					b.WriteString(fmt.Sprintf("Skill: %s\n", s.Name))
+					b.WriteString(fmt.Sprintf("Description: %s\n\n", s.Description))
+					b.WriteString("To activate this skill, use the use_skill tool with skill_name: " + s.Name)
+					capturedMessage = b.String()
 				}
 			}
 		}

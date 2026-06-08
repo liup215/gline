@@ -1,4 +1,6 @@
 // Package skills provides skill loading and registration for gline.
+// Skills follow the cline agent skill specification:
+// each skill is a directory containing a SKILL.md file with YAML frontmatter.
 package skills
 
 import (
@@ -17,6 +19,8 @@ var (
 	DefaultSkillDirs = []string{
 		filepath.Join(mustUserHomeDir(), ".gline", "skills"),
 		filepath.Join(mustUserHomeDir(), ".agents", "skills"),
+		filepath.Join(mustUserHomeDir(), ".cline", "skills"),
+		filepath.Join(mustUserHomeDir(), ".claude", "skills"),
 	}
 )
 
@@ -26,12 +30,6 @@ func mustUserHomeDir() string {
 		return "."
 	}
 	return home
-}
-
-// IsSkillFile returns true if the file extension indicates a skill definition.
-func IsSkillFile(name string) bool {
-	ext := strings.ToLower(filepath.Ext(name))
-	return ext == ".yaml" || ext == ".yml" || ext == ".json"
 }
 
 // Validate checks that a skill has the required fields.
@@ -45,10 +43,7 @@ func Validate(s *types.Skill) error {
 	if strings.TrimSpace(s.Description) == "" {
 		return fmt.Errorf("skill description is required")
 	}
-	if strings.TrimSpace(s.Prompt) == "" {
-		return fmt.Errorf("skill prompt is required")
-	}
-	// Normalise name early so that keys and file names stay consistent.
+	// Normalise name early so that keys and directory names stay consistent.
 	s.Name = strings.ToLower(strings.TrimSpace(s.Name))
 	return nil
 }

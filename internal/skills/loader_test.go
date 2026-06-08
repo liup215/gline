@@ -10,79 +10,166 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestLoadSkillFromFile(t *testing.T) {
-	t.Run("yaml skill", func(t *testing.T) {
+func TestParseSkillMarkdown(t *testing.T) {
+	t.Run("valid SKILL.md", func(t *testing.T) {
 		dir := t.TempDir()
-		content := `name: test-skill
+		skillDir := filepath.Join(dir, "my-skill")
+		require.NoError(t, os.MkdirAll(skillDir, 0755))
+
+		content := `---
+name: my-skill
 description: "A test skill"
-prompt: |
-  You are a test assistant.
+---
+# Instructions
+You are a test assistant.
+Do testing things.
 `
-		path := filepath.Join(dir, "test.yaml")
-		require.NoError(t, os.WriteFile(path, []byte(content), 0644))
+		require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(content), 0644))
 
-		skill, err := LoadSkillFromFile(path)
+		skills, err := LoadSkillsFromDir(dir)
 		require.NoError(t, err)
-		assert.Equal(t, "test-skill", skill.Name)
-		assert.Equal(t, "A test skill", skill.Description)
-		assert.Contains(t, skill.Prompt, "test assistant")
+		require.Len(t, skills, 1)
+		assert.Equal(t, "my-skill", skills[0].Name)
+		assert.Equal(t, "A test skill", skills[0].Description)
+		assert.Contains(t, skills[0].Contents, "You are a test assistant.")
 	})
 
-	t.Run("json skill", func(t *testing.T) {
+	t.Run("name mismatch", func(t *testing.T) {
 		dir := t.TempDir()
-		content := `{"name":"json-skill","description":"JSON test","prompt":"Hello from JSON"}`
-		path := filepath.Join(dir, "test.json")
-		require.NoError(t, os.WriteFile(path, []byte(content), 0644))
+		skillDir := filepath.Join(dir, "wrong-name")
+		require.NoError(t, os.MkdirAll(skillDir, 0755))
 
-		skill, err := LoadSkillFromFile(path)
+		content := `---
+name: expected-name
+description: "Name mismatch"
+---
+# Instructions
+Test.
+`
+		require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(content), 0644))
+
+		_, err := LoadSkillsFromDir(dir)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "does not match directory name")
+	})
+
+	t.Run("missing frontmatter", func(t *testing.T) {
+		dir := t.TempDir()
+		skillDir := filepath.Join(dir, "bad-skill")
+		require.NoError(t, os.MkdirAll(skillDir, 0755))
+
+		content := `# Instructions
+No frontmatter here.
+`
+		require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(content), 0644))
+
+		_, err := LoadSkillsFromDir(dir)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "skill description is required")
+	})
+
+	t.Run("missing SKILL.md", func(t *testing.T) {
+		dir := t.TempDir()
+		skillDir := filepath.Join(dir, "empty-skill")
+		require.NoError(t, os.MkdirAll(skillDir, 0755))
+		// no SKILL.md file
+
+		skills, err := LoadSkillsFromDir(dir)
 		require.NoError(t, err)
-		assert.Equal(t, "json-skill", skill.Name)
-		assert.Equal(t, "JSON test", skill.Description)
+		assert.Empty(t, skills)
 	})
 
-	t.Run("unsupported extension", func(t *testing.T) {
+	t.Run("missing description", func(t *testing.T) {
 		dir := t.TempDir()
-		path := filepath.Join(dir, "test.txt")
-		require.NoError(t, os.WriteFile(path, []byte("hello"), 0644))
-		_, err := LoadSkillFromFile(path)
+		skillDir := filepath.Join(dir, "no-desc")
+		require.NoError(t, os.MkdirAll(skillDir, 0755))
+
+		content := `---
+name: no-desc
+---
+# Instructions
+No description.
+`
+		require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(content), 0644))
+
+		_, err := LoadSkillsFromDir(dir)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "unsupported")
 	})
 
-	t.Run("missing file", func(t *testing.T) {
-		_, err := LoadSkillFromFile("/nonexistent/skill.yaml")
-		assert.Error(t, err)
+	t.Run("empty directory", func(t *testing.T) {
+		dir := t.TempDir()
+		skills, err := LoadSkillsFromDir(dir)
+		require.NoError(t, err)
+		assert.Empty(t, skills)
 	})
-}
 
-func TestLoadSkillsFromDir(t *testing.T) {
 	t.Run("non-existent directory", func(t *testing.T) {
 		skills, err := LoadSkillsFromDir("/nonexistent/dir")
 		require.NoError(t, err)
 		assert.Empty(t, skills)
 	})
+}
 
-	t.Run("multiple skills with override priority", func(t *testing.T) {
+func TestLoadSkillsFromDir(t *testing.T) {
+	t.Run("multiple skills", func(t *testing.T) {
+		dir := t.TempDir()
+
+		// skill1: explain
+		s1Dir := filepath.Join(dir, "explain")
+		require.NoError(t, os.MkdirAll(s1Dir, 0755))
+		require.NoError(t, os.WriteFile(filepath.Join(s1Dir, "SKILL.md"), []byte(`---
+name: explain
+description: Explain code
+---
+Explain code clearly.
+`), 0644))
+
+		// skill2: debug
+		s2Dir := filepath.Join(dir, "debug")
+		require.NoError(t, os.MkdirAll(s2Dir, 0755))
+		require.NoError(t, os.WriteFile(filepath.Join(s2Dir, "SKILL.md"), []byte(`---
+name: debug
+description: Debug code
+---
+Debug code step by step.
+`), 0644))
+
+		skills, err := LoadSkillsFromDir(dir)
+		require.NoError(t, err)
+		require.Len(t, skills, 2)
+
+		names := make([]string, 2)
+		for i, s := range skills {
+			names[i] = s.Name
+		}
+		assert.Contains(t, names, "explain")
+		assert.Contains(t, names, "debug")
+	})
+
+	t.Run("override priority via registry", func(t *testing.T) {
 		dir1 := t.TempDir()
 		dir2 := t.TempDir()
 
 		// dir1: older version
-		f1 := filepath.Join(dir1, "explain.yaml")
-		require.NoError(t, os.WriteFile(f1, []byte(`
+		s1Dir := filepath.Join(dir1, "explain")
+		require.NoError(t, os.MkdirAll(s1Dir, 0755))
+		require.NoError(t, os.WriteFile(filepath.Join(s1Dir, "SKILL.md"), []byte(`---
 name: explain
 description: Old description
-prompt: Old prompt
+---
+Old instructions.
 `), 0644))
 
-		// dir2: newer version (should override when dir2 is loaded after dir1)
-		f2 := filepath.Join(dir2, "explain.yaml")
-		require.NoError(t, os.WriteFile(f2, []byte(`
+		// dir2: newer version
+		s2Dir := filepath.Join(dir2, "explain")
+		require.NoError(t, os.MkdirAll(s2Dir, 0755))
+		require.NoError(t, os.WriteFile(filepath.Join(s2Dir, "SKILL.md"), []byte(`---
 name: explain
 description: New description
-prompt: New prompt
+---
+New instructions.
 `), 0644))
 
-		// Load dir1 then dir2 separately to test overwrite
 		reg := NewRegistry()
 		require.NoError(t, reg.LoadFromDirs(dir1))
 		s1, _ := reg.Get("explain")
@@ -93,43 +180,47 @@ prompt: New prompt
 		assert.Equal(t, "New description", s2.Description)
 	})
 
-	t.Run("derive name from filename", func(t *testing.T) {
-		dir := t.TempDir()
-		f := filepath.Join(dir, "my-skill.yml")
-		require.NoError(t, os.WriteFile(f, []byte(`
-description: "Derived from filename"
-prompt: "I have no name field"
-`), 0644))
-
-		skills, err := LoadSkillsFromDir(dir)
+	t.Run("non-existent directory", func(t *testing.T) {
+		skills, err := LoadSkillsFromDir("/nonexistent/dir")
 		require.NoError(t, err)
-		require.Len(t, skills, 1)
-		assert.Equal(t, "my-skill", skills[0].Name)
+		assert.Empty(t, skills)
 	})
 
-	t.Run("skip invalid files", func(t *testing.T) {
+	t.Run("skip invalid skill", func(t *testing.T) {
 		dir := t.TempDir()
-		valid := filepath.Join(dir, "valid.yaml")
-		require.NoError(t, os.WriteFile(valid, []byte(`name: valid
+
+		// valid skill
+		s1Dir := filepath.Join(dir, "valid")
+		require.NoError(t, os.MkdirAll(s1Dir, 0755))
+		require.NoError(t, os.WriteFile(filepath.Join(s1Dir, "SKILL.md"), []byte(`---
+name: valid
 description: ok
-prompt: ok
+---
+Ok.
 `), 0644))
 
-		invalid := filepath.Join(dir, "invalid.yaml")
-		require.NoError(t, os.WriteFile(invalid, []byte(`not: yaml: :-`), 0644))
+		// invalid name mismatch
+		s2Dir := filepath.Join(dir, "bad")
+		require.NoError(t, os.MkdirAll(s2Dir, 0755))
+		require.NoError(t, os.WriteFile(filepath.Join(s2Dir, "SKILL.md"), []byte(`---
+name: wrong-name
+description: bad
+---
+Bad.
+`), 0644))
 
 		skills, err := LoadSkillsFromDir(dir)
 		// Should return the valid skill but also report an error
 		assert.NotNil(t, skills)
 		assert.Len(t, skills, 1)
-		assert.Error(t, err) // some files failed
+		assert.Error(t, err)
 	})
 }
 
 func TestValidate(t *testing.T) {
 	t.Run("valid skill", func(t *testing.T) {
 		assert.NoError(t, Validate(&types.Skill{
-			Name: "test", Description: "d", Prompt: "p",
+			Name: "test", Description: "d", Contents: "content",
 		}))
 	})
 
@@ -138,14 +229,10 @@ func TestValidate(t *testing.T) {
 	})
 
 	t.Run("missing name", func(t *testing.T) {
-		assert.Error(t, Validate(&types.Skill{Description: "d", Prompt: "p"}))
+		assert.Error(t, Validate(&types.Skill{Description: "d", Contents: "c"}))
 	})
 
 	t.Run("missing description", func(t *testing.T) {
-		assert.Error(t, Validate(&types.Skill{Name: "n", Prompt: "p"}))
-	})
-
-	t.Run("missing prompt", func(t *testing.T) {
-		assert.Error(t, Validate(&types.Skill{Name: "n", Description: "d"}))
+		assert.Error(t, Validate(&types.Skill{Name: "n", Contents: "c"}))
 	})
 }

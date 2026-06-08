@@ -12,9 +12,9 @@ import (
 
 // GetSystemPrompt returns the appropriate system prompt for the given mode.
 // If customRules is non-empty, it is appended before the skill section.
-// If activeSkill is non-nil, its prompt is appended at the very end so that
-// it takes the highest precedence in shaping the assistant's behaviour.
-func GetSystemPrompt(mode string, tools []ToolDescription, customRules string, activeSkill *types.Skill) string {
+// If skills is non-empty, a SKILLS section is added telling the LLM about
+// available skills and the use_skill tool.
+func GetSystemPrompt(mode string, tools []ToolDescription, customRules string, skills []types.SkillMeta) string {
 	var prompt strings.Builder
 
 	// Agent Role
@@ -75,13 +75,30 @@ func GetSystemPrompt(mode string, tools []ToolDescription, customRules string, a
 		prompt.WriteString(customRules)
 	}
 
-	// Append active skill prompt at the very end (highest precedence)
-	if activeSkill != nil && strings.TrimSpace(activeSkill.Prompt) != "" {
-		prompt.WriteString(fmt.Sprintf("\n\n# Active Skill: %s\n\n", activeSkill.Name))
-		prompt.WriteString(activeSkill.Prompt)
+	// Append SKILLS section if skills are available
+	if len(skills) > 0 {
+		prompt.WriteString("\n\n# SKILLS\n\n")
+		prompt.WriteString(buildSkillsSection(skills))
 	}
 
 	return prompt.String()
+}
+
+// buildSkillsSection generates the skills section for the system prompt.
+// It lists available skills and tells the LLM how to use them via the
+// use_skill tool, matching the cline specification.
+func buildSkillsSection(skills []types.SkillMeta) string {
+	var b strings.Builder
+	b.WriteString("The following skills provide specialized instructions for specific tasks. When a user's request matches a skill description, use the use_skill tool to load and activate the skill.\n\n")
+	b.WriteString("Available skills:\n")
+	for _, s := range skills {
+		b.WriteString(fmt.Sprintf("  - \"%s\": %s\n", s.Name, s.Description))
+	}
+	b.WriteString("\nTo use a skill:\n")
+	b.WriteString("1. Match the user's request to a skill based on its description\n")
+	b.WriteString("2. Call use_skill with the skill_name parameter set to the exact skill name\n")
+	b.WriteString("3. Follow the instructions returned by the tool")
+	return b.String()
 }
 
 // getToolUseSection returns the tool use section with formatting, guidelines, and examples.
