@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/ledongthuc/pdf"
+	"github.com/tsawler/tabula"
 	"github.com/xuri/excelize/v2"
 	"golang.org/x/net/html"
 )
@@ -36,28 +36,37 @@ func ParseDocument(path string) (string, error) {
 		return parseXLSX(path)
 	case ".pptx":
 		return parsePPTX(data)
+	case ".odt", ".epub":
+		return parseWithTabula(path)
 	default:
 		return "", fmt.Errorf("unsupported file type: %s", ext)
 	}
 }
 
-// parsePDF extracts plain text from a PDF file.
-func parsePDF(path string) (string, error) {
-	f, r, err := pdf.Open(path)
-	if err != nil {
-		return "", fmt.Errorf("pdf open: %w", err)
-	}
-	defer f.Close()
+// ─── tabula-based extraction (used for PDF / ODT / EPUB) ───────────────────
 
-	pr, err := r.GetPlainText()
+func parseWithTabula(path string) (string, error) {
+	text, warnings, err := tabula.Open(path).
+		ExcludeHeadersAndFooters().
+		Text()
 	if err != nil {
-		return "", fmt.Errorf("pdf extract text: %w", err)
+		return "", fmt.Errorf("tabula extract: %w", err)
 	}
-	data, err := io.ReadAll(pr)
-	if err != nil {
-		return "", fmt.Errorf("pdf read text: %w", err)
+	if len(warnings) > 0 {
+		var sb strings.Builder
+		for _, w := range warnings {
+			sb.WriteString(w.Message)
+			sb.WriteString("; ")
+		}
+		_ = sb.String()
 	}
-	return strings.TrimSpace(string(data)), nil
+	return strings.TrimSpace(text), nil
+}
+
+// parsePDF extracts plain text from a PDF file via tabula.
+// tabula 对 CJK/复杂字体编码的健壮性优于 ledongthuc/pdf。
+func parsePDF(path string) (string, error) {
+	return parseWithTabula(path)
 }
 
 // parseDOCX extracts plain text from a DOCX (OOXML) file.

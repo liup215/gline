@@ -324,7 +324,7 @@ func isSupportedDoc(path string) bool {
 		".md", ".txt", ".go", ".js", ".ts", ".py", ".rs", ".java",
 		".c", ".cpp", ".h", ".json", ".yaml", ".yml", ".xml", ".toml",
 		".html", ".htm",
-		".pdf", ".docx", ".xlsx", ".pptx",
+		".pdf", ".docx", ".xlsx", ".pptx", ".odt", ".epub",
 	}
 	for _, s := range supported {
 		if ext == s {

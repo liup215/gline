@@ -159,6 +159,13 @@ memory:
 | **失败行为** | 同步返回 error | Caller nil 时立即返回 error |
 | **搜索** | 向量相似度 + FTS5 + RRF | 关键词扫描 + 可选 LLM rerank |
 
+### PDF 解析器
+
+- **库**: `github.com/tsawler/tabula` (MIT, 纯 Go, 零 CGO)
+- **旧库**: `github.com/ledongthuc/pdf` — 对嵌入字体、CJK 中文、复杂编码支持不足，提取可能返回二进制乱码。
+- **处理格式**: `.pdf` / `.odt` / `.epub`（通过 tabula 提取）；`.docx`/`.xlsx`/`.pptx`/`.html` 保留原有解析器。
+- **API**: `tabula.Open(path).ExcludeHeadersAndFooters().Text()` — 自动识别格式并提取正文，对扫描件缺少文本层时返回 warnings（不上传二进制乱码）。
+
 ### 前端 paths 说明
 
 前端源码在 `frontend/`，bindings 生成到 `frontend/bindings/`（TypeScript 类型）。

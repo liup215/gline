@@ -181,6 +181,8 @@ KB/RAG 路径（本地，无 LLM）:
   → ParseDocument → Chunk → Embed → StoreDocument(RAG DB)
   ✓ Chunk + FTS5 本地搜索即可
 
+  **PDF 解析**: `ParseDocument` 使用 `tsawler/tabula` 提取 PDF 文本（优于旧库 `ledongthuc/pdf`，支持 CJK/嵌入字体/排除页眉页脚）。
+
 Wiki 路径（需 LLM）:
   User: "生成 wiki 笔记"
   → WikiIngestFile(filePath, kbID)
