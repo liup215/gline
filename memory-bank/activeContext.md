@@ -254,8 +254,34 @@ Phase 2 全部子任务已完成：
 **文件**: `pkg/types/skill.go`, `internal/skills/*.go`, `internal/tools/use_skill.go`, `internal/prompts/system.go`, `internal/agent/agent.go`, `internal/gui/backend.go`, `internal/gui/chat_service.go`, `cmd/gline/chat.go`
 **验证**: `go build ./...` ✅, `go test ./...` ✅, `build-all.ps1` ✅
 
+## Current Focus — replace_in_file 5 层容错优化（2026-06-XX）
+
+**状态**: 已完成并提交 ✅
+
+**背景**: `replace_in_file` 工具频繁失败，根因是 LLM 从 `read_file` 获取的内容与实际文件有空白符差异，导致 `strings.Contains` 完全精确匹配失败。错误信息零反馈，LLM 无法 self-correct。
+
+**5 层优化内容**:
+
+| 层级 | 优化 | 机制 | 效果 |
+|------|------|------|------|
+| ① | 多 SEARCH/REPLACE 块支持 | 新增 `replacements` 数组字段，单次调用完成多个编辑 | 减少调用次数，降低累积误差 |
+| ② | 增强错误反馈 | Jaccard bigram 相似度计算最近匹配 + 相似度分数 + 4 步排查指南 | LLM 能 self-correct |
+| ③ | 空格归一化容错 | `normalizeWhitespace()` 将空格/tab/换行压缩为单个空格后再匹配 | 消除空白差异导致的大部分失败 |
+| ④ | 行锚定回退 | 选取搜索块中最长行作为锚点，在文件中定位后验证周围上下文 | 大文件/长代码块的最后一道防线 |
+| ⑤ | 替换后 diff 输出 | `computeDiff()` 返回 ```` ```diff ```` 格式摘要 | LLM 验证修改是否正确 |
+
+**新增/修改文件**:
+- `internal/tools/file.go` — 核心逻辑重写（~+300 行），保持向后兼容（单块模式仍可用）
+- `internal/prompts/system.go` — 系统提示 `%EDITING_FILES%` 节更新，工具 schema 增加 `replacements` 数组
+- `internal/tools/file_test.go` — 7 个单元测试（单块/多块/错误反馈/归一化/相似度/diff）
+
+**验证**: `go test ./internal/tools/...` ✅ (7/7 pass), `go test ./...` ✅ (全项目 0 失败), `build-all.ps1` ✅ (完整构建通过)
+
+---
+
 ## 下一步建议
 
-1. **提交未完成的 P2.5.3** — 主题系统组件集成变更（14 files）
-2. **Phase 3 MCP 支持** (长期) — 引入 Model Context Protocol，接入外部工具源
+1. **Phase 7: Fact Extractor LLM 集成** — 对话结束后用 LLM 提取 ADD/DECAY 事实，取代 rule-based stub
+2. **Phase 3 MCP 支持** — 引入 Model Context Protocol，接入外部工具源
 3. **Phase 3 LiteLLM 多提供商统一** — `litellmcreds` 规范与引导流程
+4. **P2.5.3 主题系统组件集成** — 若有未提交的 14 files，完成提交

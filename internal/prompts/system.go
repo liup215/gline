@@ -85,8 +85,6 @@ func GetSystemPrompt(mode string, tools []ToolDescription, customRules string, s
 }
 
 // buildSkillsSection generates the skills section for the system prompt.
-// It lists available skills and tells the LLM how to use them via the
-// use_skill tool, matching the cline specification.
 func buildSkillsSection(skills []types.SkillMeta) string {
 	var b strings.Builder
 	b.WriteString("The following skills provide specialized instructions for specific tasks. When a user's request matches a skill description, use the use_skill tool to load and activate the skill.\n\n")
@@ -126,9 +124,17 @@ func getEditingFilesSection() string {
 	return `EDITING FILES
 
 - write_to_file: create new files or overwrite existing ones completely.
-- replace_in_file: make targeted edits. Prefer this for small changes.
+- replace_in_file: make targeted edits using exact search/replace.
 
-When editing the same file multiple times, use a single replace_in_file call with multiple SEARCH/REPLACE blocks.`
+Usage styles:
+  • Single block:  path + search + replace (one change)
+  • Multi-block:   path + replacements array [{"search": "...", "replace": "..."}, ...]
+    → Preferred when editing the same file multiple times.
+
+Error handling:
+  • If a search fails, the tool returns the NEAREST MATCH found with a similarity score.
+  • Re-read the file and copy the EXACT text including indentation.
+  • Ensure no hidden characters differ (tabs vs spaces).`
 }
 
 // getActVsPlanSection returns the Act vs Plan mode section.
@@ -144,7 +150,7 @@ func getCapabilitiesSection() string {
 	return `CAPABILITIES
 
 - You have access to tools that let you execute CLI commands on the user's computer, list files, view source code definitions, regex search, read and edit files, and ask follow-up questions. These tools help you effectively accomplish a wide range of tasks, such as writing code, making edits or improvements to existing files, understanding the current state of a project, performing system operations, and much more.
-- When the user initially gives you a task, a recursive list of all filepaths in the current working directory ('` + getCWD() + `') will be included in environment_details. This provides an overview of the project's file structure, offering key insights into the project from directory/file names (how developers conceptualize and organize their code) and file extensions (the language used). This can also guide decision-making on which files to explore further. If you need to further explore directories such as outside the current working directory, you can use the list_files tool. If you pass 'true' for the recursive parameter, it will list files recursively. Otherwise, it will list files at the top level, which is better suited for generic directories where you don't necessarily need the nested structure, like the Desktop.
+- When you initially gives you a task, a recursive list of all filepaths in the current working directory ('` + getCWD() + `') will be included in environment_details. This provides an overview of the project's file structure, offering key insights into the project from directory/file names (how developers conceptualize and organize their code) and file extensions (the language used). This can also guide decision-making on which files to explore further. If you need to further explore directories such as outside the current working directory, you can use the list_files tool. If you pass 'true' for the recursive parameter, it will list files recursively. Otherwise, it will list files at the top level, which is better suited for generic directories where you don't necessarily need the nested structure, like the Desktop.
 - You can use search_files to perform regex searches across files in a specified directory, outputting context-rich results that include surrounding lines. This is particularly useful for understanding code patterns, finding specific implementations, or identifying areas that need refactoring.
 - You can use the list_code_definition_names tool to get an overview of source code definitions for all files at the top level of a specified directory. This can be particularly useful when you need to understand the broader context and relationships between certain parts of the code. You may need to call this tool multiple times to understand various parts of the codebase related to the task.
     - For example, when asked to make edits or improvements you might analyze the file structure in the initial environment_details to get an overview of the project, then use list_code_definition_names to get further insight using source code definitions for files located in relevant directories, then read_file to examine the contents of relevant files, analyze the code and suggest improvements or make necessary edits, then use the replace_in_file tool to implement changes. If you refactored code that could affect other parts of the codebase, you could use search_files to ensure you update other files as needed.
@@ -162,14 +168,12 @@ func getRulesSection() string {
 - NEVER call same tool with same params twice.`
 }
 
-
 // getObjectiveSection returns the objective section.
 func getObjectiveSection() string {
 	return `OBJECTIVE
 
 Break task into steps, work sequentially, use tools one at a time.`
 }
-
 
 // getSystemInfoSection returns the system information section.
 func getSystemInfoSection() string {
@@ -242,47 +246,52 @@ func GetToolDescriptions() []ToolDescription {
 		{
 			Name:        "read_file",
 			Description: "Read the contents of a file at the specified path. Use this when you need to examine the contents of an existing file.",
-			InputSchema: `{"type":"object","properties":{"path":{"type":"string","description":"The path of the file to read"}},"required":["path"]}`,
+			InputSchema: `{"type":"object","properties":{"path":{"type":"string","description":"The path of the file to read"}},"required":["path"] }`,
 		},
 		{
 			Name:        "write_to_file",
 			Description: "Write content to a file at the specified path. If the file exists, it will be overwritten. Use this when creating new files or completely rewriting existing files.",
-			InputSchema: `{"type":"object","properties":{"path":{"type":"string","description":"The path of the file to write"},"content":{"type":"string","description":"The content to write to the file"}},"required":["path","content"]}`,
+			InputSchema: `{"type":"object","properties":{"path":{"type":"string","description":"The path of the file to write"},"content":{"type":"string","description":"The content to write to the file"}} ,"required":["path","content"] }`,
 		},
 		{
 			Name:        "replace_in_file",
-			Description: "Replace specific content in a file using exact search/replace. Use this for targeted modifications to existing files.",
-			InputSchema: `{"type":"object","properties":{"path":{"type":"string","description":"The path of the file to modify"},"search":{"type":"string","description":"Exact content to find"},"replace":{"type":"string","description":"Content to replace with"}},"required":["path","search","replace"]}`,
+			Description: "Replace specific content in a file using exact search/replace. Supports single blocks or an array of replacements for multiple edits. Use this for targeted modifications to existing files.",
+			InputSchema: `{"type":"object","properties":{"path":{"type":"string","description":"The path of the file to modify"},"search":{"type":"string","description":"Exact content to find (single block style)"},"replace":{"type":"string","description":"Content to replace with (single block style)"},"replacements":{"type":"array","description":"Array of replacement blocks. Preferred for multiple edits.","items":{"type":"object","properties":{"search":{"type":"string","description":"Exact content to find"},"replace":{"type":"string","description":"Content to replace with"}},"required":["search","replace"]}}} ,"required":["path"] }`,
 		},
 		{
 			Name:        "list_files",
 			Description: "List files and directories at the specified path. Use this to explore the file system.",
-			InputSchema: `{"type":"object","properties":{"path":{"type":"string","description":"The path of the directory to list"},"recursive":{"type":"boolean","description":"List recursively"}},"required":["path"]}`,
+			InputSchema: `{"type":"object","properties":{"path":{"type":"string","description":"The path of the directory to list"},"recursive":{"type":"boolean","description":"List recursively"}} ,"required":["path"] }`,
 		},
 		{
 			Name:        "search_files",
 			Description: "Search for a regex pattern in files within a directory. Returns context-rich results with file paths, line numbers, and surrounding context.",
-			InputSchema: `{"type":"object","properties":{"path":{"type":"string","description":"Directory to search"},"regex":{"type":"string","description":"Pattern to search for"},"file_pattern":{"type":"string","description":"Glob pattern to filter files"}},"required":["path","regex"]}`,
+			InputSchema: `{"type":"object","properties":{"path":{"type":"string","description":"Directory to search"},"regex":{"type":"string","description":"Pattern to search for"},"file_pattern":{"type":"string","description":"Glob pattern to filter files"}} ,"required":["path","regex"] }`,
 		},
 		{
 			Name:        "list_code_definition_names",
 			Description: "List definition names (functions, classes, methods, etc.) in code files within a directory. Provides insights into codebase structure.",
-			InputSchema: `{"type":"object","properties":{"path":{"type":"string","description":"Directory to analyze"},"file_pattern":{"type":"string","description":"Glob pattern to filter files"}},"required":["path"]}`,
+			InputSchema: `{"type":"object","properties":{"path":{"type":"string","description":"Directory to analyze"},"file_pattern":{"type":"string","description":"Glob pattern to filter files"}} ,"required":["path"] }`,
 		},
 		{
 			Name:        "execute_command",
 			Description: "Execute a CLI command on the system. Use this when you need to perform system operations or run specific commands.",
-			InputSchema: `{"type":"object","properties":{"command":{"type":"string","description":"The command to execute"},"requires_approval":{"type":"boolean","description":"Whether this command requires user approval","default":false},"timeout":{"type":"integer","description":"Timeout in seconds"}},"required":["command"]}`,
+			InputSchema: `{"type":"object","properties":{"command":{"type":"string","description":"The command to execute"},"requires_approval":{"type":"boolean","description":"Whether this command requires user approval","default":false},"timeout":{"type":"integer","description":"Timeout in seconds"}} ,"required":["command"] }`,
 		},
 		{
 			Name:        "ask_followup_question",
 			Description: "Ask the user a question to gather clarifying information or make a decision. Use this when you need more information to complete a task.",
-			InputSchema: `{"type":"object","properties":{"question":{"type":"string","description":"The question to ask"},"options":{"type":"array","items":{"type":"string"},"description":"Options for the user to choose from"}},"required":["question"]}`,
+			InputSchema: `{"type":"object","properties":{"question":{"type":"string","description":"The question to ask"},"options":{"type":"array","items":{"type":"string"},"description":"Options for the user to choose from"}} ,"required":["question"] }`,
 		},
 		{
 			Name:        "attempt_completion",
 			Description: "Indicate that you have completed the task and provide a summary of what was accomplished. Use this when you have finished all required work.",
-			InputSchema: `{"type":"object","properties":{"result":{"type":"string","description":"Summary of what was accomplished"},"command":{"type":"string","description":"Command to showcase the result"}},"required":["result"]}`,
+			InputSchema: `{"type":"object","properties":{"result":{"type":"string","description":"Summary of what was accomplished"},"command":{"type":"string","description":"Command to showcase the result"}} ,"required":["result"] }`,
+		},
+		{
+			Name:        "use_subagents",
+			Description: "Run up to four focused in-process subagents in parallel. Each subagent gets its own prompt and returns a comprehensive research result. Use this for broad exploration when reading many files would consume the main agent's context window. You do not need to launch multiple subagents every time; using one subagent is valid when it avoids unnecessary context usage for light discovery work.",
+			InputSchema: `{"type":"object","properties":{"prompt_1":{"type":"string","description":"First subagent prompt."},"prompt_2":{"type":"string","description":"Optional second subagent prompt."},"prompt_3":{"type":"string","description":"Optional third subagent prompt."},"prompt_4":{"type":"string","description":"Optional fourth subagent prompt."}} ,"required":["prompt_1"] }`,
 		},
 	}
 }

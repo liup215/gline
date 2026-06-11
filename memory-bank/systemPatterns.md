@@ -218,7 +218,33 @@ func (r *Registry) GetAll() []Tool {
 }
 ```
 
-### 5. 状态管理模式
+#### ReplaceInFile 容错架构（2026-06-XX）
+
+`replace_in_file` 采用 **5 层回退**设计，从精确匹配逐步降级到启发式匹配：
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  Layer 1: 精确字符串匹配 (strings.Contains)               │
+│    ↓ 失败                                                 │
+│  Layer 2: 空格归一化匹配 (normalizeWhitespace)             │
+│    ↓ 失败                                                 │
+│  Layer 3: 行锚定回退 (longest-line anchor + context win) │
+│    ↓ 失败                                                 │
+│  Layer 4: 错误反馈 → Jaccard bigram 最近匹配 + diff       │
+│    ↓ LLM self-correct                                     │
+│  Layer 5: 用户根据 diff 验证结果                         │
+└──────────────────────────────────────────────────────────┘
+```
+
+**Input Schema 演进**:
+- 单块模式（向后兼容）: `{"path", "search", "replace"}`
+- 多块模式（推荐）: `{"path", "replacements": [{"search","replace"}, ...]}`
+
+**多 block 执行顺序**: 串行应用，每个 block 在前一个 block 修改后的内容上继续匹配。失败时立即中断并返回已完成的 blocks + 失败 block 的详细错误。
+
+**最近匹配算法**: 滑动窗口（±20% 长度）+ 字符 bigram Jaccard 相似度，O(n×m) 但 window size 限制确保对 100KB 文件 <500ms。
+
+## 5. 状态管理模式
 
 ```go
 type StateManager struct {

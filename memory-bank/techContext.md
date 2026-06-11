@@ -343,6 +343,37 @@ type OpenAIProvider struct {
 
 ## 构建和发布
 
+### replace_in_file 工具
+
+`replace_in_file` 支持两种调用风格，多 block 模式（`replacements` 数组）优于单 block 模式：
+
+```json
+// 单 block（向后兼容）
+{
+  "path": "src/main.go",
+  "search": "oldFunc()",
+  "replace": "newFunc()"
+}
+
+// 多 block（推荐：单次调用完成多个编辑）
+{
+  "path": "src/main.go",
+  "replacements": [
+    {"search": "oldFunc()", "replace": "newFunc()"},
+    {"search": "const X = 1", "replace": "const X = 2"}
+  ]
+}
+```
+
+**5 层容错回退**:
+1. 精确字符串匹配 (`strings.Contains`)
+2. 空格归一化匹配（压缩空白符后比较）
+3. 行锚定回退（最长行作为锚点，上下文窗口验证）
+4. 失败时返回 `Jaccard bigram` 最近匹配 + 相似度分数 + 排查指南
+5. 成功时返回 ```` ```diff ```` 格式修改摘要
+
+---
+
 ### 正确的一键构建流程
 
 本项目**不是标准 Wails 项目**，`wails3 build` **不可直接使用**。正确流程：

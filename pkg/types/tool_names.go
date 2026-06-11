@@ -15,6 +15,7 @@ const (
 	ToolUseMcpTool           ToolName = "use_mcp_tool"
 	ToolAccessMcpResource    ToolName = "access_mcp_resource"
 	ToolUseSkill             ToolName = "use_skill"
+	ToolUseSubagents         ToolName = "use_subagents"
 )
 
 func (t ToolName) String() string {

@@ -11,6 +11,7 @@ import (
 	"github.com/liup215/gline/internal/prompts"
 	"github.com/liup215/gline/internal/skills"
 	"github.com/liup215/gline/internal/storage"
+	"github.com/liup215/gline/internal/subagent"
 	"github.com/liup215/gline/internal/tools"
 	"github.com/liup215/gline/pkg/types"
 )
@@ -120,6 +121,7 @@ func initializeAgent() (*agent.BaseAgent, error) {
 		log.Infof("Loaded %d skills", skillReg.Count())
 	}
 	tools.RegisterSkillTool(registry, skillReg)
+	subagent.RegisterTool(registry, provider, registry, "", customRules, skillReg.GetMeta())
 	opts.ToolRegistry = registry
 	opts.Skills = skillReg.GetMeta()
 

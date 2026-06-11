@@ -14,6 +14,7 @@ import (
 	"github.com/liup215/gline/internal/memory"
 	"github.com/liup215/gline/internal/skills"
 	"github.com/liup215/gline/internal/storage"
+	"github.com/liup215/gline/internal/subagent"
 	"github.com/liup215/gline/internal/tools"
 	"github.com/liup215/gline/pkg/types"
 )
@@ -154,6 +155,9 @@ func (b *Backend) initAgent() error {
 	// Initialize tool registry and register use_skill with the skill registry
 	registry := tools.InitDefaultRegistry(memoryEngine)
 	tools.RegisterSkillTool(registry, b.skillRegistry)
+
+	// Register use_subagents tool
+	subagent.RegisterTool(registry, provider, registry, "", customRules, b.skillRegistry.GetMeta())
 
 	ag, err := agent.New(agent.Options{
 		Provider:     provider,
