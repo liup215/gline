@@ -197,6 +197,28 @@ Phase 2 全部子任务已完成：
 
 ## 最新变更
 
+### ask_followup_question 弹窗 Markdown 渲染 + 滚动条（当前已实现）
+**问题**: `ask_followup_question` 弹窗直接显示原始文本，无 Markdown 渲染、无滚动条。长内容（如含代码块、列表的问题）看不全。
+**修复**:
+- `frontend/src/components/FollowupModal.tsx` — 导入 `formatContent`，将 `<div>{question}</div>` 替换为 `className="md-rendered"` + `dangerouslySetInnerHTML={{ __html: formatContent(question) }}`，添加 `maxHeight: '40vh'` + `overflow: 'auto'`。
+- `frontend/src/components/ToolMessage.tsx` — 对 `isQuestion` 分支的追问内容同样调用 `formatContent` + `md-rendered` + `maxHeight: 300px` + `overflow: auto`。
+**验证**: `tsc --noEmit` ✅, `build-all.ps1` 完整构建 ✅
+
+### 历史会话工具结果渲染修复（当前已实现）
+**问题**: 加载历史会话时，`attempt_completion` / `plan_mode_respond` 的结果只显示一个缩略标签气泡，无法看到实际内容。
+**根因**: 实时流中前端通过 `chat:systemMessage` 额外插入 `assistant` 消息展示结果，但这些辅助消息不会被持久化。历史加载时只剩 `tool` 角色消息，原 `ToolMessage` 不渲染 `toolResult`。
+**修复文件**: `frontend/src/components/ToolMessage.tsx`
+- 新增 `attempt_completion` 分支 → 带 "✅ Task Completed" 标题的助手风格气泡，Markdown 渲染 + 滚动（`maxHeight: 500px`）
+- 新增 `plan_mode_respond` 分支 → 带 "📝 Plan Response" 标题的助手风格气泡，Markdown 渲染 + 滚动
+**验证**: `tsc --noEmit` ✅, `build-all.ps1` 完整构建 ✅
+
+### SettingsPanel Memory Tab（已集成但未提交）
+**状态**: 代码已修改，随本次 commit 一起提交
+**文件**: `frontend/src/components/SettingsPanel.tsx` 重构为 `settings/` 子目录（ProviderTab, MemoryTab, GeneralTab, RulesTab）
+**后端**: `internal/config/config.go` 新增 `MemoryConfig.Enabled`；`internal/gui/backend.go` 支持内存配置热重载
+
+---
+
 ### ask_followup_question 终止对话修复（2026-06-04）
 - **问题**: Agent 在收到用户回答后调用 `SetComplete()` 停止运行，导致对话终止。
 - **修复**: 从 `SetComplete` switch 中移除 `ToolAskFollowupQuestion`；同时引入 pre-dispatch 优化（流式期间预执行工具调用）。

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { THEME } from '../theme';
+import { formatContent } from '../utils/format';
 
 const overlayStyle: React.CSSProperties = {
   position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
@@ -32,7 +33,18 @@ export function FollowupModal({ question, options, onAnswer }: { question: strin
     <div style={overlayStyle}>
       <div style={panelStyle}>
         <div style={{ fontSize: '0.72rem', color: THEME.accentHover, marginBottom: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Question</div>
-        <div style={{ fontSize: '1rem', lineHeight: 1.5, marginBottom: '20px' }}>{question}</div>
+        <div
+          className="md-rendered"
+          style={{
+            fontSize: '1rem',
+            lineHeight: 1.5,
+            marginBottom: '20px',
+            maxHeight: '40vh',
+            overflow: 'auto',
+            paddingRight: '4px',
+          }}
+          dangerouslySetInnerHTML={{ __html: formatContent(question) }}
+        />
         {customMode ? (
           <form onSubmit={(e) => { e.preventDefault(); onAnswer(customValue); }} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <textarea

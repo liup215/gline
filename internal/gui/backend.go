@@ -104,10 +104,10 @@ func (b *Backend) initAgent() error {
 
 	customRules := loadCustomRules()
 
-	// Try to initialize memory engine if embedding is configured
+	// Try to initialize memory engine if enabled and embedding is configured
 	var memoryEngine *memory.UnifiedEngine
 	memCfg := cfg.Memory
-	if memCfg.Embedding.Provider != "" || memCfg.Embedding.APIKey != "" {
+	if memCfg.Enabled && (memCfg.Embedding.Provider != "" || memCfg.Embedding.APIKey != "") {
 		var embedder memory.Embedder
 		switch memCfg.Embedding.Provider {
 		case "ollama":
@@ -225,7 +225,15 @@ func (b *Backend) UpdateConfig(key string, value string) error {
 	b.cfg.Save()
 
 	if key == "provider.default" ||
-		key == "provider.openai.max_context_tokens" {
+		key == "provider.openai.max_context_tokens" ||
+		key == "memory.enabled" ||
+		key == "memory.embedding.provider" ||
+		key == "memory.embedding.model" ||
+		key == "memory.embedding.api_key" ||
+		key == "memory.embedding.base_url" ||
+		key == "memory.retrieval.top_k" ||
+		key == "memory.retrieval.min_score" ||
+		key == "memory.retrieval.max_tokens" {
 		if err := b.initAgent(); err != nil {
 			return fmt.Errorf("reinit agent: %w", err)
 		}

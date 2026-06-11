@@ -72,6 +72,9 @@ type LogConfig struct {
 
 // MemoryConfig holds knowledge base and memory layer settings
 type MemoryConfig struct {
+	// Enable memory/knowledge base
+	Enabled bool `mapstructure:"enabled"`
+
 	// Embedding provider: openai, ollama
 	Embedding MemoryEmbeddingConfig `mapstructure:"embedding"`
 
@@ -143,6 +146,7 @@ func (m *Manager) setupDefaults() {
 	m.viper.SetDefault("ui.animations", true)
 	m.viper.SetDefault("log.level", "info")
 	m.viper.SetDefault("log.file", filepath.Join(getGlobalConfigDir(), "logs", "gline.log"))
+	m.viper.SetDefault("memory.enabled", true)
 	m.viper.SetDefault("memory.embedding.provider", "openai")
 	m.viper.SetDefault("memory.embedding.model", "text-embedding-3-small")
 	m.viper.SetDefault("memory.retrieval.top_k", 5)

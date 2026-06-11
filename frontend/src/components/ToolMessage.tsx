@@ -1,5 +1,5 @@
 import { THEME } from '../theme';
-import { getToolHint, parseToolInput } from '../utils/format';
+import { getToolHint, parseToolInput, formatContent } from '../utils/format';
 
 interface ToolMessageProps {
   toolName: string | undefined;
@@ -18,7 +18,15 @@ export function ToolMessage({ toolName, toolInput, toolResult }: ToolMessageProp
       <div style={{ display: 'flex', justifyContent: 'flex-start', padding: '0 24px', marginBottom: '12px' }}>
         <div style={{ maxWidth: '75%', background: THEME.optionBg, border: `1px solid ${THEME.linkColor}4d`, borderRadius: '14px 14px 14px 4px', padding: '12px 16px', lineHeight: 1.5, fontSize: '0.92rem', color: THEME.text }}>
           <div style={{ fontSize: '0.72rem', color: THEME.accentHover, marginBottom: '6px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Question</div>
-          <div>{hint.slice(2).trim()}</div>
+          <div
+            className="md-rendered"
+            style={{
+              maxHeight: '300px',
+              overflow: 'auto',
+              paddingRight: '4px',
+            }}
+            dangerouslySetInnerHTML={{ __html: formatContent(hint.slice(2).trim()) }}
+          />
           {input.options && input.options.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px' }}>
               {input.options.map((opt: string, oi: number) => (
@@ -26,6 +34,37 @@ export function ToolMessage({ toolName, toolInput, toolResult }: ToolMessageProp
               ))}
             </div>
           )}
+        </div>
+      </div>
+    );
+  }
+
+  // Show important tool results as rendered messages in history
+  if (toolName === 'attempt_completion' && toolResult) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'flex-start', padding: '0 24px', marginBottom: '16px' }}>
+        <div style={{ maxWidth: '85%', background: THEME.assistantBg, color: THEME.text, padding: '14px 20px', borderRadius: '18px 18px 18px 4px', lineHeight: 1.6, fontSize: '0.95rem', border: `1px solid ${THEME.border}`, boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>
+          <div style={{ fontSize: '0.72rem', color: THEME.statusSuccessText, marginBottom: '8px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>✅ Task Completed</div>
+          <div
+            className="md-rendered"
+            style={{ maxHeight: '500px', overflow: 'auto', paddingRight: '4px' }}
+            dangerouslySetInnerHTML={{ __html: formatContent(toolResult) }}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (toolName === 'plan_mode_respond' && toolResult) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'flex-start', padding: '0 24px', marginBottom: '16px' }}>
+        <div style={{ maxWidth: '85%', background: THEME.assistantBg, color: THEME.text, padding: '14px 20px', borderRadius: '18px 18px 18px 4px', lineHeight: 1.6, fontSize: '0.95rem', border: `1px solid ${THEME.border}`, boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>
+          <div style={{ fontSize: '0.72rem', color: THEME.accentHover, marginBottom: '8px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>📝 Plan Response</div>
+          <div
+            className="md-rendered"
+            style={{ maxHeight: '500px', overflow: 'auto', paddingRight: '4px' }}
+            dangerouslySetInnerHTML={{ __html: formatContent(toolResult) }}
+          />
         </div>
       </div>
     );
