@@ -60,7 +60,6 @@ func (s *SQLiteFactStore) migrate() error {
 		`CREATE INDEX IF NOT EXISTS idx_facts_confidence ON facts(confidence)`,
 		`CREATE INDEX IF NOT EXISTS idx_facts_last_access ON facts(last_access)`,
 		`CREATE VIRTUAL TABLE IF NOT EXISTS facts_fts USING fts5(subject, predicate, object, fact_id UNINDEXED)`,
-		// Entity / preference shortcuts
 		`CREATE TABLE IF NOT EXISTS entities (
 			name TEXT PRIMARY KEY,
 			first_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -80,11 +79,17 @@ func (s *SQLiteFactStore) Close() error { return s.db.Close() }
 
 // Add implements FactStore (stub — populated by FactExtractor in Phase 4).
 func (s *SQLiteFactStore) Add(ctx context.Context, text string, source ConversationRef) ([]FactChange, error) {
-	// Phase 4: will call FactExtractor + persist changes
-	return nil, fmt.Errorf("Add not yet implemented — Phase 4")
+	return nil, fmt.Errorf("Add not yet implemented — use Apply() with pre-extracted changes")
 }
 
 // Apply persists pre-extracted fact changes directly (used by LLM-driven extraction).
+//
+// Smart-merge logic for ADD:
+//   - If a fact with the same (subject, predicate) already exists, treat ADD
+//     as UPDATE (update object/confidence/updated_at but keep the old ID).
+//   - This compensates for the fact that LLMs can't know existing row IDs.
+//   - DELETE is handled by (subject, predicate) search as a fallback when
+//     the LLM-generated ID does not match existing rows.
 func (s *SQLiteFactStore) Apply(ctx context.Context, changes []FactChange) error {
 	if len(changes) == 0 {
 		return nil
@@ -97,16 +102,47 @@ func (s *SQLiteFactStore) Apply(ctx context.Context, changes []FactChange) error
 
 	for _, ch := range changes {
 		switch ch.Action {
-		case "ADD", "UPDATE":
+		case "ADD":
+			var existingID string
+			_ = tx.QueryRowContext(ctx,
+				`SELECT id FROM facts WHERE subject = ? AND predicate = ? LIMIT 1`,
+				ch.Fact.Subject, ch.Fact.Predicate).Scan(&existingID)
+			if existingID != "" {
+				ch.Fact.ID = existingID
+				ch.Fact.UpdatedAt = time.Now().UTC()
+			}
 			if err := s.upsertFact(ctx, tx, &ch.Fact); err != nil {
 				_ = tx.Rollback()
 				return err
 			}
+		case "UPDATE":
+			var targetID string
+			_ = tx.QueryRowContext(ctx,
+				`SELECT id FROM facts WHERE id = ? LIMIT 1`, ch.Fact.ID).Scan(&targetID)
+			if targetID == "" {
+				_ = tx.QueryRowContext(ctx,
+					`SELECT id FROM facts WHERE subject = ? AND predicate = ? LIMIT 1`,
+					ch.Fact.Subject, ch.Fact.Predicate).Scan(&targetID)
+			}
+			if targetID != "" {
+				ch.Fact.ID = targetID
+				ch.Fact.UpdatedAt = time.Now().UTC()
+				if err := s.upsertFact(ctx, tx, &ch.Fact); err != nil {
+					_ = tx.Rollback()
+					return err
+				}
+			}
 		case "DELETE":
-			_, err := tx.ExecContext(ctx, `DELETE FROM facts WHERE id = ?`, ch.Fact.ID)
+			result, err := tx.ExecContext(ctx, `DELETE FROM facts WHERE id = ?`, ch.Fact.ID)
 			if err != nil {
 				_ = tx.Rollback()
 				return err
+			}
+			rows, _ := result.RowsAffected()
+			if rows == 0 {
+				_, _ = tx.ExecContext(ctx,
+					`DELETE FROM facts WHERE subject = ? AND predicate = ?`,
+					ch.Fact.Subject, ch.Fact.Predicate)
 			}
 			_, _ = tx.ExecContext(ctx, `DELETE FROM facts_fts WHERE fact_id = ?`, ch.Fact.ID)
 		}
@@ -123,6 +159,20 @@ func (s *SQLiteFactStore) upsertFact(ctx context.Context, tx *sql.Tx, f *Fact) e
 		execer = tx
 	} else {
 		execer = s.db
+	}
+
+	now := time.Now().UTC()
+	if f.CreatedAt.IsZero() {
+		f.CreatedAt = now
+	}
+	if f.UpdatedAt.IsZero() {
+		f.UpdatedAt = now
+	}
+	if f.LastAccess.IsZero() {
+		f.LastAccess = now
+	}
+	if f.Confidence == 0 {
+		f.Confidence = 0.7
 	}
 
 	_, err := execer.ExecContext(ctx, `
@@ -143,14 +193,13 @@ func (s *SQLiteFactStore) upsertFact(ctx context.Context, tx *sql.Tx, f *Fact) e
 	if err != nil {
 		return err
 	}
-	// Upsert entity
 	_, _ = execer.ExecContext(ctx, `
 		INSERT INTO entities (name, last_seen) VALUES (?, ?)
 		ON CONFLICT(name) DO UPDATE SET last_seen = excluded.last_seen`,
 		f.Subject, time.Now().UTC())
-	// Also index in FTS
+	_, _ = execer.ExecContext(ctx, `DELETE FROM facts_fts WHERE fact_id = ?`, f.ID)
 	_, err = execer.ExecContext(ctx, `
-		INSERT OR REPLACE INTO facts_fts (subject, predicate, object, fact_id)
+		INSERT INTO facts_fts (subject, predicate, object, fact_id)
 		VALUES (?, ?, ?, ?)`, f.Subject, f.Predicate, f.Object, f.ID)
 	return err
 }
@@ -166,7 +215,6 @@ func (s *SQLiteFactStore) Search(ctx context.Context, query string, opts FactSea
 		topK = 10
 	}
 
-	// Use a subquery with count to guard against empty results without consuming rows.
 	var count int
 	escaped := "\"" + strings.ReplaceAll(query, "\"", "\"\"") + "\""
 	_ = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM facts_fts WHERE facts_fts MATCH ?`, escaped).Scan(&count)
@@ -185,7 +233,6 @@ func (s *SQLiteFactStore) Search(ctx context.Context, query string, opts FactSea
 		return s.scanFacts(rows, opts)
 	}
 
-	// Fallback LIKE
 	like := "%" + query + "%"
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, kb_id, category, subject, predicate, object, confidence, source, created_at, updated_at, access_count, last_access

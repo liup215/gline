@@ -254,34 +254,58 @@ Phase 2 全部子任务已完成：
 **文件**: `pkg/types/skill.go`, `internal/skills/*.go`, `internal/tools/use_skill.go`, `internal/prompts/system.go`, `internal/agent/agent.go`, `internal/gui/backend.go`, `internal/gui/chat_service.go`, `cmd/gline/chat.go`
 **验证**: `go build ./...` ✅, `go test ./...` ✅, `build-all.ps1` ✅
 
-## Current Focus — replace_in_file 5 层容错优化（2026-06-XX）
+## Current Focus — Phase 7: Fact Extractor LLM 集成 ✅
 
-**状态**: 已完成并提交 ✅
+**状态**: 已完成并提交 🎉
 
-**背景**: `replace_in_file` 工具频繁失败，根因是 LLM 从 `read_file` 获取的内容与实际文件有空白符差异，导致 `strings.Contains` 完全精确匹配失败。错误信息零反馈，LLM 无法 self-correct。
+**目标**: 将 `internal/memory/fact_extractor.go` 的 rule-based stub 替换为 LLM 驱动的事实提取器。
 
-**5 层优化内容**:
+**完成内容**:
 
-| 层级 | 优化 | 机制 | 效果 |
-|------|------|------|------|
-| ① | 多 SEARCH/REPLACE 块支持 | 新增 `replacements` 数组字段，单次调用完成多个编辑 | 减少调用次数，降低累积误差 |
-| ② | 增强错误反馈 | Jaccard bigram 相似度计算最近匹配 + 相似度分数 + 4 步排查指南 | LLM 能 self-correct |
-| ③ | 空格归一化容错 | `normalizeWhitespace()` 将空格/tab/换行压缩为单个空格后再匹配 | 消除空白差异导致的大部分失败 |
-| ④ | 行锚定回退 | 选取搜索块中最长行作为锚点，在文件中定位后验证周围上下文 | 大文件/长代码块的最后一道防线 |
-| ⑤ | 替换后 diff 输出 | `computeDiff()` 返回 ```` ```diff ```` 格式摘要 | LLM 验证修改是否正确 |
+### 1. fact_extractor.go 重构
+- `ExtractPrompt` 重写为生产级提示词（6 条提取规则，指定 category/subject/predicate/object/confidence/action）
+- `ParseFactChanges()` 支持解析 ADD/DELETE/NOOP，UPDATE 规范化为 ADD（由 Store 层 smart-merge 处理）
+- 新增 `EnrichFacts()` 函数为 LLM 输出补充 Source、KBID、时间戳等元数据
 
-**新增/修改文件**:
-- `internal/tools/file.go` — 核心逻辑重写（~+300 行），保持向后兼容（单块模式仍可用）
-- `internal/prompts/system.go` — 系统提示 `%EDITING_FILES%` 节更新，工具 schema 增加 `replacements` 数组
-- `internal/tools/file_test.go` — 7 个单元测试（单块/多块/错误反馈/归一化/相似度/diff）
+### 2. fact_store_sqlite.go 增强
+- `Apply()` 实现智能合并逻辑：
+  - **ADD**: 检测 `(subject, predicate)` 重复 → 自动转为 UPDATE（复用旧 ID）
+  - **UPDATE**: ID 不存在时回退到 `(subject, predicate)` 查找匹配
+  - **DELETE**: ID 查找失败时回退到 `(subject, predicate)` 删除
+  - **FTS 防重复**: `upsertFact()` 先 `DELETE FROM facts_fts WHERE fact_id=?` 再 INSERT
+- `upsertFact()` 字段默认值自动填充（CreatedAt/UpdatedAt/LastAccess/Confidence）
 
-**验证**: `go test ./internal/tools/...` ✅ (7/7 pass), `go test ./...` ✅ (全项目 0 失败), `build-all.ps1` ✅ (完整构建通过)
+### 3. agent.go 集成
+- `extractFactsAsync()` 添加 Source 来源标注（`ConversationRef{TaskID}`）
+- 添加 `memory.EnrichFacts()` 调用确认元数据完整性
+- 成功日志：`"fact extraction: N facts applied (task=TASK_ID)"`
+
+### 4. 单元测试（fact_extractor_test.go，10 个用例）
+| 测试 | 覆盖 |
+|------|------|
+| TestParseFactChanges_* | JSON 解析、markdown fences、NOOP 跳过、低置信度过滤、UPDATE→ADD |
+| TestExtractWithMockLLM | LLM 调用、请求参数验证 |
+| TestExtractWithLLMError | 错误包装和传递 |
+| TestRuleBasedFallback | Caller 为 nil 时的回退逻辑 |
+| TestMaxFactsLimit | MaxFacts 截断 |
+| TestEnrichFacts | Source/KBID/时间戳注入 |
+| TestApplySmartMerge | SQLite 级 ADD→UPDATE 合并、DELETE 回退 |
+| TestApplyEmptyChanges | 空数组和 nil 输入 |
+
+**验证**: `go test ./...` 全项目 0 失败 ✅ | `go build ./cmd/gline/...` ✅
+
+---
+
+### 历史焦点（已完成）
+
+#### replace_in_file 5 层容错优化（2026-06-XX） ✅
+**背景**: `replace_in_file` 工具频繁失败，根因是 LLM 从 `read_file` 获取的内容与实际文件有空白符差异。5 层优化：多 block 支持、Jaccard 最近匹配反馈、空格归一化回退、行锚定回退、diff 输出。`go test ./...` ✅, `build-all.ps1` ✅
 
 ---
 
 ## 下一步建议
 
-1. **Phase 7: Fact Extractor LLM 集成** — 对话结束后用 LLM 提取 ADD/DECAY 事实，取代 rule-based stub
-2. **Phase 3 MCP 支持** — 引入 Model Context Protocol，接入外部工具源
-3. **Phase 3 LiteLLM 多提供商统一** — `litellmcreds` 规范与引导流程
-4. **P2.5.3 主题系统组件集成** — 若有未提交的 14 files，完成提交
+1. **Phase 8**: Wiki Ingest LLM 集成（当前 Sprint）
+2. **P2.5.3 主题系统组件集成提交**: 若有未提交的 14 files
+3. **Phase 3 MCP 支持**: 引入 Model Context Protocol
+4. **长期**: CLI 移除评估（产品决策方向，暂不执行）

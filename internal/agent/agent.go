@@ -898,8 +898,12 @@ func (a *BaseAgent) extractFactsAsync() {
 		if err != nil || len(changes) == 0 {
 			return
 		}
+		source := memory.ConversationRef{TaskID: a.taskID}.String()
+		changes = memory.EnrichFacts(changes, source, "")
 		if err := a.memoryEngine.FactStore.Apply(ctx, changes); err != nil {
 			log.Warnf("fact extraction persist failed: %v", err)
+		} else {
+			log.Infof("fact extraction: %d facts applied (task=%s)", len(changes), a.taskID)
 		}
 	}()
 }
