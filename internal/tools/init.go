@@ -101,6 +101,22 @@ func InitDefaultRegistry(engine ...*memory.UnifiedEngine) *Registry {
 		},
 	})
 
+	// Network tools - allowed in both modes
+	registry.Register(&ToolInfo{
+		Tool:                 NewWebFetchTool(),
+		Category:             CategoryNetwork,
+		AllowedModes:         []string{"plan", "act"},
+		RequiresConfirmation: false,
+	})
+
+	// Browser automation - act mode only (resource intensive)
+	registry.Register(&ToolInfo{
+		Tool:                 NewBrowserCopyTool(),
+		Category:             CategoryNetwork,
+		AllowedModes:         []string{"act"},
+		RequiresConfirmation: true,
+	})
+
 	// Memory / knowledge base tools - optional, only if engine is available
 	if len(engine) > 0 && engine[0] != nil {
 		e := engine[0]
@@ -158,6 +174,8 @@ func GetDefaultTools() []Tool {
 		NewAskFollowupQuestionTool(),
 		NewPlanModeRespondTool(),
 		NewAttemptCompletionTool(),
+		NewWebFetchTool(),
+		NewBrowserCopyTool(),
 	}
 }
 

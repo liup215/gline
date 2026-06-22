@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Local SPA Demo</title>
+    <style>
+        body { font-family: sans-serif; padding: 2rem; max-width: 600px; margin: 0 auto; }
+        #dynamic-content { background: #f0f0f0; padding: 1rem; border-radius: 8px; margin-top: 1rem; }
+        .loaded { color: green; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>SPA Demo for browser_copy</h1>
+    <p>This content exists in the raw HTML.</p>
+    <div id="dynamic-content">
+        <p id="status">Loading dynamic data...</p>
+    </div>
+
+    <script>
+        // Simulate an SPA that fetches/loads content after page load
+        setTimeout(() => {
+            const status = document.getElementById('status');
+            status.innerHTML = '<span class="loaded">✅ Dynamically loaded content via JavaScript!</span>';
+            status.innerHTML += '<p>Timestamp: ' + new Date().toISOString() + '</p>';
+            status.innerHTML += '<p>User Agent: ' + navigator.userAgent + '</p>';
+        }, 500);
+    </script>
+</body>
+</html>

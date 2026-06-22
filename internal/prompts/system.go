@@ -293,6 +293,16 @@ func GetToolDescriptions() []ToolDescription {
 			Description: "Run up to four focused in-process subagents in parallel. Each subagent gets its own prompt and returns a comprehensive research result. Use this for broad exploration when reading many files would consume the main agent's context window. You do not need to launch multiple subagents every time; using one subagent is valid when it avoids unnecessary context usage for light discovery work.",
 			InputSchema: `{"type":"object","properties":{"prompt_1":{"type":"string","description":"First subagent prompt."},"prompt_2":{"type":"string","description":"Optional second subagent prompt."},"prompt_3":{"type":"string","description":"Optional third subagent prompt."},"prompt_4":{"type":"string","description":"Optional fourth subagent prompt."}} ,"required":["prompt_1"] }`,
 		},
+		{
+			Name:        "web_fetch",
+			Description: "Fetch the content of a web page and return it as Markdown. Use this to read documentation, articles, or any publicly accessible web page. The content is automatically cleaned (ads, navbars removed) and converted to Markdown. Only http/https URLs are allowed.",
+			InputSchema: `{"type":"object","properties":{"url":{"type":"string","description":"The URL of the web page to fetch"}},"required":["url"] }`,
+		},
+		{
+			Name:        "browser_copy",
+			Description: "Copy content from a web page using a headless browser. Use this when the page requires JavaScript to render (SPA apps like React/Vue), or when content is loaded dynamically after page load. Falls back gracefully if the browser is unavailable. This tool is more resource-intensive than web_fetch; prefer web_fetch for static pages. Only http/https URLs are allowed.",
+			InputSchema: `{"type":"object","properties":{"url":{"type":"string","description":"The URL of the web page to copy from"},"wait_for":{"type":"string","description":"Optional CSS selector to wait for before extracting content (e.g., '.article-body')"},"scroll_down":{"type":"boolean","description":"Whether to scroll down to trigger lazy-loading","default":false},"headless":{"type":"boolean","description":"Run browser in headless mode (default true). Set false to show the browser window.","default":true}},"required":["url"] }`,
+		},
 	}
 }
 

@@ -119,6 +119,8 @@ const (
 	CategoryInteraction ToolCategory = "interaction"
 	// CategoryCompletion for task completion
 	CategoryCompletion ToolCategory = "completion"
+	// CategoryNetwork for network operations
+	CategoryNetwork ToolCategory = "network"
 )
 
 // ToolInfo contains metadata about a tool
