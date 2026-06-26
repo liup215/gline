@@ -11,6 +11,7 @@ import (
 	"github.com/liup215/gline/internal/api"
 	"github.com/liup215/gline/internal/config"
 	"github.com/liup215/gline/internal/log"
+	"github.com/liup215/gline/internal/mcp"
 	"github.com/liup215/gline/internal/memory"
 	"github.com/liup215/gline/internal/skills"
 	"github.com/liup215/gline/internal/storage"
@@ -59,6 +60,7 @@ type Backend struct {
 	store          storage.Store
 	ag             agent.Agent
 	skillRegistry  *skills.Registry
+	mcpManager     *mcp.Manager
 }
 
 func (b *Backend) initConfig() error {
@@ -174,6 +176,27 @@ func (b *Backend) initAgent() error {
 		return err
 	}
 	b.ag = ag
+
+	// Initialize MCP Manager if configured
+	if len(cfg.MCP.Servers) > 0 {
+		b.mcpManager = mcp.NewManager(&cfg.MCP, registry)
+		if err := b.mcpManager.Start(context.Background()); err != nil {
+			log.Warnf("Failed to start MCP manager: %v", err)
+			b.mcpManager = nil // Clean up on failure
+		} else {
+			// Get status for logging
+			statuses := b.mcpManager.GetServerStatus()
+			totalTools := 0
+			for _, status := range statuses {
+				if status.Initialized {
+					log.Infof("MCP server '%s' connected with %d tools", status.Name, status.Tools)
+					totalTools += status.Tools
+				}
+			}
+			log.Infof("MCP initialized: %d servers, %d total tools", len(statuses), totalTools)
+		}
+	}
+
 	return nil
 }
 
@@ -225,6 +248,29 @@ func (b *Backend) GetConfig() (string, error) {
 
 // UpdateConfig updates a config key
 func (b *Backend) UpdateConfig(key string, value string) error {
+	// Handle special case for MCP servers (JSON array)
+	if key == "mcp.servers" {
+		// Parse the JSON array of servers
+		var servers []mcp.ServerConfig
+		if err := json.Unmarshal([]byte(value), &servers); err != nil {
+			return fmt.Errorf("failed to parse MCP servers: %w", err)
+		}
+		// Update the config in both viper and memory struct
+		b.cfg.Set("mcp.servers", servers)
+		cfg := b.cfg.Get()
+		cfg.MCP.Servers = servers
+		if err := b.cfg.Save(); err != nil {
+			return fmt.Errorf("failed to save config: %w", err)
+		}
+		// Restart MCP manager if agent is initialized
+		if b.ag != nil {
+			if err := b.restartMCPManager(); err != nil {
+				return fmt.Errorf("failed to restart MCP manager: %w", err)
+			}
+		}
+		return nil
+	}
+
 	b.cfg.Set(key, value)
 	b.cfg.Save()
 
@@ -242,6 +288,34 @@ func (b *Backend) UpdateConfig(key string, value string) error {
 			return fmt.Errorf("reinit agent: %w", err)
 		}
 	}
+	return nil
+}
+
+// restartMCPManager restarts the MCP manager with updated config
+func (b *Backend) restartMCPManager() error {
+	// Close existing MCP manager if any
+	if b.mcpManager != nil {
+		if err := b.mcpManager.Close(); err != nil {
+			log.Warnf("Error closing MCP manager: %v", err)
+		}
+		b.mcpManager = nil
+	}
+
+	// Create and start new MCP manager
+	cfg := b.cfg.Get()
+	if len(cfg.MCP.Servers) > 0 {
+		// Get tool registry from agent
+		if b.ag != nil {
+			registry := b.ag.GetToolRegistry()
+			b.mcpManager = mcp.NewManager(&cfg.MCP, registry)
+			if err := b.mcpManager.Start(context.Background()); err != nil {
+				// Don't return error here, just log it - we don't want to crash the app
+				log.Warnf("Failed to start MCP manager: %v", err)
+				b.mcpManager = nil
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -295,4 +369,35 @@ func (b *Backend) LoadTask(taskID string) (*storage.TaskRecord, error) {
 		b.ag.GetConversation().AddMessage(msg)
 	}
 	return task, nil
+}
+
+// MCPServerStatus represents the status of an MCP server for the frontend
+type MCPServerStatus struct {
+	Name        string   `json:"name"`
+	Connected   bool     `json:"connected"`
+	Initialized bool     `json:"initialized"`
+	Tools       int      `json:"tools"`
+	ToolNames   []string `json:"toolNames"`
+	LastError   string   `json:"lastError"`
+}
+
+// GetMCPStatus returns the status of all MCP servers
+func (b *Backend) GetMCPStatus() ([]MCPServerStatus, error) {
+	if b.mcpManager == nil {
+		return []MCPServerStatus{}, nil
+	}
+
+	statuses := b.mcpManager.GetServerStatus()
+	result := make([]MCPServerStatus, len(statuses))
+	for i, s := range statuses {
+		result[i] = MCPServerStatus{
+			Name:        s.Name,
+			Connected:   s.Connected,
+			Initialized: s.Initialized,
+			Tools:       s.Tools,
+			ToolNames:   s.ToolNames,
+			LastError:   s.LastError,
+		}
+	}
+	return result, nil
 }

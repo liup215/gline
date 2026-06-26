@@ -8,6 +8,7 @@ import (
 	"github.com/liup215/gline/internal/agent"
 	"github.com/liup215/gline/internal/api"
 	"github.com/liup215/gline/internal/log"
+	"github.com/liup215/gline/internal/mcp"
 	"github.com/liup215/gline/internal/prompts"
 	"github.com/liup215/gline/internal/skills"
 	"github.com/liup215/gline/internal/storage"
@@ -126,6 +127,34 @@ func initializeAgent() (*agent.BaseAgent, error) {
 	opts.Skills = skillReg.GetMeta()
 
 	log.Infof("Initialized %d tools", registry.Count())
+
+	// Debug: Log MCP configuration
+	log.Infof("MCP config: %d servers configured", len(cfg.MCP.Servers))
+	for i, server := range cfg.MCP.Servers {
+		log.Infof("  MCP server %d: name=%s, command=%s, url=%s, disabled=%v", 
+			i, server.Name, server.Command, server.URL, server.Disabled)
+	}
+
+	// Initialize MCP Manager if configured
+	if len(cfg.MCP.Servers) > 0 {
+		mcpManager := mcp.NewManager(&cfg.MCP, registry)
+		if err := mcpManager.Start(context.Background()); err != nil {
+			log.Warnf("Failed to start MCP manager: %v", err)
+		} else {
+			// Get status for logging
+			statuses := mcpManager.GetServerStatus()
+			totalTools := 0
+			for _, status := range statuses {
+				if status.Initialized {
+					log.Infof("MCP server '%s' connected with %d tools", status.Name, status.Tools)
+					totalTools += status.Tools
+				} else {
+					log.Warnf("MCP server '%s' failed to initialize: %s", status.Name, status.LastError)
+				}
+			}
+			log.Infof("MCP initialized: %d servers, %d total tools", len(statuses), totalTools)
+		}
+	}
 
 	// Create agent
 	agentInstance, err := agent.New(opts)

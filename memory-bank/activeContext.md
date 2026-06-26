@@ -2,6 +2,103 @@
 
 ## Current Focus
 
+### MCP 支持开发（2026-06-25）
+
+**状态**: 全部完成 ✅
+
+**目标**: 实现 Model Context Protocol 客户端，让 gline 接入外部工具源（Slack/GitHub/数据库/浏览器等）。
+
+**背景**: MCP 是 Anthropic 推出的开放协议，允许 AI 助手通过标准化接口连接外部数据源和工具。这将把 gline 从"代码助手"升级为"通用 AI 工作流中枢"。
+
+**已完成 (Phase 1 - 核心协议)**:
+- ✅ `protocol.go` - JSON-RPC 2.0 消息结构 + MCP 协议类型 (Initialize, Tools, Resources, Prompts)
+- ✅ `transport.go` - StdioTransport + HTTPTransport + SSETransport 三传输实现
+- ✅ `client.go` - Client 核心逻辑（初始化握手、工具发现/调用、资源读取）
+- ✅ `config.go` - MCP 配置结构（ServerConfig, Config）
+- ✅ `manager.go` - Server 管理器 + Tool Adapter（自动注册 MCP 工具到 gline Registry）
+
+**已完成 (Phase 2 - Agent 集成)**:
+- ✅ `internal/config/config.go` - 添加 MCP 配置字段
+- ✅ `cmd/gline/chat.go` - Agent 初始化时启动 MCP Manager
+- ✅ `internal/gui/backend.go` - GUI 模式 MCP Manager 集成
+- ✅ 动态工具注册 - MCP 工具自动适配为 gline Tool 接口
+
+**已完成 (Phase 3 - 前端配置)**:
+- ✅ `frontend/src/components/settings/MCPTab.tsx` - MCP Server 管理 UI
+- ✅ `frontend/src/components/SettingsPanel.tsx` - 集成 MCP Tab
+- ✅ `internal/gui/backend.go` - UpdateConfig 支持 MCP servers 更新
+- ✅ `internal/agent/agent.go` - 添加 GetToolRegistry 到 Agent 接口
+
+**已完成 (Phase 4 - MCP 2025-11-25 Streamable HTTP 支持)**:
+- ✅ `HTTPTransport` - 实现新的 Streamable HTTP 传输（MCP 2025-11-25 规范）
+- ✅ 支持 HTTP POST 发送请求，支持 SSE 流和直接 JSON 响应
+- ✅ 支持 `Last-Event-ID` 断线重连
+- ✅ 保留 `SSETransport` 作为 Legacy 兼容模式
+- ✅ 前端 UI 更新，支持三种传输类型：stdio、http、sse
+- ✅ 配置验证更新，支持 `transport_type` 字段
+
+**已完成 (Phase 5 - HTTP Transport 简化 + 工具列表显示)**:
+- ✅ `HTTPTransport` 简化 - 参考 LtEdu 实现，改为简单同步 HTTP POST 模式
+- ✅ 移除复杂的 SSE 流处理代码
+- ✅ 前端添加工具列表显示 - 每个服务器显示可用工具数量和名称
+- ✅ 添加连接状态指示器 - 绿色=已连接，黄色=连接中，红色=错误
+- ✅ 添加 "Show Tools" 按钮展开/收起工具列表
+
+**构建验证**:
+- ✅ `build-all.ps1` 完整构建成功（32.2 MB）
+- ✅ Wails bindings 自动生成
+- ✅ TypeScript 类型检查通过
+- ✅ Go 编译成功
+
+**使用方式**:
+在 `~/.gline/config.yaml` 中添加 MCP 配置：
+
+```yaml
+mcp:
+  servers:
+    # stdio transport (本地命令)
+    - name: "filesystem"
+      transport_type: "stdio"
+      command: "npx"
+      args: ["-y", "@modelcontextprotocol/server-filesystem", "/home/user/docs"]
+    
+    # HTTP transport (MCP 2025-11-25 Streamable HTTP)
+    - name: "remote-server"
+      transport_type: "http"
+      url: "https://example.com/mcp"
+      headers:
+        Authorization: "Bearer ${API_TOKEN}"
+    
+    # SSE transport (Legacy 兼容模式)
+    - name: "legacy-server"
+      transport_type: "sse"
+      url: "https://old.example.com/sse"
+```
+
+启动后，MCP 工具会自动注册为 `mcp_<server>_<tool>` 格式，例如 `mcp_filesystem_read_file`。
+
+**传输类型说明**:
+- `stdio`: 本地子进程通信（最常用）
+- `http`: MCP 2025-11-25 Streamable HTTP 规范（推荐用于远程服务器）
+- `sse`: 旧版 SSE 传输（向后兼容）
+
+---
+
+### 主题系统 P2.5.3 状态更新（2026-06-24）
+
+**状态**: 已完成并提交 ✅
+
+**更新说明**: 经代码审查确认，主题系统组件集成实际上已完成并提交：
+- ✅ `theme.ts` - 44 个 CSS 变量定义完整
+- ✅ `hljs-github-dark.css` / `hljs-github-light.css` - highlight.js 样式文件存在
+- ✅ `index.html` - FOUC prevention 脚本和 CSS 变量内嵌
+- ✅ `ThemeContext.tsx` - 主题上下文实现
+- ✅ 各组件已迁移到 `THEME.*` 变量
+
+Memory bank 中记录的"未提交"状态为过时信息，已修正。
+
+---
+
 ### 修复 kb_ingest 并行调用导致数据库锁死（2026-06-07）
 
 **状态**: 已完成并提交 ✅
@@ -303,9 +400,12 @@ Phase 2 全部子任务已完成：
 
 ---
 
-## 下一步建议
+## 下一步建议（2026-06-24 更新）
 
-1. **Phase 8**: Wiki Ingest LLM 集成（当前 Sprint）
-2. **P2.5.3 主题系统组件集成提交**: 若有未提交的 14 files
-3. **Phase 3 MCP 支持**: 引入 Model Context Protocol
-4. **长期**: CLI 移除评估（产品决策方向，暂不执行）
+**优先级调整**:
+1. **MCP 支持** 🔴 当前 Sprint - 实现 Model Context Protocol 客户端
+2. **Skill 包管理器** 🔴 下一 Sprint - `gline skill search/install/use`
+3. **Wiki Ingest LLM** 🟡 搁置 - 等待 Scale 设计方案
+4. **主题系统** ✅ 已完成 - P2.5.3 已提交
+
+**长期**: CLI 移除评估（产品决策方向，暂不执行）

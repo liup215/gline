@@ -5,8 +5,9 @@ import { ProviderTab } from './settings/ProviderTab';
 import { MemoryTab } from './settings/MemoryTab';
 import { GeneralTab } from './settings/GeneralTab';
 import { RulesTab } from './settings/RulesTab';
+import { MCPTab } from './settings/MCPTab';
 
-type TabKey = 'provider' | 'memory' | 'general' | 'rules';
+type TabKey = 'provider' | 'memory' | 'general' | 'rules' | 'mcp';
 
 interface TabDef {
   key: TabKey;
@@ -17,6 +18,7 @@ interface TabDef {
 const TABS: TabDef[] = [
   { key: 'provider', label: 'Provider', icon: '🔗' },
   { key: 'memory', label: 'Memory', icon: '🧠' },
+  { key: 'mcp', label: 'MCP', icon: '🤖' },
   { key: 'general', label: 'General', icon: '🎨' },
   { key: 'rules', label: 'Rules', icon: '📋' },
 ];
@@ -215,6 +217,17 @@ export function SettingsPanel({
               memTopK={memTopK} setMemTopK={setMemTopK}
               memMinScore={memMinScore} setMemMinScore={setMemMinScore}
               memMaxTokens={memMaxTokens} setMemMaxTokens={setMemMaxTokens}
+            />
+          )}
+          {activeTab === 'mcp' && (
+            <MCPTab
+              servers={config?.MCP?.Servers || []}
+              onSave={(servers) => {
+                // Save MCP servers to config
+                const updates: Record<string, string> = {};
+                updates['mcp.servers'] = JSON.stringify(servers);
+                onSave(updates);
+              }}
             />
           )}
           {activeTab === 'general' && <GeneralTab uiTheme={uiTheme} setUiTheme={setUiTheme} />}

@@ -10,91 +10,98 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/liup215/gline/internal/mcp"
 	"github.com/spf13/viper"
 )
 
 // Config holds all configuration for gline
 type Config struct {
 	// LLM Provider settings
-	Provider ProviderConfig `mapstructure:"provider"`
+	Provider ProviderConfig `mapstructure:"provider" json:"Provider"`
 
 	// UI settings
-	UI UIConfig `mapstructure:"ui"`
+	UI UIConfig `mapstructure:"ui" json:"UI"`
 
 	// Logging settings
-	Log LogConfig `mapstructure:"log"`
+	Log LogConfig `mapstructure:"log" json:"Log"`
 
 	// Memory / knowledge base settings
-	Memory MemoryConfig `mapstructure:"memory"`
+	Memory MemoryConfig `mapstructure:"memory" json:"Memory"`
+
+	// MCP (Model Context Protocol) settings
+	MCP mcp.Config `mapstructure:"mcp" json:"MCP"`
 }
 
 // ProviderConfig holds LLM provider settings
 type ProviderConfig struct {
 	// Default provider to use (openai)
-	Default string `mapstructure:"default"`
+	Default string `mapstructure:"default" json:"Default"`
+
+	// Anthropic provider settings
+	Anthropic ProviderSettings `mapstructure:"anthropic" json:"Anthropic"`
 
 	// OpenAI provider settings
-	OpenAI ProviderSettings `mapstructure:"openai"`
+	OpenAI ProviderSettings `mapstructure:"openai" json:"OpenAI"`
 }
 
 // ProviderSettings holds settings for a specific LLM provider
 type ProviderSettings struct {
 	// API Key for the provider
-	APIKey string `mapstructure:"api_key"`
+	APIKey string `mapstructure:"api_key" json:"APIKey"`
 
 	// Model to use
-	Model string `mapstructure:"model"`
+	Model string `mapstructure:"model" json:"Model"`
 
 	// Base URL for API (optional, for custom endpoints)
-	BaseURL string `mapstructure:"base_url"`
+	BaseURL string `mapstructure:"base_url" json:"BaseURL"`
 
 	// Max context tokens for this provider/model (0 = use default based on model)
-	MaxContextTokens int `mapstructure:"max_context_tokens"`
+	MaxContextTokens int `mapstructure:"max_context_tokens" json:"MaxContextTokens"`
 }
 
 // UIConfig holds UI-related settings
 type UIConfig struct {
 	// Theme for TUI (default, dark, light)
-	Theme string `mapstructure:"theme"`
+	Theme string `mapstructure:"theme" json:"Theme"`
 
 	// Enable animations in TUI
-	Animations bool `mapstructure:"animations"`
+	Animations bool `mapstructure:"animations" json:"Animations"`
 }
 
 // LogConfig holds logging settings
 type LogConfig struct {
 	// Log level (debug, info, warn, error)
-	Level string `mapstructure:"level"`
+	Level string `mapstructure:"level" json:"Level"`
 
 	// Log file path
-	File string `mapstructure:"file"`
+	File string `mapstructure:"file" json:"File"`
 }
 
 // MemoryConfig holds knowledge base and memory layer settings
 type MemoryConfig struct {
 	// Enable memory/knowledge base
-	Enabled bool `mapstructure:"enabled"`
+	Enabled bool `mapstructure:"enabled" json:"Enabled"`
 
 	// Embedding provider: openai, ollama
-	Embedding MemoryEmbeddingConfig `mapstructure:"embedding"`
+	Embedding MemoryEmbeddingConfig `mapstructure:"embedding" json:"Embedding"`
 
 	// Retrieval parameters
-	Retrieval MemoryRetrievalConfig `mapstructure:"retrieval"`
+	Retrieval MemoryRetrievalConfig `mapstructure:"retrieval" json:"Retrieval"`
 }
 
 // MemoryEmbeddingConfig configures the embedding model used for RAG.
 type MemoryEmbeddingConfig struct {
-	Provider string `mapstructure:"provider"` // openai | ollama
-	Model    string `mapstructure:"model"`
-	APIKey   string `mapstructure:"api_key"`
-	BaseURL  string `mapstructure:"base_url"`
+	Provider string `mapstructure:"provider" json:"Provider"` // openai | ollama
+	Model    string `mapstructure:"model" json:"Model"`
+	APIKey   string `mapstructure:"api_key" json:"APIKey"`
+	BaseURL  string `mapstructure:"base_url" json:"BaseURL"`
 }
 
 // MemoryRetrievalConfig controls how results are fetched from memory layers.
 type MemoryRetrievalConfig struct {
-	TopK      int     `mapstructure:"top_k"`
-	MinScore  float64 `mapstructure:"min_score"`
-	MaxTokens int     `mapstructure:"max_tokens"`
+	TopK      int     `mapstructure:"top_k" json:"TopK"`
+	MinScore  float64 `mapstructure:"min_score" json:"MinScore"`
+	MaxTokens int     `mapstructure:"max_tokens" json:"MaxTokens"`
 }
 
 // Manager handles configuration loading and access

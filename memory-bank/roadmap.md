@@ -23,19 +23,26 @@
 
 ### 🔴 第一优先级：补齐核心体验短板（近期 4-8 周）
 
-| # | 方向 | 具体内容 | 原因 |
-|---|------|----------|------|
-| 1 | **四层记忆引擎 LLM 闭环** | Phase 7（Fact Extractor LLM 替代 rule-based stub）+ Phase 8（Wiki Ingest LLM） | 四层记忆是 gline 的核心护城河，Phase 7-8 完成后体验从"框架"变"黑魔法" |
-| 2 | **主题系统收尾** | 完成 P2.5.3（CSS 变量全组件迁移 + hljs 动态切换 + FOUC 消除），推送到前端设置面板 | 用户可感知的基础体验，当前已完成但未提交 |
-| 3 | **KB/Wiki 前端操作面板** | 当前 `KBIngestFile()` 和 `WikiIngestFile()` 仅暴露 API，前端缺少知识库管理 UI | 用户无法直观操作入库、检索、浏览 wiki 页面 |
-| 4 | **可靠性加固** | 持续监控 `memory_note` / `execute_command` 等 side-effect 工具避免 db 锁死重演 | 高可靠性维护 |
+| # | 方向 | 具体内容 | 状态 | 原因 |
+|---|------|----------|------|------|
+| 1 | **MCP 支持** | 引入 Anthropic Model Context Protocol，实现 MCP 客户端，让 gline 接入外部工具源（Slack/GitHub/数据库/浏览器） | ✅ **已完成** | 将 gline 从"代码助手"升级为"通用 AI 工作流中枢" |
+| 2 | **Skill 包管理器** | 已兼容 cline 规范，下一步 `gline skill search/install/use`，内置热门 skill（doc-coauthoring、brainstorming 等） | 🔄 **当前进行** | 让用户通过自然语言调用行业专业模式 |
+| 3 | **四层记忆引擎** | Phase 7（Fact Extractor LLM）✅ 已完成；Phase 8（Wiki Ingest LLM）搁置等待 Scale 设计 | ⏸️ **搁置** | 四层记忆是 gline 的核心护城河 |
+| 4 | **可靠性加固** | 持续监控 `memory_note` / `execute_command` 等 side-effect 工具避免 db 锁死重演 | ✅ **已完成** | 高可靠性维护 |
+
+**状态更新（2026-06-24）**:
+- ✅ **MCP 支持**: 已完成（协议实现、传输层、Manager、前端配置面板、完整构建验证）
+- ✅ **主题系统 P2.5.3**: 已完成并提交（CSS 变量、hljs 动态切换、FOUC 消除）
+- 🔄 **Skill 包管理器**: 当前最高优先级（`gline skill search/install/use`）
+- ⏸️ **Wiki Ingest LLM**: 搁置，等待 Scale 设计方案
+- 📋 **KB/Wiki 前端面板**: 待规划 |
 
 ### 🟠 第二优先级：扩展差异化能力（中期 2-4 个月）
 
 | # | 方向 | 具体内容 | 产品价值 |
 |---|------|----------|----------|
-| 1 | **MCP 支持** | 引入 Anthropic Model Context Protocol，让 gline 接入外部工具源（Slack/GitHub/数据库/浏览器） | 将 gline 从"代码助手"升级为"通用 AI 工作流中枢" |
-| 2 | **Skill 包管理器** | 已兼容 cline 规范，下一步 `gline skill search/install/use`，内置热门 skill（doc-coauthoring、brainstorming 等） | 让用户通过自然语言调用行业专业模式 |
+| 1 | **@ 引用增强** | 文件夹、最近编辑文件自动提示、代码符号级引用 | 编辑效率对标 Cursor/Cline 的上下文引用能力 |
+| 2 | **多提供商统一（LiteLLM）** | 支持 `litellmcreds` 规范，降低用户配置多 LLM 的门槛 | 强化"多 LLM 提供商支持"这一目标 |
 | 3 | **@ 引用增强** | 文件夹、最近编辑文件自动提示、代码符号级引用 | 编辑效率对标 Cursor/Cline 的上下文引用能力 |
 | 4 | **多提供商统一（LiteLLM）** | 支持 `litellmcreds` 规范，降低用户配置多 LLM 的门槛 | 强化"多 LLM 提供商支持"这一目标 |
 | 5 | **连接池 & Embedding int8 量化** | RAGManager/VectorStore 复用 SQLite 连接、int8 量化压缩存储 | 支撑万级文档知识库 |
@@ -198,13 +205,16 @@ Agent "记得"用户偏好/项目决策
 
 ---
 
-## 五、可执行的 Sprint 概览
+## 五、可执行的 Sprint 概览（2026-06-24 更新）
 
-| Sprint | 目标 | 产出 |
-|--------|------|------|
-| **Sprint 1** | Phase 7 LLM Fact Extractor | Fact 层真正从对话中提取用户偏好/项目决策 |
-| **Sprint 2** | Phase 8 Wiki Ingest + 主题系统提交 | Wiki 自动生成 + 前端主题切换可用 |
-| **Sprint 3** | KB/Wiki 前端管理面板 | 用户可查看知识库列表、浏览 wiki 页面、搜索 KB |
-| **Sprint 4** | MCP Client MVP | 接入 1-2 个 MCP server，验证 protocol |
-| **Sprint 5** | Skill 包管理器 + 内置 skill | `gline skill` CLI + SettingsPanel GUI 双入口 |
-| **Sprint 6** | 后台任务/托盘工作流 | Agent 支持后台执行，完成后系统通知 |
+| Sprint | 目标 | 产出 | 状态 |
+|--------|------|------|------|
+| **Sprint 1** | MCP Client MVP | 接入 1-2 个 MCP server，验证 protocol | 🔄 当前 |
+| **Sprint 2** | Skill 包管理器 + 内置 skill | `gline skill` CLI + SettingsPanel GUI 双入口 | 📋 待开始 |
+| **Sprint 3** | KB/Wiki 前端管理面板 | 用户可查看知识库列表、浏览 wiki 页面、搜索 KB | 📋 待规划 |
+| **Sprint 4** | @ 引用增强 | 文件夹、最近编辑文件自动提示、代码符号级引用 | 📋 待规划 |
+| **Sprint 5** | 后台任务/托盘工作流 | Agent 支持后台执行，完成后系统通知 | 📋 待规划 |
+
+**已完成 Sprint**:
+- ✅ Phase 7 LLM Fact Extractor - Fact 层真正从对话中提取用户偏好
+- ✅ 主题系统 P2.5.3 - CSS 变量 + hljs 动态切换 + FOUC 消除

@@ -66,6 +66,9 @@ type Agent interface {
 
 	// ReloadCustomRules reloads custom rules from disk and returns true if any rules were loaded.
 	ReloadCustomRules() (bool, []prompts.RuleFileInfo, error)
+
+	// GetToolRegistry returns the tool registry
+	GetToolRegistry() *tools.Registry
 }
 
 // Options contains configuration options for creating an Agent
@@ -243,10 +246,17 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 		// Get available tools for current mode
 		availableTools := a.toolRegistry.GetForMode(string(a.mode))
 
-		// Build system prompt with tool descriptions
-		toolDescs := prompts.GetToolDescriptions()
+		// Build system prompt with tool descriptions from registry (includes MCP tools)
+		toolDescs := make([]prompts.ToolDescription, 0, len(availableTools))
+		for _, tool := range availableTools {
+			toolDescs = append(toolDescs, prompts.ToolDescription{
+				Name:        tool.Name(),
+				Description: tool.Description(),
+				InputSchema: string(tool.InputSchema()),
+			})
+		}
 		if a.mode == ModePlan {
-			toolDescs = prompts.GetPlanModeToolDescriptions()
+			toolDescs = filterPlanModeTools(toolDescs)
 		}
 		systemPrompt := prompts.GetSystemPrompt(string(a.mode), toolDescs, a.customRules, a.skills)
 
@@ -1095,4 +1105,21 @@ func convertTools(toolsList []tools.Tool) []ToolDefinition {
 		}
 	}
 	return defs
+}
+
+// filterPlanModeTools filters out act-only tools for plan mode
+func filterPlanModeTools(tools []prompts.ToolDescription) []prompts.ToolDescription {
+	actOnlyTools := map[string]bool{
+		"write_to_file":   true,
+		"replace_in_file": true,
+		"execute_command": true,
+	}
+
+	var filtered []prompts.ToolDescription
+	for _, tool := range tools {
+		if !actOnlyTools[tool.Name] {
+			filtered = append(filtered, tool)
+		}
+	}
+	return filtered
 }

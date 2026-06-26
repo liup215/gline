@@ -2,9 +2,74 @@
 
 ## 项目状态概览
 
-**当前阶段**: 四层记忆引擎 + 透明聊天驱动系统 全部完成 ✅
+**当前阶段**: MCP 支持开发 全部完成 ✅
 
-**总体进度**: 100% - 所有核心功能已完成：Fact/Wiki/RAG 三层引擎、LLM 工具集成、被动/主动提取、前端记忆徽章。
+**总体进度**: 
+- ✅ 四层记忆引擎 + 透明聊天驱动系统
+- ✅ MCP (Model Context Protocol) 客户端支持
+- ⏳ Skill 包管理器（下一优先级）
+
+---
+
+## 2026-06-24 — MCP 支持开发 ✅
+
+### 实现内容
+
+| 组件 | 文件 | 说明 |
+|------|------|------|
+| Protocol | `internal/mcp/protocol.go` | JSON-RPC 2.0 + MCP 协议类型 |
+| Transport | `internal/mcp/transport.go` | StdioTransport + HTTPTransport (同步 POST) |
+| Client | `internal/mcp/client.go` | MCP 客户端（初始化、工具调用、资源读取）|
+| Config | `internal/mcp/config.go` | ServerConfig, Config 结构 |
+| Manager | `internal/mcp/manager.go` | Server 管理器 + Tool Adapter |
+| Config Integration | `internal/config/config.go` | MCP 配置字段 |
+| CLI Integration | `cmd/gline/chat.go` | Agent 初始化时启动 MCP Manager |
+| GUI Integration | `internal/gui/backend.go` | GUI 模式 MCP Manager 集成 |
+| Frontend | `frontend/src/components/settings/MCPTab.tsx` | MCP Server 配置 UI + 工具列表显示 |
+
+### 功能特性
+- ✅ 支持 stdio、HTTP 和 SSE 三种传输方式
+- ✅ HTTP Transport 使用简单同步 POST 请求-响应（参考 LtEdu 实现）
+- ✅ 动态工具注册（自动适配为 gline Tool 接口）
+- ✅ 环境变量扩展（`${VAR}` 语法）
+- ✅ 前端可视化配置（添加/编辑/删除/启用禁用）
+- ✅ 配置热更新（修改配置后自动重启 MCP Manager）
+- ✅ 工具列表显示（每个服务器显示可用工具数量和名称）
+- ✅ 连接状态指示器（绿色=已连接，黄色=连接中，红色=错误）
+
+### 构建验证
+- ✅ `build-all.ps1` 完整构建成功（32.2 MB）
+- ✅ Wails bindings 自动生成
+- ✅ TypeScript 类型检查通过
+- ✅ Go 编译成功
+
+---
+
+## 2025-01-09 — MCP HTTP Transport 修复 + 工具列表显示 ✅
+
+### 问题修复
+1. **HTTP Transport 简化** - 参考 LtEdu 项目实现
+   - 移除了复杂的 SSE 流处理代码
+   - 改为简单同步 HTTP POST 请求-响应模式
+   - Send 方法发送请求并存储响应
+   - Receive 方法立即返回存储的响应
+
+2. **前端工具列表显示**
+   - 添加 `GetMCPStatus` 后端方法暴露 MCP 服务器状态
+   - 前端显示每个服务器的连接状态和工具数量
+   - 添加 "Show Tools" 按钮展开显示工具名称列表
+   - 状态指示器：绿色=已连接，黄色=连接中，红色=错误
+
+### 修改文件
+- `internal/mcp/transport.go` - 简化 HTTPTransport
+- `internal/mcp/manager.go` - 添加 ToolNames 字段
+- `internal/gui/backend.go` - 添加 GetMCPStatus 方法
+- `frontend/src/components/settings/MCPTab.tsx` - 添加工具列表 UI
+- `frontend/bindings/...` - 手动添加 GetMCPStatus 绑定
+
+---
+
+## 2026-06-05 — 透明记忆系统（Phase 9+）✅
 
 ---
 

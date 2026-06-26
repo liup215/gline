@@ -20,7 +20,6 @@ require (
 require (
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/JohannesKaufmann/dom v0.3.1 // indirect
-	github.com/JohannesKaufmann/html-to-markdown/v2 v2.5.2 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/ProtonMail/go-crypto v1.3.0 // indirect
 	github.com/adrg/xdg v0.5.3 // indirect
@@ -39,9 +38,7 @@ require (
 	github.com/go-git/go-billy/v5 v5.9.0 // indirect
 	github.com/go-git/go-git/v5 v5.19.1 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
-	github.com/go-rod/rod v0.116.2 // indirect
 	github.com/go-shiori/dom v0.0.0-20230515143342-73569d674e1c // indirect
-	github.com/go-shiori/go-readability v0.0.0-20251205110129-5db1dc9836f0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/gogs/chardet v0.0.0-20211120154057-b7413eaefb8f // indirect
