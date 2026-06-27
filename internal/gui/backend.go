@@ -89,6 +89,14 @@ func getGlobalConfigDir() string {
 
 func (b *Backend) initAgent() error {
 	cfg := b.cfg.Get()
+	
+	// Debug: Log MCP configuration
+	log.Infof("MCP config check: %d servers in config", len(cfg.MCP.Servers))
+	for i, server := range cfg.MCP.Servers {
+		log.Infof("  MCP server %d: name=%s, transport=%s, url=%s, disabled=%v", 
+			i, server.Name, server.TransportType, server.URL, server.Disabled)
+	}
+	
 	providerName := cfg.Provider.Default
 	if providerName == "" {
 		providerName = "openai"
@@ -179,6 +187,7 @@ func (b *Backend) initAgent() error {
 
 	// Initialize MCP Manager if configured
 	if len(cfg.MCP.Servers) > 0 {
+		log.Infof("Starting MCP manager with %d servers", len(cfg.MCP.Servers))
 		b.mcpManager = mcp.NewManager(&cfg.MCP, registry)
 		if err := b.mcpManager.Start(context.Background()); err != nil {
 			log.Warnf("Failed to start MCP manager: %v", err)
@@ -191,10 +200,14 @@ func (b *Backend) initAgent() error {
 				if status.Initialized {
 					log.Infof("MCP server '%s' connected with %d tools", status.Name, status.Tools)
 					totalTools += status.Tools
+				} else {
+					log.Warnf("MCP server '%s' failed to initialize: %s", status.Name, status.LastError)
 				}
 			}
 			log.Infof("MCP initialized: %d servers, %d total tools", len(statuses), totalTools)
 		}
+	} else {
+		log.Info("No MCP servers configured, skipping MCP initialization")
 	}
 
 	return nil

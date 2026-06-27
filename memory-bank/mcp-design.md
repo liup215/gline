@@ -134,6 +134,25 @@ func (t *MCPToGlineTool) Execute(ctx context.Context, input json.RawMessage) (st
 3. **工具注册**: Manager 将 MCP tools 通过 adapter 注册到 gline 的 Tool Registry
 4. **运行时**: Agent 调用 tool 时，adapter 转发到 MCP server
 
+### Transport Context 生命周期（重要）
+
+初始化 `Client.Initialize(ctx)` 时传入的 `ctx` 通常带有超时（例如 60 秒）。**Transport 不能把这个 ctx 保存下来复用**，否则一旦初始化超时或取消，后续所有 tool call 都会因 `context canceled` 失败。
+
+正确做法：
+- `HTTPTransport.Start()` / `SSETransport.Start()` 使用 `context.Background()` 创建独立的内部 context
+- `StdioTransport.Start()` 使用 `context.Background()` 启动子进程（避免 `exec.CommandContext` 在 init 超时后 kill 进程）
+- 三个 transport 的内部 context 仅由 `Close()` 取消
+
+### Manager 工具状态缓存
+
+`Manager.GetServerStatus()` 被前端和启动日志频繁调用，不应每次都向 MCP server 重新请求 `tools/list`（慢且容易超时）。实现方式：
+
+- `Manager` 维护 `serverTools map[string][]Tool`
+- `registerServerTools()` 成功后把列表写入缓存
+- `GetServerStatus()` 直接从缓存读取 `len(tools)` 和 `ToolNames`
+- 缓存作为 fallback：若缓存缺失，仍保留一次短超时 `ListTools()` 调用
+- `RefreshTools()`、`RemoveServer()`、`Close()` 时清理缓存
+
 ### UI 集成
 
 前端 SettingsPanel 新增 "MCP Servers" tab:

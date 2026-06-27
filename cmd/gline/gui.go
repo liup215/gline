@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"embed"
@@ -18,6 +18,11 @@ var assets embed.FS
 var iconBytes []byte
 
 func runGUI() {
+	// Initialize configuration and logging
+	if err := InitConfig(); err != nil {
+		log.Fatalf("Failed to initialize config: %v", err)
+	}
+
 	if err := gui.InitBackend(); err != nil {
 		log.Fatalf("Failed to initialise backend: %v", err)
 	}
@@ -55,7 +60,7 @@ func runGUI() {
 		URL:              "/",
 	})
 
-	// Intercept close button (X) → hide to system tray instead of quitting
+	// Intercept close button (X) to hide to system tray instead of quitting
 	window.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
 		window.Hide()
 		e.Cancel()

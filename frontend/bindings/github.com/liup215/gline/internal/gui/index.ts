@@ -8,10 +8,7 @@ export {
 
 export {
     DirEntry,
+    MCPServerStatus,
     SlashActionResult,
-    SlashCommandInfo,
-    MCPServerStatus
+    SlashCommandInfo
 } from "./models.js";
-
-// Export GetMCPStatus directly from chatservice
-export { GetMCPStatus } from "./chatservice.js";

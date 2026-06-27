@@ -34,6 +34,28 @@
 | Inline Style | CSS-in-JS | 所有组件使用 `style={{...}}`，无 CSS 模块 |
 | CSS Variables | 主题系统 | 28+ 个 CSS 自定义属性，ThemeContext + localStorage 持久化 |
 
+## 构建与 CI 注意事项
+
+### 本地构建
+
+必须使用 `build-all.ps1` 或等效脚本完成完整构建，禁止单独使用 `go build`（会因为缺少 embedded frontend/dist 而失败）：
+
+1. 从 `cmd/gline` 运行 `wails3 generate bindings --ts -d "../../frontend/bindings"`
+2. `npm run build`（生成 `cmd/gline/frontend/dist/`）
+3. `go build`（最终生成 `bin/gline.exe`）
+
+### CI（GitHub Actions）失败教训
+
+- `.github/workflows/build.yml` 使用 `go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha.95`
+- 本地二进制显示 `v3.0.0-alpha2.106`，需关注版本差异是否引入 binding 差异
+- 关键规则：**Wails 只会把注册到 `application.NewService()` 的 struct 方法生成 bindings**。在 `Backend` 上定义的方法即使被前端 import 也不会生成绑定。
+- 因此 `internal/gui/chat_service.go` 的 `ChatService` 必须暴露前端需要的所有方法（如 `GetMCPStatus`）。
+
+### MCP 运行时陷阱
+
+1. **Transport context 不能复用初始化 context**，否则 60 秒后 `context canceled`。详见 `memory-bank/mcp-design.md`。
+2. **状态统计不要重复请求工具列表**：`Manager` 应在 `registerServerTools()` 阶段缓存工具列表。
+
 ## 项目结构
 
 ```

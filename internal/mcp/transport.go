@@ -1,4 +1,4 @@
-package mcp
+﻿package mcp
 
 import (
 	"bufio"
@@ -13,6 +13,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/liup215/gline/internal/log"
 )
 
 // Transport is the interface for MCP transports
@@ -64,8 +66,10 @@ func (t *StdioTransport) Start(ctx context.Context) error {
 		return fmt.Errorf("transport already started")
 	}
 
-	// Create command
-	t.cmd = exec.CommandContext(ctx, t.command, t.args...)
+	// Create command with a long-lived background context so the subprocess
+	// survives beyond the initialization timeout. Process lifetime is managed
+	// explicitly in Close().
+	t.cmd = exec.CommandContext(context.Background(), t.command, t.args...)
 
 	// Set environment variables
 	if len(t.env) > 0 {
@@ -251,6 +255,7 @@ type HTTPTransport struct {
 	connected   bool
 	closed      atomic.Bool
 	pendingResp *JSONRPCMessage
+	respCond    *sync.Cond // Condition variable for signaling response availability
 }
 
 // NewHTTPTransport creates a new HTTP transport
@@ -264,11 +269,13 @@ func NewHTTPTransport(urlStr string, headers map[string]string) (*HTTPTransport,
 		return nil, fmt.Errorf("URL must use http or https scheme")
 	}
 
-	return &HTTPTransport{
+	t := &HTTPTransport{
 		url:     urlStr,
 		headers: headers,
 		client:  &http.Client{Timeout: 60 * time.Second},
-	}, nil
+	}
+	t.respCond = sync.NewCond(&t.mu)
+	return t, nil
 }
 
 // Start initializes the HTTP transport
@@ -280,7 +287,9 @@ func (t *HTTPTransport) Start(ctx context.Context) error {
 		return fmt.Errorf("transport already started")
 	}
 
-	t.ctx, t.cancel = context.WithCancel(ctx)
+	// Use a long-lived background context so the transport survives beyond the
+	// initialization timeout. It is cancelled only when Close() is called.
+	t.ctx, t.cancel = context.WithCancel(context.Background())
 	t.connected = true
 	return nil
 }
@@ -288,6 +297,7 @@ func (t *HTTPTransport) Start(ctx context.Context) error {
 // Send sends a JSON-RPC message via HTTP POST
 // For stateless HTTP: this method directly returns the response via the transport's internal storage
 func (t *HTTPTransport) Send(msg *JSONRPCMessage) error {
+	log.Logger.Info().Str("method", msg.Method).Interface("id", msg.ID).Msg("[HTTPTransport] Send called")
 	if t.closed.Load() {
 		return fmt.Errorf("transport closed")
 	}
@@ -319,12 +329,14 @@ func (t *HTTPTransport) Send(msg *JSONRPCMessage) error {
 		req.Header.Set(k, v)
 	}
 
+	log.Logger.Info().Str("url", t.url).Msg("[HTTPTransport] Sending HTTP POST request")
 	resp, err := t.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send message: %w", err)
 	}
 	defer resp.Body.Close()
 
+	log.Logger.Info().Int("status", resp.StatusCode).Msg("[HTTPTransport] Received HTTP response")
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("unexpected status: %d", resp.StatusCode)
 	}
@@ -335,16 +347,26 @@ func (t *HTTPTransport) Send(msg *JSONRPCMessage) error {
 		return fmt.Errorf("failed to read response: %w", err)
 	}
 
+	log.Logger.Debug().Str("body", string(body)).Msg("[HTTPTransport] Response body")
+
 	var response JSONRPCMessage
 	if err := json.Unmarshal(body, &response); err != nil {
 		return fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	// Store response - Receive will pick it up
+	fmt.Printf("[HTTPTransport] Parsed response: ID=%v, Method='%s', Result=%v, Error=%v\n",
+		response.ID, response.Method, response.Result != nil, response.Error != nil)
+
+	// Store response and signal Receive
 	t.mu.Lock()
 	t.pendingResp = &response
+	if t.respCond != nil {
+		log.Logger.Debug().Msg("[HTTPTransport] Broadcasting to respCond")
+		t.respCond.Broadcast()
+	}
 	t.mu.Unlock()
 
+	log.Logger.Info().Msg("[HTTPTransport] Send completed successfully")
 	return nil
 }
 
@@ -355,25 +377,31 @@ func (t *HTTPTransport) Receive() (*JSONRPCMessage, error) {
 		return nil, fmt.Errorf("transport closed")
 	}
 
-	// Wait for a response to be available
-	for {
-		t.mu.Lock()
-		if t.pendingResp != nil {
-			msg := t.pendingResp
-			t.pendingResp = nil
-			t.mu.Unlock()
-			return msg, nil
-		}
-		t.mu.Unlock()
+	// Wait for a response to be available using condition variable
+	t.mu.Lock()
+	defer t.mu.Unlock()
 
-		// Small sleep to avoid busy waiting
-		time.Sleep(10 * time.Millisecond)
-
-		// Check context
-		if t.ctx.Err() != nil {
+	for t.pendingResp == nil && !t.closed.Load() {
+		if t.ctx != nil && t.ctx.Err() != nil {
 			return nil, t.ctx.Err()
 		}
+		// Wait for signal with timeout check
+		if t.respCond != nil {
+			t.respCond.Wait()
+		} else {
+			t.mu.Unlock()
+			time.Sleep(10 * time.Millisecond)
+			t.mu.Lock()
+		}
 	}
+
+	if t.closed.Load() {
+		return nil, fmt.Errorf("transport closed")
+	}
+
+	msg := t.pendingResp
+	t.pendingResp = nil
+	return msg, nil
 }
 
 // Close closes the transport
@@ -453,7 +481,9 @@ func (t *SSETransport) Start(ctx context.Context) error {
 		return fmt.Errorf("transport already started")
 	}
 
-	t.ctx, t.cancel = context.WithCancel(ctx)
+	// Use a long-lived background context so the transport survives beyond the
+	// initialization timeout. It is cancelled only when Close() is called.
+	t.ctx, t.cancel = context.WithCancel(context.Background())
 
 	// Start SSE reader
 	go t.readSSE()

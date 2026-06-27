@@ -46,6 +46,54 @@ export class DirEntry {
 }
 
 /**
+ * MCPServerStatus represents the status of an MCP server for the frontend
+ */
+export class MCPServerStatus {
+    "name": string;
+    "connected": boolean;
+    "initialized": boolean;
+    "tools": number;
+    "toolNames": string[];
+    "lastError": string;
+
+    /** Creates a new MCPServerStatus instance. */
+    constructor($$source: Partial<MCPServerStatus> = {}) {
+        if (!("name" in $$source)) {
+            this["name"] = "";
+        }
+        if (!("connected" in $$source)) {
+            this["connected"] = false;
+        }
+        if (!("initialized" in $$source)) {
+            this["initialized"] = false;
+        }
+        if (!("tools" in $$source)) {
+            this["tools"] = 0;
+        }
+        if (!("toolNames" in $$source)) {
+            this["toolNames"] = [];
+        }
+        if (!("lastError" in $$source)) {
+            this["lastError"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new MCPServerStatus instance from a string or object.
+     */
+    static createFrom($$source: any = {}): MCPServerStatus {
+        const $$createField4_0 = $$createType0;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("toolNames" in $$parsedSource) {
+            $$parsedSource["toolNames"] = $$createField4_0($$parsedSource["toolNames"]);
+        }
+        return new MCPServerStatus($$parsedSource as Partial<MCPServerStatus>);
+    }
+}
+
+/**
  * SlashActionResult is returned after executing a slash command.
  */
 export class SlashActionResult {
@@ -105,46 +153,5 @@ export class SlashCommandInfo {
     }
 }
 
-/**
- * MCPServerStatus holds the status of an MCP server.
- */
-export class MCPServerStatus {
-    "name": string;
-    "connected": boolean;
-    "initialized": boolean;
-    "tools": number;
-    "toolNames": string[];
-    "lastError": string;
-
-    /** Creates a new MCPServerStatus instance. */
-    constructor($$source: Partial<MCPServerStatus> = {}) {
-        if (!("name" in $$source)) {
-            this["name"] = "";
-        }
-        if (!("connected" in $$source)) {
-            this["connected"] = false;
-        }
-        if (!("initialized" in $$source)) {
-            this["initialized"] = false;
-        }
-        if (!("tools" in $$source)) {
-            this["tools"] = 0;
-        }
-        if (!("toolNames" in $$source)) {
-            this["toolNames"] = [];
-        }
-        if (!("lastError" in $$source)) {
-            this["lastError"] = "";
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new MCPServerStatus instance from a string or object.
-     */
-    static createFrom($$source: any = {}): MCPServerStatus {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new MCPServerStatus($$parsedSource as Partial<MCPServerStatus>);
-    }
-}
+// Private type creation functions
+const $$createType0 = $Create.Array($Create.Any);

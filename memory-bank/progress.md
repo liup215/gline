@@ -2,12 +2,47 @@
 
 ## 项目状态概览
 
-**当前阶段**: MCP 支持开发 全部完成 ✅
+**当前阶段**: MCP 支持开发 主体完成，已修复运行时问题与 CI 失败 ✅
 
 **总体进度**: 
 - ✅ 四层记忆引擎 + 透明聊天驱动系统
-- ✅ MCP (Model Context Protocol) 客户端支持
+- ✅ MCP (Model Context Protocol) 客户端支持（含 2026-06-26 修复）
 - ⏳ Skill 包管理器（下一优先级）
+
+---
+
+## 2026-06-26 / 2026-06-27 — MCP 运行时问题修复 + CI 修复 ✅
+
+### 修复内容
+
+| 问题 | 根因 | 修复文件 | 状态 |
+|------|------|----------|------|
+| MCP 状态显示 0 tools | `GetServerStatus()` 重复调用 `ListTools`，5 秒超时失败 | `internal/mcp/manager.go` | ✅ 本地验证 50 tools |
+| 调用 MCP 工具 `context canceled` | Transport 复用带超时的初始化 context | `internal/mcp/transport.go` | ✅ 独立测试通过 |
+| GitHub Actions Build 失败 | `ChatService` 缺少 `GetMCPStatus()`，bindings 缺导出 | `internal/gui/chat_service.go` | ✅ 待推送后验证 |
+
+### 关键改动
+
+1. **`internal/mcp/manager.go`**
+   - 新增 `serverTools map[string][]Tool` 缓存
+   - `registerServerTools()` 成功后缓存工具列表
+   - `GetServerStatus()` 优先读取缓存，避免重复网络请求
+   - `RefreshTools()` / `RemoveServer()` / `Close()` 同步清理缓存
+
+2. **`internal/mcp/transport.go`**
+   - `HTTPTransport.Start()` / `SSETransport.Start()` 使用 `context.Background()` 替代传入的 init ctx
+   - `StdioTransport.Start()` 的 `exec.CommandContext` 同样改为 `context.Background()`
+   - 所有 transport 生命周期由 `Close()` 显式取消
+
+3. **`internal/gui/chat_service.go`**
+   - 新增 `ChatService.GetMCPStatus()`，暴露给前端 bindings
+   - 解决 `MCPTab.tsx` 的 `GetMCPStatus` / `MCPServerStatus` 导入缺失
+
+### 验证
+- `build-all.ps1` 完整构建成功（~32 MB）
+- 本地启动后 MCP 正确显示 50 tools
+- 独立 MCP client 测试：initialize → list tools → call tool 成功
+- 清理了临时测试文件 `test_mcp.go` 和 `cmd/mcp-test/`
 
 ---
 

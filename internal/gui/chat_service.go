@@ -701,6 +701,27 @@ func (c *ChatService) CompactConversation() (bool, error) {
 	return compacted, nil
 }
 
+// GetMCPStatus returns the status of all configured MCP servers.
+func (c *ChatService) GetMCPStatus() ([]MCPServerStatus, error) {
+	if c.Backend == nil || c.Backend.mcpManager == nil {
+		return []MCPServerStatus{}, nil
+	}
+
+	statuses := c.Backend.mcpManager.GetServerStatus()
+	result := make([]MCPServerStatus, len(statuses))
+	for i, s := range statuses {
+		result[i] = MCPServerStatus{
+			Name:        s.Name,
+			Connected:   s.Connected,
+			Initialized: s.Initialized,
+			Tools:       s.Tools,
+			ToolNames:   s.ToolNames,
+			LastError:   s.LastError,
+		}
+	}
+	return result, nil
+}
+
 // GetStatus returns current provider, model, working directory, mode and token usage.
 func (c *ChatService) GetStatus() (map[string]string, error) {
 	cfg := c.Backend.cfg.Get()

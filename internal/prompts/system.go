@@ -214,7 +214,8 @@ type ToolDescription struct {
 	InputSchema string
 }
 
-// buildToolSection builds the tool descriptions section with Usage examples.
+// buildToolSection builds the tool descriptions section with complete input schema.
+// This follows the LtEdu Desktop Agent style for better tool understanding.
 func buildToolSection(tools []ToolDescription) string {
 	if len(tools) == 0 {
 		return ""
@@ -226,8 +227,14 @@ func buildToolSection(tools []ToolDescription) string {
 
 	for _, tool := range tools {
 		builder.WriteString(fmt.Sprintf("## %s\n", tool.Name))
-		builder.WriteString(fmt.Sprintf("Description: %s\n", tool.Description))
-		builder.WriteString(fmt.Sprintf("Usage:\n<%s>\n...parameters...\n</%s>\n\n", tool.Name, tool.Name))
+		builder.WriteString(fmt.Sprintf("%s\n", tool.Description))
+		
+		// Include full input schema if available (LtEdu style)
+		if len(tool.InputSchema) > 0 && tool.InputSchema != "{}" {
+			builder.WriteString(fmt.Sprintf("Input Schema:\n%s\n\n", tool.InputSchema))
+		} else {
+			builder.WriteString("\n")
+		}
 	}
 
 	builder.WriteString("\n")

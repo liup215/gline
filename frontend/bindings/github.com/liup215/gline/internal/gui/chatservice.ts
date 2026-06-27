@@ -98,8 +98,8 @@ export function GetConversationState(): $CancellablePromise<string> {
  * GetMCPStatus returns the status of all configured MCP servers.
  */
 export function GetMCPStatus(): $CancellablePromise<$models.MCPServerStatus[]> {
-    return $Call.ByID(1926049163).then(($result: any) => {
-        return $$createType15($result);
+    return $Call.ByID(2255057325).then(($result: any) => {
+        return $$createType5($result);
     });
 }
 
@@ -115,7 +115,7 @@ export function GetMode(): $CancellablePromise<string> {
  */
 export function GetRulesInfo(): $CancellablePromise<prompts$0.RuleFileInfo[]> {
     return $Call.ByID(1836671012).then(($result: any) => {
-        return $$createType5($result);
+        return $$createType7($result);
     });
 }
 
@@ -133,7 +133,7 @@ export function GetSlashCommands(): $CancellablePromise<$models.SlashCommandInfo
  */
 export function GetStatus(): $CancellablePromise<{ [_ in string]?: string }> {
     return $Call.ByID(769312231).then(($result: any) => {
-        return $$createType6($result);
+        return $$createType8($result);
     });
 }
 
@@ -142,8 +142,8 @@ export function GetStatus(): $CancellablePromise<{ [_ in string]?: string }> {
  */
 export function GetTaskSummary(taskID: string): $CancellablePromise<[storage$0.TaskRecord | null, storage$0.MessageRecord[]]> {
     return $Call.ByID(2564082748, taskID).then(($result: any) => {
-        $result[0] = $$createType8($result[0]);
-        $result[1] = $$createType10($result[1]);
+        $result[0] = $$createType10($result[0]);
+        $result[1] = $$createType12($result[1]);
         return $result;
     });
 }
@@ -190,7 +190,7 @@ export function KBList(): $CancellablePromise<string> {
  */
 export function ListDirEntries(dirPath: string): $CancellablePromise<$models.DirEntry[]> {
     return $Call.ByID(3326127938, dirPath).then(($result: any) => {
-        return $$createType12($result);
+        return $$createType14($result);
     });
 }
 
@@ -199,7 +199,7 @@ export function ListDirEntries(dirPath: string): $CancellablePromise<$models.Dir
  */
 export function ListTasks(limit: number, offset: number): $CancellablePromise<storage$0.TaskRecord[]> {
     return $Call.ByID(2963132795, limit, offset).then(($result: any) => {
-        return $$createType13($result);
+        return $$createType15($result);
     });
 }
 
@@ -208,7 +208,7 @@ export function ListTasks(limit: number, offset: number): $CancellablePromise<st
  */
 export function LoadTask(taskID: string): $CancellablePromise<storage$0.TaskRecord | null> {
     return $Call.ByID(183112338, taskID).then(($result: any) => {
-        return $$createType8($result);
+        return $$createType10($result);
     });
 }
 
@@ -306,15 +306,15 @@ const $$createType0 = $models.SlashActionResult.createFrom;
 const $$createType1 = $Create.Nullable($$createType0);
 const $$createType2 = $models.SlashCommandInfo.createFrom;
 const $$createType3 = $Create.Array($$createType2);
-const $$createType4 = prompts$0.RuleFileInfo.createFrom;
+const $$createType4 = $models.MCPServerStatus.createFrom;
 const $$createType5 = $Create.Array($$createType4);
-const $$createType6 = $Create.Map($Create.Any, $Create.Any);
-const $$createType7 = storage$0.TaskRecord.createFrom;
-const $$createType8 = $Create.Nullable($$createType7);
-const $$createType9 = storage$0.MessageRecord.createFrom;
-const $$createType10 = $Create.Array($$createType9);
-const $$createType11 = $models.DirEntry.createFrom;
+const $$createType6 = prompts$0.RuleFileInfo.createFrom;
+const $$createType7 = $Create.Array($$createType6);
+const $$createType8 = $Create.Map($Create.Any, $Create.Any);
+const $$createType9 = storage$0.TaskRecord.createFrom;
+const $$createType10 = $Create.Nullable($$createType9);
+const $$createType11 = storage$0.MessageRecord.createFrom;
 const $$createType12 = $Create.Array($$createType11);
-const $$createType13 = $Create.Array($$createType7);
-const $$createType14 = $models.MCPServerStatus.createFrom;
-const $$createType15 = $Create.Array($$createType14);
+const $$createType13 = $models.DirEntry.createFrom;
+const $$createType14 = $Create.Array($$createType13);
+const $$createType15 = $Create.Array($$createType9);

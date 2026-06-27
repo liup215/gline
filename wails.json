@@ -1,0 +1,20 @@
+{
+  "name": "gline",
+  "description": "AI Programming Assistant",
+  "version": "0.1.0",
+  "main": "cmd/gline/main.go",
+  "frontend": {
+    "dir": "frontend",
+    "dist": "frontend/dist",
+    "install": "npm install",
+    "build": "npm run build",
+    "dev": "npm run dev"
+  },
+  "bindings": {
+    "output": "frontend/bindings",
+    "ts": true
+  },
+  "wails": {
+    "version": "v3.0.0-alpha.95"
+  }
+}

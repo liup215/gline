@@ -143,6 +143,69 @@ func (m *Manager) Load() error {
 		return fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
+	// Fix: Manually extract MCP servers if viper failed to unmarshal them
+	if len(m.config.MCP.Servers) == 0 {
+		if servers := m.viper.Get("mcp.servers"); servers != nil {
+			if serversList, ok := servers.([]interface{}); ok {
+				for _, s := range serversList {
+					if serverMap, ok := s.(map[string]interface{}); ok {
+						var cfg mcp.ServerConfig
+
+						// Extract fields from map
+						if name, ok := serverMap["name"].(string); ok {
+							cfg.Name = name
+						}
+						if transportType, ok := serverMap["transport_type"].(string); ok {
+							cfg.TransportType = transportType
+						}
+						if command, ok := serverMap["command"].(string); ok {
+							cfg.Command = command
+						}
+						if url, ok := serverMap["url"].(string); ok {
+							cfg.URL = url
+						}
+						if disabled, ok := serverMap["disabled"].(bool); ok {
+							cfg.Disabled = disabled
+						}
+
+						// Handle args array
+						if args, ok := serverMap["args"].([]interface{}); ok {
+							for _, a := range args {
+								if arg, ok := a.(string); ok {
+									cfg.Args = append(cfg.Args, arg)
+								}
+							}
+						}
+
+						// Handle headers map
+						if headers, ok := serverMap["headers"].(map[string]interface{}); ok {
+							cfg.Headers = make(map[string]string)
+							for k, v := range headers {
+								if vs, ok := v.(string); ok {
+									cfg.Headers[k] = vs
+								}
+							}
+						}
+
+						// Handle env map
+						if env, ok := serverMap["env"].(map[string]interface{}); ok {
+							cfg.Env = make(map[string]string)
+							for k, v := range env {
+								if vs, ok := v.(string); ok {
+									cfg.Env[k] = vs
+								}
+							}
+						}
+
+						if cfg.Name != "" {
+							m.config.MCP.Servers = append(m.config.MCP.Servers, cfg)
+						}
+					}
+				}
+			}
+		}
+	}
+
 	return nil
 }
 

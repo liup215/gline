@@ -2,9 +2,40 @@
 
 ## Current Focus
 
+### MCP 支持后续修复（2026-06-26 / 2026-06-27）
+
+**状态**: 已完成，待提交推送 ✅
+
+**目标**: 修复 MCP 功能在实际运行中暴露的两个问题，并修复由此导致的 GitHub Actions CI 失败。
+
+**已修复问题**:
+
+1. **MCP 状态面板显示 0 tools（启动日志也显示 0 total tools）**
+   - **根因**: `Manager.GetServerStatus()` 在初始化完成后再一次调用 `client.ListTools()`，而这次调用使用 5 秒硬编码超时，经常失败或返回空，导致状态统计为 0。实际上工具在 `registerServerTools()` 阶段已成功注册到 Registry，LLM 看到的工具数量是正确的（67 个），只是状态报告错误。
+   - **修复**: 在 `internal/mcp/manager.go` 中新增 `serverTools map[string][]Tool` 缓存。`registerServerTools()` 成功后把工具列表写入缓存，`GetServerStatus()` 直接从缓存读取数量和名称，不再重复请求服务器。
+   - **验证**: 启动日志现在正确显示 `MCP server 'LtEdu' connected with 50 tools` 和 `MCP initialized: 1 servers, 50 total tools`；Settings → MCP 面板也会显示 `✓ 50 tools`。
+
+2. **调用 MCP 工具时报 `context canceled`**
+   - **根因**: `HTTPTransport.Start(ctx)` / `SSETransport.Start(ctx)` / `StdioTransport.Start(ctx)` 把初始化时传入的 context（带 60 秒超时）保存下来并复用到所有后续请求。初始化完成后该 context 超时取消，后续 `tools/call` 等请求全部失败。
+   - **修复**: 三个 transport 的 `Start()` 方法都改用 `context.Background()` 作为自身生命周期 context，仅由 `Close()` 取消；避免被初始化 context 的截止时间影响。
+   - **验证**: 通过独立测试程序完成 initialize → list tools → call `organisation_list` 全流程，成功返回 4 条记录。
+
+3. **GitHub Actions CI 失败：frontend build 缺少 `GetMCPStatus` / `MCPServerStatus` 导出**
+   - **根因**: 提交 `01f2c63` 里 `frontend/src/components/settings/MCPTab.tsx` 依赖 Wails bindings 导出的 `GetMCPStatus` 和 `MCPServerStatus`，但 `internal/gui/chat_service.go` 缺少对应的 `ChatService.GetMCPStatus()` 方法，导致 CI 上 `wails3 generate bindings` 只生成 34 个方法/21 个模型，前端 TypeScript 编译失败。
+   - **修复**: 本地工作区已补全 `ChatService.GetMCPStatus()`（调用 `Backend.mcpManager.GetServerStatus()` 并映射为 `MCPServerStatus`），bindings 重新生成后 CI 可生成 35 个方法/22 个模型，前端 build 通过。
+
+**待提交文件**:
+- `internal/mcp/manager.go`
+- `internal/mcp/transport.go`
+- `internal/gui/chat_service.go`
+- `frontend/bindings/...`（由 wails3 重新生成）
+- `cmd/gline/frontend/dist/` 等构建产物
+
+---
+
 ### MCP 支持开发（2026-06-25）
 
-**状态**: 全部完成 ✅
+**状态**: 功能主体已完成 ✅
 
 **目标**: 实现 Model Context Protocol 客户端，让 gline 接入外部工具源（Slack/GitHub/数据库/浏览器等）。
 

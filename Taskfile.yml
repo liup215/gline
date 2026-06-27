@@ -1,0 +1,61 @@
+version: '3'
+
+vars:
+  APP_NAME: gline
+  FRONTEND_DIR: frontend
+  BINDINGS_DIR: frontend/bindings
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  bindings:
+    desc: Generate TypeScript bindings
+    cmds:
+      - wails3 generate bindings --ts -d "{{.BINDINGS_DIR}}"
+
+  dev:
+    desc: Run in development mode
+    cmds:
+      - wails3 dev
+
+  build:
+    desc: Build the application for current platform
+    cmds:
+      - task: frontend:build
+      - task: bindings
+      - go build -ldflags "-s -w -H=windowsgui" -o bin/gline.exe ./cmd/gline
+
+  windows:build:
+    desc: Build for Windows
+    cmds:
+      - task: frontend:build
+      - task: bindings
+      - go build -ldflags "-s -w -H=windowsgui" -o bin/gline.exe ./cmd/gline
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - cmd: rmdir /s /q bin 2>nul || exit 0
+      - cmd: rmdir /s /q build 2>nul || exit 0
+      - cmd: rmdir /s /q frontend\dist 2>nul || exit 0
+
+  frontend:install:
+    desc: Install frontend dependencies
+    dir: "{{.FRONTEND_DIR}}"
+    cmds:
+      - npm install
+
+  frontend:build:
+    desc: Build frontend
+    dir: "{{.FRONTEND_DIR}}"
+    cmds:
+      - npm run build
+
+  frontend:dev:
+    desc: Run frontend dev server
+    dir: "{{.FRONTEND_DIR}}"
+    cmds:
+      - npm run dev

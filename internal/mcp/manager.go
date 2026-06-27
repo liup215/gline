@@ -29,6 +29,12 @@ type Manager struct {
 
 	// Tool name -> (server name, tool name) mapping
 	toolMapping map[string]toolMapping
+	
+	// Server name -> cached tool list (populated after successful registration)
+	serverTools map[string][]Tool
+	
+	// Server name -> last error message
+	serverErrors map[string]string
 }
 
 type toolMapping struct {
@@ -39,10 +45,12 @@ type toolMapping struct {
 // NewManager creates a new MCP manager
 func NewManager(config *Config, registry *tools.Registry) *Manager {
 	return &Manager{
-		config:      config,
-		clients:     make(map[string]*Client),
-		registry:    registry,
-		toolMapping: make(map[string]toolMapping),
+		config:       config,
+		clients:      make(map[string]*Client),
+		registry:     registry,
+		toolMapping:  make(map[string]toolMapping),
+		serverTools:  make(map[string][]Tool),
+		serverErrors: make(map[string]string),
 	}
 }
 
@@ -55,6 +63,7 @@ func (m *Manager) Start(ctx context.Context) error {
 		if err := m.startServer(ctx, serverConfig); err != nil {
 			// Log error but continue with other servers
 			fmt.Printf("[MCP Manager] Failed to start server %s: %v\n", serverConfig.Name, err)
+			m.serverErrors[serverConfig.Name] = err.Error()
 		}
 	}
 
@@ -119,8 +128,8 @@ func (m *Manager) startServer(ctx context.Context, config ServerConfig) error {
 	// Create client
 	client := NewClient(transport)
 
-	// Initialize with timeout
-	initCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	// Initialize with timeout (increased to 60s for slow connections)
+	initCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
 	opts := DefaultClientOptions()
@@ -152,6 +161,9 @@ func (m *Manager) registerServerTools(ctx context.Context, serverName string, cl
 	if err != nil {
 		return fmt.Errorf("failed to list tools: %w", err)
 	}
+
+	// Cache the tool list for status reporting without re-querying the server
+	m.serverTools[serverName] = toolsList
 
 	for _, tool := range toolsList {
 		// Create a unique tool name: "mcp_<server>_<tool>"
@@ -211,26 +223,54 @@ func (m *Manager) GetServerStatus() []ServerStatus {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	var statuses []ServerStatus
-	for name, client := range m.clients {
+	var statuses []ServerStatus	
+	// Include all configured servers (even if connection failed)
+	for _, serverConfig := range m.config.Servers {
+		if serverConfig.Disabled {
+			continue
+		}
+		
 		status := ServerStatus{
-			Name:        name,
-			Connected:   client.IsInitialized(),
-			Initialized: client.IsInitialized(),
+			Name:        serverConfig.Name,
+			Connected:   false,
+			Initialized: false,
 		}
-
-		if client.IsInitialized() {
-			// Try to get tool count and names
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			tools, _ := client.ListTools(ctx)
-			status.Tools = len(tools)
-			status.ToolNames = make([]string, len(tools))
-			for i, tool := range tools {
-				status.ToolNames[i] = tool.Name
+		
+		// Check if client exists and is initialized
+		if client, ok := m.clients[serverConfig.Name]; ok {
+			status.Connected = client.IsInitialized()
+			status.Initialized = client.IsInitialized()
+			
+			if client.IsInitialized() {
+				// Use cached tool list populated during registration so status
+				// reporting doesn't depend on another (possibly slow/failing) round trip.
+				if tools, ok := m.serverTools[serverConfig.Name]; ok {
+					status.Tools = len(tools)
+					status.ToolNames = make([]string, len(tools))
+					for i, tool := range tools {
+						status.ToolNames[i] = tool.Name
+					}
+				} else {
+					// Fallback: try a fresh query if cache is missing
+					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					tools, _ := client.ListTools(ctx)
+					status.Tools = len(tools)
+					status.ToolNames = make([]string, len(tools))
+					for i, tool := range tools {
+						status.ToolNames[i] = tool.Name
+					}
+					cancel()
+				}
 			}
-			cancel()
+		} else {
+			// Client doesn't exist - connection failed
+			if errMsg, ok := m.serverErrors[serverConfig.Name]; ok {
+				status.LastError = errMsg
+			} else {
+				status.LastError = "Failed to connect to server"
+			}
 		}
-
+		
 		statuses = append(statuses, status)
 	}
 
@@ -251,6 +291,7 @@ func (m *Manager) RefreshTools(ctx context.Context) error {
 		}
 	}
 	m.toolMapping = make(map[string]toolMapping)
+	m.serverTools = make(map[string][]Tool)
 
 	// Re-register from all servers
 	for serverName, client := range m.clients {
@@ -310,6 +351,7 @@ func (m *Manager) RemoveServer(serverName string) error {
 			delete(m.toolMapping, uniqueName)
 		}
 	}
+	delete(m.serverTools, serverName)
 
 	return nil
 }
@@ -334,6 +376,7 @@ func (m *Manager) Close() error {
 
 	m.clients = make(map[string]*Client)
 	m.toolMapping = make(map[string]toolMapping)
+	m.serverTools = make(map[string][]Tool)
 
 	return nil
 }

@@ -1,4 +1,4 @@
-# gline Unified Build Script (CLI + GUI)
+# gline GUI Build Script
 # Fixed, full build. No parameters. No options. No skips.
 # Usage: powershell -ExecutionPolicy Bypass -File build-all.ps1
 
@@ -7,7 +7,7 @@ $ErrorActionPreference = "Stop"
 $Output = "bin\gline.exe"
 
 Write-Host "==========================================" -ForegroundColor Cyan
-Write-Host "  gline Unified Build (CLI + GUI)"       -ForegroundColor Cyan
+Write-Host "  gline GUI Build"       -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
 
 # ===========================================================================

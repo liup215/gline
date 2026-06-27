@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { THEME } from '../../theme';
-import { GetMCPStatus, MCPServerStatus } from '../../../bindings/github.com/liup215/gline/internal/gui';
+import { MCPServerStatus } from '../../../bindings/github.com/liup215/gline/internal/gui';
+import { GetMCPStatus } from '../../../bindings/github.com/liup215/gline/internal/gui/chatservice';
 
 interface MCPServer {
   name: string;

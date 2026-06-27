@@ -1,4 +1,4 @@
-package mcp
+﻿package mcp
 
 import (
 	"context"
@@ -7,6 +7,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/liup215/gline/internal/log"
 )
 
 // Client represents an MCP client connection
@@ -115,40 +117,82 @@ func (c *Client) Initialize(ctx context.Context, opts ClientOptions) (*Initializ
 
 // readMessages continuously reads messages from the transport
 func (c *Client) readMessages() {
+	log.Logger.Info().Msg("[MCP] readMessages started")
 	for {
 		if c.closed.Load() {
+			log.Logger.Info().Msg("[MCP] readMessages: client closed, exiting")
 			return
 		}
 
+		log.Logger.Debug().Msg("[MCP] readMessages: calling Receive()")
 		msg, err := c.transport.Receive()
 		if err != nil {
 			if c.closed.Load() {
+				log.Logger.Info().Msg("[MCP] readMessages: client closed after error, exiting")
 				return
 			}
-			fmt.Printf("[MCP] Receive error: %v\n", err)
+			log.Logger.Warn().Err(err).Msg("[MCP] Receive error")
 			continue
 		}
 
 		if msg == nil {
+			log.Logger.Debug().Msg("[MCP] readMessages: received nil message")
 			continue
 		}
 
+		log.Logger.Info().Interface("id", msg.ID).Str("method", msg.Method).Msg("[MCP] readMessages: received message")
 		// Handle the message
 		if err := c.handleMessage(msg); err != nil {
-			fmt.Printf("[MCP] Handle message error: %v\n", err)
+			log.Logger.Warn().Err(err).Msg("[MCP] Handle message error")
 		}
 	}
 }
 
 // handleMessage processes a received message
 func (c *Client) handleMessage(msg *JSONRPCMessage) error {
+	log.Logger.Info().
+		Interface("id", msg.ID).
+		Str("method", msg.Method).
+		Bool("isResponse", msg.IsResponse()).
+		Bool("isError", msg.IsError()).
+		Bool("isNotification", msg.IsNotification()).
+		Bool("isRequest", msg.IsRequest()).
+		Msg("[MCP] handleMessage called")
+	
 	if msg.IsResponse() || msg.IsError() {
-		// Find pending request
+		// Find pending request - handle type mismatch between uint64 and float64
 		c.reqMu.RLock()
-		ch, ok := c.pendingReqs[msg.ID]
+		pendingCount := len(c.pendingReqs)
+		
+		// Try to find matching ID, handling type differences
+		var ch chan *JSONRPCMessage
+		var ok bool
+
+		// First try direct lookup
+		ch, ok = c.pendingReqs[msg.ID]
+		
+		// If not found and ID is a float64, try converting to uint64
+		if !ok {
+			if floatID, isFloat := msg.ID.(float64); isFloat {
+				uintID := uint64(floatID)
+				ch, ok = c.pendingReqs[uintID]
+				log.Logger.Info().
+					Float64("floatID", floatID).
+					Uint64("uintID", uintID).
+					Bool("foundAfterConvert", ok).
+					Msg("[MCP] handleMessage: converted float64 ID to uint64")
+			}
+		}
 		c.reqMu.RUnlock()
 
+		log.Logger.Info().
+			Interface("id", msg.ID).
+			Bool("found", ok).
+			Int("pendingCount", pendingCount).
+			Msg("[MCP] handleMessage: looking for pending request")
+		
 		if ok {
+			log.Logger.Info().Interface("id", msg.ID).Msg("[MCP] handleMessage: sending response to channel")
 			ch <- msg
 		}
 		// If not found, it might be a response to a timed-out request
