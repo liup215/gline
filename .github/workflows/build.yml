@@ -58,7 +58,7 @@ jobs:
         run: cd frontend && npm install
 
       - name: Build frontend
-        run: cd frontend && npm run build
+        run: cd frontend && npm exec -- vite build --mode production
 
       - name: Sync frontend to embed dir
         shell: bash
@@ -122,7 +122,7 @@ jobs:
         run: cd frontend && npm install
 
       - name: Build frontend
-        run: cd frontend && npm run build
+        run: cd frontend && npm exec -- vite build --mode production
 
       - name: Sync frontend to embed dir
         shell: bash

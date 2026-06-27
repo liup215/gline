@@ -51,6 +51,12 @@
 - 关键规则：**Wails 只会把注册到 `application.NewService()` 的 struct 方法生成 bindings**。在 `Backend` 上定义的方法即使被前端 import 也不会生成绑定。
 - 因此 `internal/gui/chat_service.go` 的 `ChatService` 必须暴露前端需要的所有方法（如 `GetMCPStatus`）。
 
+### CI 前端构建权限问题
+
+Ubuntu 24.04 runner 通过 apt 安装 npm 后，`node_modules/.bin/vite` 可能没有可执行权限，导致 `npm run build` 报 `sh: 1: vite: Permission denied`（exit code 127）。
+
+修复：在 `.github/workflows/build.yml` 中把前端构建命令从 `cd frontend && npm run build` 改为 `cd frontend && npm exec -- vite build --mode production`，让 npx 机制负责调用本地 vite 二进制。
+
 ### MCP 运行时陷阱
 
 1. **Transport context 不能复用初始化 context**，否则 60 秒后 `context canceled`。详见 `memory-bank/mcp-design.md`。
