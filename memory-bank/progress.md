@@ -4,6 +4,52 @@
 
 ---
 
+## 2025-01-09 — replace_in_file 工具错误信息优化 ✅
+
+### 问题分析
+
+| 问题 | 根因 | 影响 |
+|------|------|------|
+| replace_in_file 工具经常失败 | "Nearest match" 建议误导 LLM | LLM 陷入循环错误，需要手动编写脚本 |
+| 错误信息不够清晰 | 没有强调 EXACT 匹配的重要性 | 用户不知道需要完全匹配包括空白字符 |
+| 缺少实用指导 | 故障排除步骤不够具体 | 用户不知道正确的操作流程 |
+
+### 修复内容
+
+| 文件 | 改动 | 说明 |
+|------|------|------|
+| `internal/tools/file.go` | 移除 "Nearest match" 建议 | 避免 LLM 使用相似但不匹配的内容 |
+| `internal/tools/file.go` | 优化错误信息格式 | 更清晰强调 EXACTLY 匹配要求 |
+| `internal/tools/file.go` | 改进故障排除步骤 | 明确建议先用 read_file 获取当前内容 |
+| `internal/tools/file_test.go` | 更新测试用例 | 验证新的错误信息格式 |
+
+### 关键改动
+
+**错误信息改进:**
+```
+旧: "Nearest match (85% similar): ..."
+新: "The search must match EXACTLY, including: ..."
+    "TROUBLESHOOTING:"
+    "1. Use read_file to get the CURRENT file content"
+    "2. Copy-paste the EXACT text you want to replace"
+    "3. Check for tabs vs spaces - they are different!"
+    "4. Try searching for a smaller unique substring"
+    "5. For complex edits, consider using write_to_file instead"
+```
+
+### 验证
+- ✅ `go test ./internal/tools/... -v` (22 tests passed)
+- ✅ `go test ./... -short` (all packages passed)
+- ✅ `go build ./...` (compilation successful)
+
+### 预期效果
+- 减少 LLM 陷入循环错误的可能性
+- 提供更清晰的匹配要求说明
+- 给出更实用的故障排除步骤
+- 显著改善用户体验
+
+---
+
 ## 2026-06-28 — 版本检测功能开发完成 ✅
 
 ### 实现内容

@@ -302,11 +302,20 @@ func (t *ReplaceInFileTool) Execute(ctx context.Context, input json.RawMessage) 
 					continue
 				}
 			}
-			// Build detailed error with nearest match
-			nearest := findNearestMatch(content, block.Search)
+		// Build detailed error with helpful guidance
 			return "", fmt.Errorf(
-				"Block %d – search content not found in file. Nearest match (%.0f%% similar):\n---BEGIN NEAREST---\n%s\n---END NEAREST---\nTroubleshooting:\n1. Re-read the file to confirm current contents.\n2. Copy-paste the EXACT text including indentation.\n3. Ensure no hidden characters differ (tabs vs spaces).\n4. For large files, search for a smaller unique substring.",
-				i+1, nearest.Score*100, nearest.Text,
+				"Block %d – search content not found in file.\n\n"+
+					"The search must match EXACTLY, including:\n"+
+					"  • All whitespace (spaces, tabs, newlines)\n"+
+					"  • Indentation characters\n"+
+					"  • Trailing spaces\n\n"+
+					"TROUBLESHOOTING:\n"+
+					"1. Use read_file to get the CURRENT file content\n"+
+					"2. Copy-paste the EXACT text you want to replace\n"+
+					"3. Check for tabs vs spaces - they are different!\n"+
+					"4. Try searching for a smaller unique substring\n"+
+					"5. For complex edits, consider using write_to_file instead",
+				i+1,
 			)
 		}
 		content = content[:idx] + block.Replace + content[idx+len(block.Search):]

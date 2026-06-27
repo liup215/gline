@@ -81,11 +81,14 @@ func TestReplaceInFileTool_NotFoundFeedback(t *testing.T) {
 		t.Fatal("expected error for missing search text")
 	}
 	msg := err.Error()
-	if !strings.Contains(msg, "Nearest match") {
-		t.Errorf("expected nearest-match hint in error, got: %s", msg)
+	if !strings.Contains(msg, "search content not found") {
+		t.Errorf("expected 'search content not found' in error, got: %s", msg)
 	}
-	if !strings.Contains(msg, "Troubleshooting") {
-		t.Errorf("expected troubleshooting steps in error, got: %s", msg)
+	if !strings.Contains(msg, "TROUBLESHOOTING") {
+		t.Errorf("expected TROUBLESHOOTING steps in error, got: %s", msg)
+	}
+	if !strings.Contains(msg, "EXACTLY") {
+		t.Errorf("expected 'EXACTLY' hint in error, got: %s", msg)
 	}
 }
 
