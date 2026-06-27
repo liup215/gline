@@ -12,6 +12,7 @@ import (
 	"github.com/liup215/gline/internal/skills"
 	"github.com/liup215/gline/internal/storage"
 	"github.com/liup215/gline/internal/subagent"
+	"github.com/liup215/gline/internal/summarizer"
 	"github.com/liup215/gline/internal/tools"
 )
 
@@ -80,8 +81,13 @@ func initializeAgent() (*agent.BaseAgent, error) {
 		Store:       store,
 	}
 
-	// Create tool registry with all built-in tools
-	registry := tools.InitDefaultRegistry()
+	// Honor provider max_context_tokens if configured.
+	switch providerName {
+	case "openai":
+		if cfg.Provider.OpenAI.MaxContextTokens > 0 {
+			opts.MaxTokens = cfg.Provider.OpenAI.MaxContextTokens
+		}
+	}
 
 	// Initialize skills registry and wire up use_skill tool
 	skillReg := skills.NewRegistry()
@@ -89,6 +95,15 @@ func initializeAgent() (*agent.BaseAgent, error) {
 	if skillReg.Count() > 0 {
 		log.Infof("Loaded %d skills", skillReg.Count())
 	}
+
+	// Create subagent builder so summarize_file can launch chunk-summarization agents.
+	subBuilder := subagent.NewBuilder(provider, nil, "", customRules, skillReg.GetMeta())
+	// Create summarizer for large files.
+	sum := summarizer.NewSummarizer(subagent.NewSummarizerCaller(subBuilder), summarizer.DefaultOptions())
+
+	// Create tool registry with all built-in tools
+	registry := tools.InitDefaultRegistry(nil, sum)
+
 	tools.RegisterSkillTool(registry, skillReg)
 	subagent.RegisterTool(registry, provider, registry, "", customRules, skillReg.GetMeta())
 	opts.ToolRegistry = registry

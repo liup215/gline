@@ -2,6 +2,49 @@
 
 ## Current Focus
 
+### 大文件 Token 暴增问题修复（当前会话）
+
+**状态**: Phase 1-4 已完成，Phase 5 进行中 ✅
+
+**问题**: Agent 读取大文件（日志、JSON、vendor 源码等）时，内容完整进入对话历史，单条消息可达数万 token；`Conversation.AutoCompact()` 原按消息数量比例删除，无法处理单条超大消息，导致请求瞬间超过模型上限，模型无法工作。
+
+**已实施方案（三层防御）**:
+
+1. **工具层：避免完整读入大文件**
+   - `internal/tools/file.go`: `read_file` 新增 `start_line`/`end_line` 支持；超过 100KB 或 ~4000 token 的文件默认阻止全读，返回搜索/范围读取/summarize_file 的引导。
+   - `internal/tools/search.go`: `search_files` 返回带行号的上下文片段，限制结果数量与片段大小。
+   - 单元测试覆盖范围读取、大文件阻止、搜索结果片段化。
+
+2. **后台摘要服务：必须读大文件时使用子 Agent 摘要**
+   - 新增 `internal/summarizer/chunk.go`: token 感知的行分块器，保留重叠并硬截断超大块。
+   - 新增 `internal/summarizer/summarizer.go`: 并行块摘要 + 递归合并。
+   - 新增 `internal/tools/summarize_file.go`: `summarize_file` 工具，Agent 可显式调用。
+   - `internal/subagent/caller.go` / `internal/agent/summarizer_caller.go`: 子 Agent / provider caller 适配器，避免 import cycle。
+
+3. **Conversation 压缩修复：基于 token 预算而非消息数**
+   - `pkg/types/message.go`:
+     - `AddMessage` 新增单条消息 soft cap（默认 6000 tokens），超限时保留头尾、中间用 `[... X tokens omitted ...]` 替换。
+     - `AutoCompact` 改为 token-aware：60% 水位以下不处理；80% 以上先截断单条超大旧消息，再按 token 从大到小删除整条消息；始终保留首条 user/assistant 对；插入 compact marker。
+     - `TrimToMaxTokens` 删除大 tool result 前先用占位摘要替换，避免丢失“已做过什么”的信息。
+     - `NewConversation` 默认 `MaxTokens` 从 262000 降到 128000；新增 `PerMessageSoftCap` / `ResponseBuffer`。
+
+4. **Token 预算集成**
+   - `internal/agent/agent.go`: 每次发请求前调用 `enforceTokenBudget()`，估算 system prompt + 消息 + 工具 JSON 的 token；接近预算时触发 `AutoCompact()` 和 `TrimToMaxTokens()`。
+   - `cmd/gline/chat.go` / `internal/gui/backend.go`: 正确读取 provider 配置里的 `max_context_tokens` 并传给 `agent.Options.MaxTokens`。
+   - `internal/config/config.go`: 默认配置注释从 ~262K 改为 ~128K。
+
+**构建验证**:
+- `go build ./...` ✅
+- `go test ./...` ✅
+- `wails3 build` ✅
+
+**待完成**:
+- 端到端手动测试（让 Agent 读取 >100KB 文件并确认 token 受控）。
+- 补充 summarizer 单元测试。
+- 提交并推送。
+
+---
+
 ### MCP 支持后续修复（2026-06-26 / 2026-06-27）
 
 **状态**: 已完成，待提交推送 ✅

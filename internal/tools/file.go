@@ -17,16 +17,37 @@ type ReadFileTool struct {
 
 // ReadFileInput represents the input for read_file tool
 type ReadFileInput struct {
-	Path string `json:"path"`
+	Path      string `json:"path"`
+	StartLine int    `json:"start_line,omitempty"`
+	EndLine   int    `json:"end_line,omitempty"`
 }
 
 // NewReadFileTool creates a new read_file tool
 func NewReadFileTool() *ReadFileTool {
+	schema := json.RawMessage(`{
+		"type": "object",
+		"properties": {
+			"path": {
+				"type": "string",
+				"description": "The path of the file to read"
+			},
+			"start_line": {
+				"type": "integer",
+				"description": "Optional 1-based starting line number. Use this to read a specific range instead of the whole file."
+			},
+			"end_line": {
+				"type": "integer",
+				"description": "Optional 1-based ending line number (0 means read to end). Use together with start_line."
+			}
+		},
+		"required": ["path"]
+	}`)
+
 	return &ReadFileTool{
 		BaseTool: BaseTool{
 			name:        "read_file",
-			description: "Read the contents of a file at the specified path. Use this when you need to examine the contents of an existing file.",
-			inputSchema: PathSchema,
+			description: "Read the contents of a file at the specified path. For large files (over ~100KB or ~4000 tokens), only specific line ranges should be read. Prefer search_files first to find the relevant sections, then use start_line/end_line to read only that range.",
+			inputSchema: schema,
 		},
 	}
 }
@@ -64,11 +85,37 @@ func (t *ReadFileTool) Execute(ctx context.Context, input json.RawMessage) (stri
 		return "", fmt.Errorf("failed to read file: %w", err)
 	}
 
-	// Check file size (limit to ~100KB to avoid huge outputs)
-	const maxSize = 100 * 1024
-	if len(content) > maxSize {
-		return fmt.Sprintf("%s...\n\n[File truncated: %d bytes total, showing first %d bytes]",
-			string(content[:maxSize]), len(content), maxSize), nil
+	// If a line range is requested, slice the content first.
+	if req.StartLine > 0 || req.EndLine > 0 {
+		sliced, start, end, err := sliceLines(content, req.StartLine, req.EndLine)
+		if err != nil {
+			return "", fmt.Errorf("invalid line range: %w", err)
+		}
+		// Even for ranges, enforce a soft token/byte cap so an enormous range
+		// cannot explode the context.
+		const maxRangeSize = 100 * 1024
+		if len(sliced) > maxRangeSize {
+			return fmt.Sprintf("%s...\n\n[Range truncated: requested lines %d-%d, %d bytes total, showing first %d bytes]",
+				string(sliced[:maxRangeSize]), start, end, len(sliced), maxRangeSize), nil
+			}
+		return fmt.Sprintf("[Lines %d-%d of %s]\n%s", start, end, path, string(sliced)), nil
+	}
+
+	// Large file guard: do not return the full content directly. Ask the
+	// caller to narrow down using search/range or request a summary.
+	const largeFileByteThreshold = 100 * 1024
+	const largeFileTokenEstimate = 4000
+	approxTokens := estimateTokensFromBytes(content)
+	if len(content) > largeFileByteThreshold || approxTokens > largeFileTokenEstimate {
+		lineCount := countLines(content)
+		return fmt.Sprintf(
+			"[File too large: %s (%d bytes, ~%d tokens, %d lines).]\n"+
+				"Please narrow down what you need by using one of the following approaches:\n"+
+				"1. Use search_files to find relevant sections.\n"+
+				"2. Use read_file with start_line and end_line to read a specific range.\n"+
+				"3. Ask for a high-level summary if you only need an overview.",
+			path, len(content), approxTokens, lineCount,
+		), nil
 	}
 
 	return string(content), nil
@@ -476,6 +523,50 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// sliceLines extracts lines [startLine, endLine] from content using 1-based
+// line numbers. endLine == 0 means "to the end". It returns the sliced bytes
+// along with the effective start/end line numbers.
+func sliceLines(content []byte, startLine, endLine int) ([]byte, int, int, error) {
+	if startLine < 0 {
+		startLine = 0
+	}
+	if startLine == 0 {
+		startLine = 1
+	}
+	if endLine > 0 && endLine < startLine {
+		return nil, startLine, endLine, fmt.Errorf("end_line (%d) must be >= start_line (%d)", endLine, startLine)
+	}
+
+	lines := strings.Split(string(content), "\n")
+	if startLine > len(lines) {
+		return []byte{}, len(lines), len(lines), nil
+	}
+	effectiveEnd := endLine
+	if effectiveEnd == 0 || effectiveEnd > len(lines) {
+		effectiveEnd = len(lines)
+	}
+
+	selected := lines[startLine-1 : effectiveEnd]
+	out := strings.Join(selected, "\n")
+	if effectiveEnd < len(lines) {
+		out += "\n"
+	}
+	return []byte(out), startLine, effectiveEnd, nil
+}
+
+// estimateTokensFromBytes gives a conservative token estimate from raw bytes.
+func estimateTokensFromBytes(b []byte) int {
+	// Approximate: 1 token per 3 bytes for ASCII-heavy text; 1 token per byte
+	// for CJK-heavy text. We use a middle ground of 1 token per 2 bytes to be
+	// conservative without overcounting pure ASCII.
+	return len(b) / 2
+}
+
+// countLines returns the number of newline-separated lines.
+func countLines(content []byte) int {
+	return strings.Count(string(content), "\n") + 1
 }
 
 // ListFilesTool lists files and directories

@@ -141,3 +141,52 @@ func TestComputeDiff(t *testing.T) {
 		t.Error("expected added line 'd'")
 	}
 }
+
+func TestReadFileTool_LineRange(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.txt")
+	content := "line1\nline2\nline3\nline4\nline5\n"
+	_ = os.WriteFile(path, []byte(content), 0644)
+
+	tool := NewReadFileTool()
+	input, _ := json.Marshal(map[string]interface{}{
+		"path":       path,
+		"start_line": 2,
+		"end_line":   4,
+	})
+
+	result, err := tool.Execute(context.Background(), input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(result, "Lines 2-4") {
+		t.Errorf("expected line range header, got: %s", result)
+	}
+	if !strings.Contains(result, "line2") || !strings.Contains(result, "line4") {
+		t.Errorf("expected lines 2 and 4 in output, got: %s", result)
+	}
+	if strings.Contains(result, "line1") || strings.Contains(result, "line5") {
+		t.Errorf("expected lines 1 and 5 to be excluded, got: %s", result)
+	}
+}
+
+func TestReadFileTool_LargeFileRejected(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "big.txt")
+	big := strings.Repeat("x", 110*1024)
+	_ = os.WriteFile(path, []byte(big), 0644)
+
+	tool := NewReadFileTool()
+	input, _ := json.Marshal(map[string]string{"path": path})
+
+	result, err := tool.Execute(context.Background(), input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(result, "File too large") {
+		t.Errorf("expected 'File too large' guard, got: %s", result)
+	}
+	if !strings.Contains(result, "search_files") {
+		t.Errorf("expected guidance to use search_files, got: %s", result)
+	}
+}

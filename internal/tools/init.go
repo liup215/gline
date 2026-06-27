@@ -1,11 +1,20 @@
 package tools
 
-import "github.com/liup215/gline/internal/memory"
+import (
+	"github.com/liup215/gline/internal/memory"
+	"github.com/liup215/gline/internal/summarizer"
+)
+
+// SummarizeFileToolInput represents the input for summarize_file.
+type SummarizeFileToolInput struct {
+	Path string `json:"path"`
+}
 
 // InitDefaultRegistry initializes the default registry with all built-in tools.
 // If a memory engine is provided, it also registers kb_search, kb_ingest,
 // memory_recall and memory_note tools so the agent can use the knowledge base.
-func InitDefaultRegistry(engine ...*memory.UnifiedEngine) *Registry {
+// If a summarizer is provided, it registers summarize_file.
+func InitDefaultRegistry(engine *memory.UnifiedEngine, sum *summarizer.Summarizer) *Registry {
 	registry := NewRegistry()
 
 	// File operations - allowed in both modes (read-only in plan)
@@ -22,6 +31,11 @@ func InitDefaultRegistry(engine ...*memory.UnifiedEngine) *Registry {
 		AllowedModes:         []string{"plan", "act"},
 		RequiresConfirmation: false,
 	})
+
+	// Large-file summarization (optional)
+	if sum != nil {
+		_ = RegisterSummarizeFileTool(registry, sum)
+	}
 
 	// File write operations - act mode only
 	registry.Register(&ToolInfo{
@@ -118,8 +132,8 @@ func InitDefaultRegistry(engine ...*memory.UnifiedEngine) *Registry {
 	})
 
 	// Memory / knowledge base tools - optional, only if engine is available
-	if len(engine) > 0 && engine[0] != nil {
-		e := engine[0]
+	if engine != nil {
+		e := engine
 		registry.Register(&ToolInfo{
 			Tool:                 NewKBSearchTool(e),
 			Category:             CategorySearch,

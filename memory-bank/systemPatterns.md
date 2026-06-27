@@ -36,6 +36,44 @@ CLI 子命令: gline chat / gline history / gline kb / gline wiki / gline mem
 
 ## 核心设计模式
 
+### 大文件与 Token 治理模式（新增）
+
+为避免大文件内容一次性冲爆上下文窗口，gline 采用**三层防御**策略：
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  Layer 1: 工具层 — 避免完整读入                              │
+│  • read_file 支持 start_line/end_line                       │
+│  • 文件 >100KB / ~4000 tokens 默认阻止全读                    │
+│  • search_files 返回带行号的上下文片段                       │
+└──────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Layer 2: 后台摘要服务 — 必须读大文件时启用                   │
+│  • internal/summarizer 分块 → 并行子 Agent 摘要 → 合并        │
+│  • summarize_file 工具供 Agent 显式调用                    │
+└──────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Layer 3: Conversation 压缩 — Token 预算驱动                 │
+│  • AddMessage 单条 soft cap（默认 6000 tokens）                │
+│  • AutoCompact 基于 token 水位而非消息数                     │
+│  • TrimToMaxTokens 删除前用大 tool result 占位摘要替换        │
+│  • agent.go 请求前 enforceTokenBudget() 检查                 │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**关键约定**:
+- 所有 token 估算统一使用 `pkg/types.EstimateTokens`（保守按 rune/词估算）。
+- `Conversation.MaxTokens` 由 provider 配置的 `max_context_tokens` 决定，默认 128000。
+- `Conversation.ResponseBuffer` 默认预留 8192 tokens 给模型输出。
+- 超大单条消息截断保留**头尾**，中间用 `[... X tokens omitted ...]` 替换，兼顾上下文与长度。
+- `AutoCompact` 永远保留**第一条 user/assistant 对**和**system prompt**，避免丢失任务目标。
+
+---
+
 ### 1. 模块化架构
 
 #### 1.1 GUI 前端模块化 (2026-06-02)

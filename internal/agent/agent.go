@@ -280,6 +280,11 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 		//   - the conversation is not already marked complete
 		needsTool := a.needsTool(availableTools)
 
+		// Pre-request token budget check. Ensure system prompt + messages +
+		// tool descriptions fit inside the context window with room for the
+		// response. Trigger compaction if we are close to the limit.
+		a.enforceTokenBudget(ctx, systemPrompt, availableTools)
+
 		// Create LLM request
 		req := &MessageRequest{
 			Messages:     a.conversation.GetMessages(),
@@ -916,6 +921,50 @@ func (a *BaseAgent) extractFactsAsync() {
 			log.Infof("fact extraction: %d facts applied (task=%s)", len(changes), a.taskID)
 		}
 	}()
+}
+
+// enforceTokenBudget checks whether the upcoming request would exceed the
+// conversation budget and, if so, triggers compaction. It estimates tokens
+// for the system prompt and the JSON-serialized tool descriptions because
+// those are also sent to the provider.
+func (a *BaseAgent) enforceTokenBudget(ctx context.Context, systemPrompt string, availableTools []tools.Tool) {
+	conv := a.conversation
+	if conv.MaxTokens <= 0 {
+		return
+	}
+
+	budget := conv.MaxTokens
+	if conv.ResponseBuffer > 0 {
+		budget -= conv.ResponseBuffer
+	}
+	if budget <= 0 {
+		budget = conv.MaxTokens
+	}
+
+	// Estimate current conversation tokens.
+	total := conv.GetTotalTokens()
+
+	// Add system prompt tokens.
+	total += types.EstimateTokens(systemPrompt)
+
+	// Add approximate tool description tokens.
+	if len(availableTools) > 0 {
+		toolJSON, err := json.Marshal(availableTools)
+		if err == nil {
+			total += types.EstimateTokens(string(toolJSON))
+		}
+	}
+
+	if total <= budget*6/10 {
+		return
+	}
+
+	log.Infof("Token budget at %d/%d; triggering compaction", total, conv.MaxTokens)
+	conv.AutoCompact()
+
+	if conv.GetTotalTokens() > budget*8/10 {
+		conv.TrimToMaxTokens()
+	}
 }
 
 // processStream handles the streaming response from the LLM

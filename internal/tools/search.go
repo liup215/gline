@@ -513,7 +513,13 @@ func formatSearchResults(output *SearchFilesOutput) string {
 			builder.WriteByte('\n')
 			currentPath = r.Path
 		}
+		// Include a compact context snippet. The full context is available on
+		// demand via read_file using start_line/end_line.
 		builder.WriteString(fmt.Sprintf("   Line %d, Col %d: %s\n", r.Line, r.Column, r.Match))
+		if r.Context != "" {
+			builder.WriteString(r.Context)
+			builder.WriteByte('\n')
+		}
 	}
 
 	return builder.String()

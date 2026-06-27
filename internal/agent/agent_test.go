@@ -113,7 +113,7 @@ func (c *recordingCallback) OnTaskCreated(taskID string) {
 func TestRunWithCallbackToolCallsViaDedicatedCallbacks(t *testing.T) {
 	agentInstance, err := New(Options{
 		Provider:     &toolOnlyProvider{},
-		ToolRegistry: tools.InitDefaultRegistry(),
+		ToolRegistry: tools.InitDefaultRegistry(nil, nil),
 		Mode:         ModeAct,
 	})
 	if err != nil {

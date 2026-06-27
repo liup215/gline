@@ -2,11 +2,12 @@
 
 ## 项目状态概览
 
-**当前阶段**: MCP 支持开发 主体完成，已修复运行时问题与 CI 失败 ✅
+**当前阶段**: 大文件 Token 暴增问题修复 Phase 1-4 已完成，Phase 5 进行中 ✅
 
-**总体进度**: 
+**总体进度**:
 - ✅ 四层记忆引擎 + 透明聊天驱动系统
 - ✅ MCP (Model Context Protocol) 客户端支持（含 2026-06-26 修复）
+- ✅ 大文件上下文治理（行范围读取、大文件 guard、后台 summarizer、token-aware Conversation 压缩）
 - ⏳ Skill 包管理器（下一优先级）
 
 ---
@@ -43,6 +44,34 @@
 - 本地启动后 MCP 正确显示 50 tools
 - 独立 MCP client 测试：initialize → list tools → call tool 成功
 - 清理了临时测试文件 `test_mcp.go` 和 `cmd/mcp-test/`
+
+---
+
+## 当前会话 — 大文件 Token 治理 ✅
+
+### 实现内容
+
+| 组件 | 文件 | 说明 |
+|------|------|------|
+| 文件范围读取 | `internal/tools/file.go` | `read_file` 新增 `start_line`/`end_line`，超大文件默认阻止全读 |
+| 搜索结果片段化 | `internal/tools/search.go` | 返回带行号的上下文片段，限制结果数量 |
+| summarize_file 工具 | `internal/tools/summarize_file.go` | Agent 可显式调用大文件摘要 |
+| 分块器 | `internal/summarizer/chunk.go` | token-aware 行分块 + 重叠 + 硬截断 |
+| 摘要服务 | `internal/summarizer/summarizer.go` | 并行块摘要 + 递归合并 |
+| Caller 适配器 | `internal/subagent/caller.go`, `internal/agent/summarizer_caller.go` | 子 Agent / provider caller，避免 import cycle |
+| Token 感知的 Conversation | `pkg/types/message.go` | 单条消息 soft cap、token-aware AutoCompact、TrimToMaxTokens 占位摘要 |
+| 请求前预算检查 | `internal/agent/agent.go` | `enforceTokenBudget()` 估算 system + messages + tools |
+| 配置生效 | `cmd/gline/chat.go`, `internal/gui/backend.go`, `internal/config/config.go` | `max_context_tokens` 正确传给 Agent；默认预算 128K |
+
+### 构建验证
+- ✅ `go build ./...`
+- ✅ `go test ./...`
+- ✅ `wails3 build`
+
+### 待完成
+- 手动端到端测试（>100KB 文件读取、搜索后范围读取）。
+- 补充 `internal/summarizer` 单元测试。
+- 提交并推送。
 
 ---
 

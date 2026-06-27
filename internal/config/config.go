@@ -309,7 +309,7 @@ provider:
     api_key: ""
     # Model to use (gpt-4, gpt-4-turbo, gpt-3.5-turbo, etc.)
     model: gpt-4
-    # Max context tokens (0 = default ~262K)
+    # Max context tokens (0 = default ~128K)
     # GPT-4: ~8192 | GPT-4-turbo: ~128000 | GPT-3.5-turbo: ~16000
     max_context_tokens: 0
     # Base URL for API (optional, defaults to OpenAI official API)

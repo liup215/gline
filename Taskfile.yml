@@ -13,8 +13,9 @@ tasks:
 
   bindings:
     desc: Generate TypeScript bindings
+    dir: cmd/gline
     cmds:
-      - wails3 generate bindings --ts -d "{{.BINDINGS_DIR}}"
+      - wails3 generate bindings --ts -d "../../{{.BINDINGS_DIR}}"
 
   dev:
     desc: Run in development mode

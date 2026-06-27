@@ -16,6 +16,7 @@ import (
 	"github.com/liup215/gline/internal/skills"
 	"github.com/liup215/gline/internal/storage"
 	"github.com/liup215/gline/internal/subagent"
+	"github.com/liup215/gline/internal/summarizer"
 	"github.com/liup215/gline/internal/tools"
 	"github.com/liup215/gline/pkg/types"
 )
@@ -162,8 +163,12 @@ func (b *Backend) initAgent() error {
 	b.skillRegistry = skills.NewRegistry()
 	b.skillRegistry.LoadFromDirs(skills.DefaultSkillDirs...)
 
+	// Subagent builder for large-file summarizer.
+	subBuilder := subagent.NewBuilder(provider, nil, "", customRules, b.skillRegistry.GetMeta())
+	sum := summarizer.NewSummarizer(subagent.NewSummarizerCaller(subBuilder), summarizer.DefaultOptions())
+
 	// Initialize tool registry and register use_skill with the skill registry
-	registry := tools.InitDefaultRegistry(memoryEngine)
+	registry := tools.InitDefaultRegistry(memoryEngine, sum)
 	tools.RegisterSkillTool(registry, b.skillRegistry)
 
 	// Register use_subagents tool

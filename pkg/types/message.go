@@ -4,7 +4,6 @@ package types
 import (
 	"encoding/json"
 	"fmt"
-	"math"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -91,6 +90,14 @@ type Conversation struct {
 
 	// Complete indicates if the conversation is complete
 	Complete bool
+
+	// PerMessageSoftCap is the maximum allowed tokens for a single message
+	// before it is locally truncated. 0 means disabled.
+	PerMessageSoftCap int
+
+	// ResponseBuffer is the number of tokens reserved for the model's response
+	// when checking the request budget in agent.go.
+	ResponseBuffer int
 }
 
 // AddActualTokens sets real API token usage for the current turn.
@@ -121,18 +128,110 @@ func (c *Conversation) ResetActualTokens() {
 // NewConversation creates a new conversation
 func NewConversation() *Conversation {
 	return &Conversation{
-		Messages:  make([]Message, 0),
-		MaxTokens: 262000, // Default context window (~262K tokens)
+		Messages:          make([]Message, 0),
+		MaxTokens:         128000, // Default context window (~128K tokens)
+		PerMessageSoftCap: 6000,
+		ResponseBuffer:    8192,
 	}
 }
 
-// AddMessage adds a message to the conversation
+// AddMessage adds a message to the conversation. If the message content
+// exceeds PerMessageSoftCap it is locally truncated to keep a single message
+// from exploding the context.
 func (c *Conversation) AddMessage(msg Message) {
 	if msg.Timestamp.IsZero() {
 		msg.Timestamp = time.Now()
 	}
+	msg = c.truncateMessage(msg)
 	c.Messages = append(c.Messages, msg)
 	c.updateTokenCount()
+}
+
+// truncateMessage applies a soft cap to a single message's content. It keeps
+// the head and tail of the content and replaces the middle with an omission
+// marker so useful context at both ends is preserved.
+func (c *Conversation) truncateMessage(msg Message) Message {
+	softCap := c.PerMessageSoftCap
+	if softCap <= 0 {
+		return msg
+	}
+	contentTokens := EstimateTokens(msg.Content)
+	if contentTokens <= softCap {
+		return msg
+	}
+
+	targetHead := softCap / 4
+	targetTail := softCap / 4
+	// Ensure at least a small middle window remains when possible.
+	if targetHead < 1 {
+		targetHead = 1
+	}
+	if targetTail < 1 {
+		targetTail = 1
+	}
+
+	head := truncateToTokens(msg.Content, targetHead)
+	tail := truncateFromEndToTokens(msg.Content, targetTail)
+	omitted := contentTokens - EstimateTokens(head) - EstimateTokens(tail)
+	if omitted < 0 {
+		omitted = contentTokens / 2
+	}
+	msg.Content = fmt.Sprintf(
+		"%s\n[... %d tokens omitted ...]\n%s",
+		head,
+		omitted,
+		tail,
+	)
+	return msg
+}
+
+// truncateToTokens returns the leading portion of s whose token count does not
+// exceed maxTokens.
+func truncateToTokens(s string, maxTokens int) string {
+	if maxTokens <= 0 {
+		return ""
+	}
+	tokens := 0
+	for i, r := range s {
+		runeTokens := 1
+		if r < 128 && (r == ' ' || r == '\t' || r == '\n' || r == '\r') {
+			runeTokens = 0
+		} else if r < 128 {
+			// Approximation; callers use this on word boundaries so this is
+			// acceptable for the head/tail truncation heuristic.
+			runeTokens = 1
+		}
+		tokens += runeTokens
+		if tokens > maxTokens {
+			return s[:i]
+		}
+	}
+	return s
+}
+
+// truncateFromEndToTokens returns the trailing portion of s whose token count
+// does not exceed maxTokens.
+func truncateFromEndToTokens(s string, maxTokens int) string {
+	if maxTokens <= 0 {
+		return ""
+	}
+	tokens := 0
+	var start int
+	for i := len(s); i > 0; {
+		r, size := utf8.DecodeLastRuneInString(s[:i])
+		i -= size
+		runeTokens := 1
+		if r < 128 && (r == ' ' || r == '\t' || r == '\n' || r == '\r') {
+			runeTokens = 0
+		}
+		tokens += runeTokens
+		if tokens > maxTokens {
+			start = i + size
+			break
+		}
+		start = i
+	}
+	return s[start:]
 }
 
 // GetMessages returns all messages in the conversation
@@ -177,21 +276,23 @@ func (c *Conversation) IsComplete() bool {
 func (c *Conversation) updateTokenCount() {
 	total := 0
 	for _, msg := range c.Messages {
-		total += estimateTokens(msg.Content)
-		total += estimateTokens(string(msg.Role))
-		total += estimateTokens(msg.ReasoningContent)
+		total += EstimateTokens(msg.Content)
+		total += EstimateTokens(string(msg.Role))
+		total += EstimateTokens(msg.ReasoningContent)
 		for _, tc := range msg.ToolCalls {
-			total += estimateTokens(tc.Name)
-			total += estimateTokens(string(tc.Input))
+			total += EstimateTokens(tc.Name)
+			total += EstimateTokens(string(tc.Input))
 		}
 	}
 	c.CurrentTokens = total
 }
 
-// estimateTokens gives a conservative per-rune token estimate.
+// EstimateTokens gives a conservative per-rune token estimate.
 // Uses a more accurate heuristic that accounts for whitespace,
 // punctuation, and mixed-script text commonly seen in prompts.
-func estimateTokens(s string) int {
+// It is exported so packages such as the summarizer can reuse the same
+// estimation logic as Conversation.
+func EstimateTokens(s string) int {
 	if s == "" {
 		return 0
 	}
@@ -236,7 +337,9 @@ func estimateTokens(s string) int {
 }
 
 // TrimToMaxTokens removes oldest messages to fit within token limit.
-// It uses GetTotalTokens() so real API usage has priority.
+// Before dropping a tool result message it attempts to replace the content
+// with a short placeholder summary, so the agent still knows that a tool
+// was called. It uses GetTotalTokens() so real API usage has priority.
 func (c *Conversation) TrimToMaxTokens() {
 	if c.GetTotalTokens() <= c.MaxTokens || c.MaxTokens <= 0 {
 		return
@@ -251,13 +354,28 @@ func (c *Conversation) TrimToMaxTokens() {
 	// Remove messages from the start until we're under the limit
 	for c.GetTotalTokens() > c.MaxTokens && len(c.Messages) > startIdx+2 {
 		removed := c.Messages[startIdx]
-		removedTokens := estimateTokens(removed.Content) +
-			estimateTokens(string(removed.Role)) +
-			estimateTokens(removed.ReasoningContent)
-		for _, tc := range removed.ToolCalls {
-			removedTokens += estimateTokens(tc.Name)
-			removedTokens += estimateTokens(string(tc.Input))
+
+		// Try to preserve a hint for large tool results instead of deleting them
+		// outright. This keeps the agent aware of work already performed.
+		if removed.Role == RoleTool && len(removed.Content) > 200 {
+			placeholder := fmt.Sprintf(
+				"[Result of %s was %d tokens; truncated by context manager. Re-run the tool if needed.]",
+				removed.ToolCallID,
+				EstimateTokens(removed.Content),
+			)
+			removed.Content = placeholder
+			c.Messages[startIdx] = removed
+			c.updateTokenCount()
+			// If this single replacement already brought us under budget, stop.
+			if c.GetTotalTokens() <= c.MaxTokens {
+				c.ResetActualTokens()
+				return
+			}
+			// Otherwise continue removing from the next (now smaller) message.
+			continue
 		}
+
+		removedTokens := messageTokens(removed)
 
 		c.Messages = append(c.Messages[:startIdx], c.Messages[startIdx+1:]...)
 		c.CurrentTokens -= removedTokens
@@ -267,6 +385,18 @@ func (c *Conversation) TrimToMaxTokens() {
 		// Accumulated actual tokens are no longer valid after removing history.
 		c.ResetActualTokens()
 	}
+}
+
+// messageTokens returns the estimated token count of a single message.
+func messageTokens(m Message) int {
+	total := EstimateTokens(m.Content) +
+		EstimateTokens(string(m.Role)) +
+		EstimateTokens(m.ReasoningContent)
+	for _, tc := range m.ToolCalls {
+		total += EstimateTokens(tc.Name)
+		total += EstimateTokens(string(tc.Input))
+	}
+	return total
 }
 
 // GetTotalTokens returns the best estimate of total tokens used.
@@ -279,92 +409,90 @@ func (c *Conversation) GetTotalTokens() int {
 	return c.CurrentTokens
 }
 
-// AutoCompact removes oldest messages to keep usage under the max
-// context window.  Instead of keeping a fixed number of messages,
-// it discards a *fraction* of the conversation, similar to Cline.
+// AutoCompact removes oldest messages to keep usage under the max context
+// window. It now works in token-space rather than message-space:
 //
 // Strategy:
-//   - Always keep the first user-assistant pair (index 0-1).
-//   - Keep the most recent messages (by default last half or quarter).
-//   - Remove an even number of messages so user/assistant pairs stay
-//     aligned.
+//   - Do nothing if total tokens are below the low watermark (60%).
+//   - First truncate any single oversized old message (excluding system and
+//     the most recent user/assistant pair) that exceeds PerMessageSoftCap.
+//   - If still over the high watermark (80%), drop whole messages from the
+//     middle, starting with the largest, while preserving the first
+//     user-assistant pair and the most recent pair.
 //   - Inject a summary marker so the model knows context was truncated.
 func (c *Conversation) AutoCompact() {
+	if c.MaxTokens <= 0 {
+		return
+	}
+	total := c.GetTotalTokens()
+	lowWatermark := c.MaxTokens * 6 / 10  // 60%
+	highWatermark := c.MaxTokens * 8 / 10 // 80%
+
+	if total <= lowWatermark {
+		return
+	}
+
 	startIdx := 0
 	if c.HasSystemPrompt() {
 		startIdx = 1
 	}
 
 	// Always preserve the first user-assistant pair after system prompt.
-	// This keeps the original task description intact.
 	firstPairEnd := startIdx + 1 // inclusive index of first assistant msg
 	if firstPairEnd >= len(c.Messages) {
 		return
 	}
 
-	// Total messages available for truncation (after first pair).
-	truncatable := len(c.Messages) - firstPairEnd - 1
-	if truncatable <= 0 {
+	// Phase 1: truncate individual oversized messages in the middle region.
+	if total > highWatermark {
+		for i := firstPairEnd + 1; i < len(c.Messages)-2; i++ {
+			msgTokens := messageTokens(c.Messages[i])
+			if c.PerMessageSoftCap > 0 && msgTokens > c.PerMessageSoftCap {
+				c.Messages[i] = c.truncateMessage(c.Messages[i])
+			}
+		}
+		c.updateTokenCount()
+		total = c.GetTotalTokens()
+	}
+
+	if total <= lowWatermark {
 		return
 	}
 
-	// Decide fraction to keep.  If current tokens exceed the context
-	// window by a large margin we discard more aggressively.
-	totalTokens := c.GetTotalTokens()
-	keepFraction := 0.5 // default: keep last half
-	if c.MaxTokens > 0 && totalTokens > c.MaxTokens {
-		// Severely over budget → keep only the last quarter
-		keepFraction = 0.25
+	// Phase 2: drop whole messages from the middle, preferring the largest
+	// token consumers first. Keep the first pair and the last pair.
+	for c.GetTotalTokens() > highWatermark && len(c.Messages) > startIdx+4 {
+		// Find the largest removable message in the middle region.
+		maxIdx := -1
+		maxTokens := 0
+		for i := firstPairEnd + 1; i < len(c.Messages)-2; i++ {
+			t := messageTokens(c.Messages[i])
+			if t > maxTokens {
+				maxTokens = t
+				maxIdx = i
+			}
+		}
+		if maxIdx < 0 {
+			break
+		}
+
+		removed := c.Messages[maxIdx]
+		removedTokens := messageTokens(removed)
+		c.Messages = append(c.Messages[:maxIdx], c.Messages[maxIdx+1:]...)
+		c.CurrentTokens -= removedTokens
+		if c.CurrentTokens < 0 {
+			c.CurrentTokens = 0
+		}
 	}
 
-	// Compute number of messages to remove.  We want an even count so
-	// user/assistant pairs stay aligned.
-	messagesToRemove := int(math.Floor(float64(truncatable) * (1 - keepFraction)))
-	if messagesToRemove%2 != 0 {
-		messagesToRemove-- // force even
-	}
-	if messagesToRemove <= 0 {
-		return
-	}
-
-	// The split point: messages [firstPairEnd+1 .. splitIdx] are removed.
-	splitIdx := firstPairEnd + messagesToRemove
-	if splitIdx >= len(c.Messages)-1 {
-		// Don't remove the very last message.
-		return
-	}
-
-	// Build a compact summary of dropped messages.
-	var droppedToolCount int
-	for _, m := range c.Messages[firstPairEnd+1 : splitIdx+1] {
-		droppedToolCount += len(m.ToolCalls)
-	}
-	toolSuffix := ""
-	if droppedToolCount != 1 {
-		toolSuffix = "s"
-	}
-	ctxMsg := fmt.Sprintf(
-		"[Context compacted: %d intermediate messages omitted (including %d tool call%s). Original task context preserved.]",
-		messagesToRemove,
-		droppedToolCount,
-		toolSuffix,
-	)
-
-	// Rebuild messages: [system?, first pair, summary marker, kept tail]
-	keptTail := len(c.Messages) - splitIdx - 1
-	newCap := startIdx + 2 + 1 + keptTail // sys + pair + marker + tail
-	newMessages := make([]Message, 0, newCap)
-	if startIdx > 0 {
-		newMessages = append(newMessages, c.Messages[0]) // system prompt
-	}
-	newMessages = append(newMessages, c.Messages[startIdx:firstPairEnd+1]...) // first user-assistant pair
-	newMessages = append(newMessages, Message{
-		Role:    RoleSystem,
-		Content: ctxMsg,
-	})
-	newMessages = append(newMessages, c.Messages[splitIdx+1:]...)
-	c.Messages = newMessages
 	c.ResetActualTokens()
+	c.updateTokenCount()
+
+	// Insert a compact marker so the model knows context was trimmed.
+	c.Messages = append(c.Messages[:firstPairEnd+1], append([]Message{{
+		Role:    RoleSystem,
+		Content: "[Context compacted: older messages were summarized or removed to fit token budget. Original task context preserved.]",
+	}}, c.Messages[firstPairEnd+1:]...)...)
 	c.updateTokenCount()
 }
 
