@@ -55,7 +55,11 @@
 
 Ubuntu 24.04 runner 通过 apt 安装 npm 后，`node_modules/.bin/vite` 可能没有可执行权限，导致 `npm run build` 报 `sh: 1: vite: Permission denied`（exit code 127）。
 
-修复：在 `.github/workflows/build.yml` 中把前端构建命令从 `cd frontend && npm run build` 改为 `cd frontend && npm exec -- vite build --mode production`，让 npx 机制负责调用本地 vite 二进制。
+修复：在 `.github/workflows/build.yml` 中把前端构建命令从 `cd frontend && npm run build` 改为：
+```bash
+cd frontend && node ./node_modules/typescript/bin/tsc && node ./node_modules/vite/bin/vite.js build --mode production
+```
+直接通过 `node` 执行 TypeScript 和 Vite 的 JS 入口，绕过 apt 安装的 npm 在 Ubuntu 24.04 runner 上创建的 `.bin` 脚本无执行权限的问题。
 
 ### MCP 运行时陷阱
 
