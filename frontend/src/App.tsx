@@ -6,11 +6,13 @@ import { useAppStatus } from './hooks/useAppStatus';
 import { useSettings } from './hooks/useSettings';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useFileReference } from './hooks/useFileReference';
+import { useVersionCheck } from './hooks/useVersionCheck';
 import { useSlashCommands } from './slash';
 import { Sidebar } from './components/Sidebar';
 import { ChatArea } from './components/ChatArea';
 import { SettingsPanel } from './components/SettingsPanel';
 import { FollowupModal } from './components/FollowupModal';
+import { UpdateNotification } from './components/UpdateNotification';
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -22,6 +24,7 @@ function App() {
   const fileRef = useFileReference();
   const chat = useChat(tasks.loadHistory, appStatus.loadStatus, () => fileRef.selectedFiles, fileRef.clearFiles);
   const slash = useSlashCommands();
+  const versionCheck = useVersionCheck(true);
 
   // Can chat when a project directory has been selected or there is message history
   const canChat = (appStatus.status.cwd || '') !== '' || chat.messages.length > 0;
@@ -74,6 +77,9 @@ function App() {
     onToggleSidebar: () => setSidebarOpen(prev => !prev),
   });
 
+  // Show update notification when update is available and not dismissed
+  const showUpdateNotification = versionCheck.updateResult?.has_update && !versionCheck.isDismissed;
+
   return (
     <div
       style={{
@@ -86,6 +92,16 @@ function App() {
         overflow: 'hidden',
       }}
     >
+      {/* Update Notification Banner */}
+      {showUpdateNotification && versionCheck.updateResult && (
+        <UpdateNotification
+          updateResult={versionCheck.updateResult}
+          onDismiss={versionCheck.dismissUpdate}
+          onDownload={versionCheck.openReleasePage}
+          isChecking={versionCheck.isChecking}
+        />
+      )}
+      
       <Sidebar
         sidebarOpen={sidebarOpen}
         history={tasks.history}
@@ -139,6 +155,8 @@ function App() {
           onReloadRules={settings.reloadRules}
           formatFileSize={settings.formatFileSize}
           formatModTime={settings.formatModTime}
+          // Pass version check props for settings panel
+          versionCheck={versionCheck}
         />
       )}
       {chat.followup && (

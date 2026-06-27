@@ -2,12 +2,48 @@
 
 ## 项目状态概览
 
-**当前阶段**: 大文件 Token 暴增问题修复 Phase 1-4 已完成，Phase 5 进行中 ✅
+---
+
+## 2026-06-28 — 版本检测功能开发完成 ✅
+
+### 实现内容
+
+| 组件 | 文件 | 说明 |
+|------|------|------|
+| 版本检查器 | `internal/version/checker.go` | 核心版本检查逻辑，GitHub API 集成，语义化版本比较 |
+| 类型定义 | `internal/version/types.go` | UpdateCheckResult, CheckerConfig, VersionInfo 等类型 |
+| 版本服务 | `internal/version/service.go` | 服务层，与配置系统集成 |
+| 单元测试 | `internal/version/checker_test.go` | 9个测试用例全部通过 |
+| 配置集成 | `internal/config/config.go` | 新增 UpdateConfig 配置项 |
+| CI/CD 集成 | `.github/workflows/build.yml` | 构建时注入 release 版本号 |
+| 前端通知 | `frontend/src/components/UpdateNotification.tsx` | 更新通知栏组件 |
+| 设置页面 | `frontend/src/components/settings/UpdatesTab.tsx` | 版本检查设置标签页 |
+
+### 功能特性
+- ✅ 自动检测 GitHub 最新 release
+- ✅ 语义化版本比较（v1.0.0 > v0.9.0）
+- ✅ 平台特定下载链接（Windows/macOS/Linux）
+- ✅ 缓存机制（默认24小时检查间隔）
+- ✅ 前端通知栏（当前版本 → 最新版本）
+- ✅ 可配置（启用/禁用、检查间隔、预发布版本）
+
+### 构建验证
+- ✅ `go build ./...`
+- ✅ `go test ./internal/version/... -v` (9 tests passed)
+- ✅ `go vet ./...`
+
+### 工作流程
+```
+应用启动 → 加载配置 → 检查缓存 → 调用 GitHub API → 比较版本 → 显示通知 → 用户下载
+```
+
+**当前阶段**: 版本检测功能开发完成 ✅
 
 **总体进度**:
 - ✅ 四层记忆引擎 + 透明聊天驱动系统
 - ✅ MCP (Model Context Protocol) 客户端支持（含 2026-06-26 修复）
 - ✅ 大文件上下文治理（行范围读取、大文件 guard、后台 summarizer、token-aware Conversation 压缩）
+- ✅ 版本检测功能（自动检查更新、GitHub API 集成、前端通知）
 - ⏳ Skill 包管理器（下一优先级）
 
 ---

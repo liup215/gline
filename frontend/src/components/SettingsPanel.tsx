@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react';
 import { THEME } from '../theme';
 import type { RuleInfo } from '../hooks/useSettings';
+import type { VersionCheckState } from '../hooks/useVersionCheck';
 import { ProviderTab } from './settings/ProviderTab';
 import { MemoryTab } from './settings/MemoryTab';
 import { GeneralTab } from './settings/GeneralTab';
 import { RulesTab } from './settings/RulesTab';
 import { MCPTab } from './settings/MCPTab';
+import { UpdatesTab } from './settings/UpdatesTab';
 
-type TabKey = 'provider' | 'memory' | 'general' | 'rules' | 'mcp';
+type TabKey = 'provider' | 'memory' | 'general' | 'rules' | 'mcp' | 'updates';
 
 interface TabDef {
   key: TabKey;
@@ -21,6 +23,7 @@ const TABS: TabDef[] = [
   { key: 'mcp', label: 'MCP', icon: '🤖' },
   { key: 'general', label: 'General', icon: '🎨' },
   { key: 'rules', label: 'Rules', icon: '📋' },
+  { key: 'updates', label: 'Updates', icon: '⬆️' },
 ];
 
 interface SettingsPanelProps {
@@ -35,6 +38,7 @@ interface SettingsPanelProps {
   onReloadRules: () => Promise<void>;
   formatFileSize: (bytes: number) => string;
   formatModTime: (ts: number) => string;
+  versionCheck?: VersionCheckState;
 }
 
 export function SettingsPanel({
@@ -48,6 +52,7 @@ export function SettingsPanel({
   onReloadRules,
   formatFileSize,
   formatModTime,
+  versionCheck,
 }: SettingsPanelProps) {
   const [activeTab, setActiveTab] = useState<TabKey>('provider');
 
@@ -105,8 +110,7 @@ export function SettingsPanel({
     updates['provider.openai.model'] = openaiModel;
     updates['provider.openai.base_url'] = openaiBaseURL;
     updates['provider.openai.max_context_tokens'] = openaiMaxTokens;
-    updates['ui.theme'] = uiTheme;
-    updates['memory.enabled'] = memEnabled ? 'true' : 'false';
+    updates['memory.enabled'] = String(memEnabled);
     updates['memory.embedding.provider'] = memProvider;
     updates['memory.embedding.model'] = memModel;
     updates['memory.embedding.api_key'] = memAPIKey;
@@ -114,87 +118,47 @@ export function SettingsPanel({
     updates['memory.retrieval.top_k'] = memTopK;
     updates['memory.retrieval.min_score'] = memMinScore;
     updates['memory.retrieval.max_tokens'] = memMaxTokens;
+    updates['ui.theme'] = uiTheme;
     onSave(updates);
   };
 
   return (
-    <div
-      style={{
-        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-        background: THEME.overlayBg, backdropFilter: 'blur(4px)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        zIndex: 1000,
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          width: '520px', maxHeight: '85vh',
-          background: THEME.cardBg, border: `1px solid ${THEME.border}`,
-          borderRadius: '14px', padding: '24px 28px',
-          color: THEME.text, boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
-          display: 'flex', flexDirection: 'column',
-          overflow: 'hidden',
-        }}
-        onClick={e => e.stopPropagation()}
-      >
+    <div style={{ position: 'fixed', inset: 0, background: THEME.overlayBg, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={onClose}>
+      <div style={{ background: THEME.bg, borderRadius: 12, width: 700, maxWidth: '90vw', maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }} onClick={e => e.stopPropagation()}>
         {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 600 }}>⚙️ Settings</h2>
-          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: THEME.textMuted, cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: `1px solid ${THEME.border}` }}>
+          <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 600 }}>Settings</h2>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: THEME.textMuted, fontSize: '1.25rem', cursor: 'pointer', lineHeight: 1 }}>×</button>
         </div>
 
-        {/* Save message toast */}
-        {saveMessage && (
-          <div style={{
-            padding: '10px 14px', borderRadius: '8px',
-            background: saveMessage.includes('success') ? THEME.toastSuccessBg : THEME.toastErrorBg,
-            color: saveMessage.includes('success') ? THEME.toastSuccess : THEME.toastError,
-            fontSize: '0.85rem', marginBottom: '12px',
-          }}>
-            {saveMessage}
-          </div>
-        )}
-
-        {/* Tab bar */}
-        <div style={{
-          display: 'flex',
-          borderBottom: `1px solid ${THEME.border}`,
-          marginBottom: '16px',
-          gap: '0',
-        }}>
-          {TABS.map(tab => {
-            const isActive = activeTab === tab.key;
-            return (
-              <button
-                key={tab.key}
-                onClick={() => setActiveTab(tab.key)}
-                style={{
-                  flex: 1,
-                  padding: '10px 0',
-                  background: 'transparent',
-                  border: 'none',
-                  borderBottom: isActive ? `2px solid ${THEME.accent}` : '2px solid transparent',
-                  color: isActive ? THEME.text : THEME.textDim,
-                  fontSize: '0.85rem',
-                  fontWeight: isActive ? 600 : 400,
-                  cursor: 'pointer',
-                  transition: 'color 0.15s, border-color 0.15s',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px',
-                }}
-              >
-                <span>{tab.icon}</span>
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
+        {/* Tabs */}
+        <div style={{ display: 'flex', borderBottom: `1px solid ${THEME.border}`, background: THEME.bgSidebar }}>
+          {TABS.map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              style={{
+                padding: '12px 16px',
+                background: activeTab === tab.key ? THEME.bg : 'transparent',
+                border: 'none',
+                borderBottom: activeTab === tab.key ? `2px solid ${THEME.accent}` : '2px solid transparent',
+                color: activeTab === tab.key ? THEME.text : THEME.textMuted,
+                cursor: 'pointer',
+                fontSize: '0.9rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              <span>{tab.icon}</span>
+              <span>{tab.label}</span>
+            </button>
+          ))}
         </div>
 
-        {/* Tab content (scrollable) */}
-        <div style={{ flex: 1, overflowY: 'auto', paddingRight: '4px' }}>
+        {/* Content */}
+        <div style={{ padding: '20px', overflowY: 'auto', flex: 1 }}>
           {activeTab === 'provider' && (
             <ProviderTab
               provider={provider} setProvider={setProvider}
@@ -241,13 +205,36 @@ export function SettingsPanel({
               formatModTime={formatModTime}
             />
           )}
+          {activeTab === 'updates' && versionCheck && (
+            <UpdatesTab
+              isChecking={versionCheck.isChecking}
+              updateResult={versionCheck.updateResult}
+              error={versionCheck.error}
+              onCheckForUpdates={versionCheck.checkForUpdates}
+              onOpenReleasePage={versionCheck.openReleasePage}
+            />
+          )}
         </div>
 
         {/* Footer buttons */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px', paddingTop: '12px', borderTop: `1px solid ${THEME.border}` }}>
-          <button onClick={onClose} style={{ padding: '10px 20px', borderRadius: '8px', border: `1px solid ${THEME.border}`, background: 'transparent', color: THEME.textMuted, cursor: 'pointer', fontSize: '0.9rem' }}>Cancel</button>
-          <button onClick={handleSave} style={{ padding: '10px 24px', borderRadius: '8px', border: 'none', background: THEME.accent, color: THEME.userTextColor, cursor: 'pointer', fontSize: '0.9rem', fontWeight: 500 }}>Save Settings</button>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px', padding: '12px 20px', borderTop: `1px solid ${THEME.border}` }}>
+          {activeTab !== 'updates' && (
+            <>
+              <button onClick={onClose} style={{ padding: '10px 20px', borderRadius: '8px', border: `1px solid ${THEME.border}`, background: 'transparent', color: THEME.textMuted, cursor: 'pointer', fontSize: '0.9rem' }}>Cancel</button>
+              <button onClick={handleSave} style={{ padding: '10px 24px', borderRadius: '8px', border: 'none', background: THEME.accent, color: THEME.userTextColor, cursor: 'pointer', fontSize: '0.9rem', fontWeight: 500 }}>Save Settings</button>
+            </>
+          )}
+          {activeTab === 'updates' && (
+            <button onClick={onClose} style={{ padding: '10px 20px', borderRadius: '8px', border: `1px solid ${THEME.border}`, background: 'transparent', color: THEME.textMuted, cursor: 'pointer', fontSize: '0.9rem' }}>Close</button>
+          )}
         </div>
+        
+        {/* Save message */}
+        {saveMessage && (
+          <div style={{ padding: '8px 20px', background: saveMessage.includes('Failed') ? THEME.toastErrorBg : THEME.toastSuccessBg, color: saveMessage.includes('Failed') ? THEME.toastError : THEME.toastSuccess, fontSize: '0.85rem', textAlign: 'center' }}>
+            {saveMessage}
+          </div>
+        )}
       </div>
     </div>
   );

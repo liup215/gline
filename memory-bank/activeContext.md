@@ -2,7 +2,33 @@
 
 ## Current Focus
 
-### 大文件 Token 暴增问题修复（当前会话）
+### 版本检测功能开发（当前会话）✅
+
+**状态**: 已完成
+
+**时间**: 2026-06-28
+
+**实现内容**:
+- `internal/version/checker.go` - 核心版本检查器，GitHub API 集成
+- `internal/version/types.go` - 类型定义（UpdateCheckResult, VersionInfo 等）
+- `internal/version/service.go` - 服务层，与配置系统集成
+- `internal/version/checker_test.go` - 单元测试（9个用例全部通过）
+- `internal/config/config.go` - 新增 UpdateConfig 配置
+- `.github/workflows/build.yml` - CI/CD 版本注入
+- `frontend/src/components/UpdateNotification.tsx` - 前端通知栏
+- `frontend/src/components/settings/UpdatesTab.tsx` - 设置标签页
+
+**功能特性**:
+- ✅ 自动检测 GitHub 最新 release
+- ✅ 语义化版本比较（v1.0.0 > v0.9.0）
+- ✅ 平台特定下载链接（Windows/macOS/Linux）
+- ✅ 缓存机制（默认24小时检查间隔）
+- ✅ 前端通知栏（当前版本 → 最新版本）
+- ✅ 可配置（启用/禁用、检查间隔、预发布版本）
+
+---
+
+### 大文件 Token 暴增问题修复（已完成）
 
 **状态**: Phase 1-4 已完成，Phase 5 进行中 ✅
 
@@ -474,12 +500,19 @@ Phase 2 全部子任务已完成：
 
 ---
 
-## 下一步建议（2026-06-24 更新）
+## 下一步建议（2026-06-28 更新）
+
+**当前焦点**: 版本检测功能 ✅ 已完成
+- 自动检查 GitHub release 更新
+- 语义化版本比较
+- 前端通知栏和设置页面
+- CI/CD 版本注入
 
 **优先级调整**:
-1. **MCP 支持** 🔴 当前 Sprint - 实现 Model Context Protocol 客户端
-2. **Skill 包管理器** 🔴 下一 Sprint - `gline skill search/install/use`
+1. **版本检测功能** ✅ 已完成 - 自动检查更新、前端通知
+2. **Skill 包管理器** 🔴 当前 Sprint - `gline skill search/install/use`
 3. **Wiki Ingest LLM** 🟡 搁置 - 等待 Scale 设计方案
-4. **主题系统** ✅ 已完成 - P2.5.3 已提交
+4. **MCP 支持** ✅ 已完成 - Model Context Protocol 客户端
+5. **主题系统** ✅ 已完成 - P2.5.3 已提交
 
 **长期**: CLI 移除评估（产品决策方向，暂不执行）

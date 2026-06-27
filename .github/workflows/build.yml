@@ -133,12 +133,18 @@ jobs:
       - name: Build Go binary
         shell: bash
         run: |
-          version=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
+          # Extract version: use tag name for tag pushes, otherwise use git describe
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            version="${{ github.ref_name }}"
+          else
+            version=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
+          fi
           commit=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
           build_time=$(date -u '+%Y-%m-%d_%H:%M:%S' 2>/dev/null || date)
           ldflags_base="-X github.com/liup215/gline/internal/version.Version=$version -X github.com/liup215/gline/internal/version.Commit=$commit -X github.com/liup215/gline/internal/version.BuildTime=$build_time -s -w"
           mkdir -p bin
           binary="bin/gline"
+          echo "Building version: $version (commit: $commit)"
           if [[ "${{ matrix.name }}" == windows-* ]]; then
             GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "${ldflags_base} -H=windowsgui" -o "${binary}.exe" ./cmd/gline
           else

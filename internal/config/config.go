@@ -30,6 +30,9 @@ type Config struct {
 
 	// MCP (Model Context Protocol) settings
 	MCP mcp.Config `mapstructure:"mcp" json:"MCP"`
+
+	// Update settings
+	Update UpdateConfig `mapstructure:"update" json:"Update"`
 }
 
 // ProviderConfig holds LLM provider settings
@@ -102,6 +105,21 @@ type MemoryRetrievalConfig struct {
 	TopK      int     `mapstructure:"top_k" json:"TopK"`
 	MinScore  float64 `mapstructure:"min_score" json:"MinScore"`
 	MaxTokens int     `mapstructure:"max_tokens" json:"MaxTokens"`
+}
+
+// UpdateConfig holds version update checking settings
+type UpdateConfig struct {
+	// Enable automatic update checking
+	Enabled bool `mapstructure:"enabled" json:"Enabled"`
+
+	// CheckInterval is the minimum time between update checks (e.g., "24h")
+	CheckInterval string `mapstructure:"check_interval" json:"CheckInterval"`
+
+	// IncludePrerelease includes pre-release versions in update checks
+	IncludePrerelease bool `mapstructure:"include_prerelease" json:"IncludePrerelease"`
+
+	// LastChecked is the timestamp of the last update check (ISO 8601 format)
+	LastChecked string `mapstructure:"last_checked" json:"LastChecked"`
 }
 
 // Manager handles configuration loading and access
@@ -222,6 +240,9 @@ func (m *Manager) setupDefaults() {
 	m.viper.SetDefault("memory.retrieval.top_k", 5)
 	m.viper.SetDefault("memory.retrieval.min_score", 0.6)
 	m.viper.SetDefault("memory.retrieval.max_tokens", 2000)
+	m.viper.SetDefault("update.enabled", true)
+	m.viper.SetDefault("update.check_interval", "24h")
+	m.viper.SetDefault("update.include_prerelease", false)
 }
 
 // loadGlobalConfig loads configuration from global config directory
@@ -333,6 +354,17 @@ log:
   level: info
   # Log file path
   file: ""
+
+# Update Settings
+update:
+  # Enable automatic update checking on startup
+  enabled: true
+  # Minimum time between update checks (e.g., "24h", "1h")
+  check_interval: "24h"
+  # Include pre-release versions (alpha, beta, rc) in update checks
+  include_prerelease: false
+  # Last update check timestamp (ISO 8601 format, managed by application)
+  last_checked: ""
 `
 
 	// Create parent directory
