@@ -125,7 +125,7 @@ func (t *StdioTransport) readStderr() {
 	for scanner.Scan() {
 		line := scanner.Text()
 		// Log stderr output (could be redirected to a proper logger)
-		fmt.Printf("[MCP Server stderr] %s\n", line)
+		log.Warnf("[MCP Server stderr] %s\n", line)
 	}
 }
 
@@ -354,7 +354,7 @@ func (t *HTTPTransport) Send(msg *JSONRPCMessage) error {
 		return fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	fmt.Printf("[HTTPTransport] Parsed response: ID=%v, Method='%s', Result=%v, Error=%v\n",
+	log.Debugf("[HTTPTransport] Parsed response: ID=%v, Method='%s', Result=%v, Error=%v\n",
 		response.ID, response.Method, response.Result != nil, response.Error != nil)
 
 	// Store response and signal Receive
@@ -496,7 +496,7 @@ func (t *SSETransport) Start(ctx context.Context) error {
 func (t *SSETransport) readSSE() {
 	req, err := http.NewRequestWithContext(t.ctx, "GET", t.url, nil)
 	if err != nil {
-		fmt.Printf("[MCP SSE] Failed to create request: %v\n", err)
+		log.Warnf("[MCP SSE] Failed to create request: %v\n", err)
 		return
 	}
 
@@ -509,13 +509,13 @@ func (t *SSETransport) readSSE() {
 
 	resp, err := t.client.Do(req)
 	if err != nil {
-		fmt.Printf("[MCP SSE] Failed to connect: %v\n", err)
+		log.Warnf("[MCP SSE] Failed to connect: %v\n", err)
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		fmt.Printf("[MCP SSE] Unexpected status: %d\n", resp.StatusCode)
+		log.Warnf("[MCP SSE] Unexpected status: %d\n", resp.StatusCode)
 		return
 	}
 
@@ -527,7 +527,7 @@ func (t *SSETransport) readSSE() {
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			if err != io.EOF {
-				fmt.Printf("[MCP SSE] Read error: %v\n", err)
+				log.Warnf("[MCP SSE] Read error: %v\n", err)
 			}
 			return
 		}
@@ -568,7 +568,7 @@ func (t *SSETransport) handleEvent(event *sseEvent) {
 		// Parse JSON-RPC message
 		var msg JSONRPCMessage
 		if err := json.Unmarshal([]byte(event.Data), &msg); err != nil {
-			fmt.Printf("[MCP SSE] Failed to parse message: %v\n", err)
+			log.Warnf("[MCP SSE] Failed to parse message: %v\n", err)
 			return
 		}
 		t.msgCh <- &msg

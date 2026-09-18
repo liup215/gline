@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/liup215/gline/internal/log"
 	"github.com/liup215/gline/internal/tools"
 )
 
@@ -62,7 +63,7 @@ func (m *Manager) Start(ctx context.Context) error {
 	for _, serverConfig := range m.config.GetEnabledServers() {
 		if err := m.startServer(ctx, serverConfig); err != nil {
 			// Log error but continue with other servers
-			fmt.Printf("[MCP Manager] Failed to start server %s: %v\n", serverConfig.Name, err)
+			log.Warnf("[MCP Manager] Failed to start server %s: %v\n", serverConfig.Name, err)
 			m.serverErrors[serverConfig.Name] = err.Error()
 		}
 	}
@@ -139,7 +140,7 @@ func (m *Manager) startServer(ctx context.Context, config ServerConfig) error {
 		return fmt.Errorf("failed to initialize: %w", err)
 	}
 
-	fmt.Printf("[MCP Manager] Connected to %s (%s v%s)\n",
+	log.Infof("[MCP Manager] Connected to %s (%s v%s)\n",
 		config.Name, result.ServerInfo.Name, result.ServerInfo.Version)
 
 	// Store client
@@ -148,7 +149,7 @@ func (m *Manager) startServer(ctx context.Context, config ServerConfig) error {
 	// Register tools if supported
 	if result.Capabilities.Tools != nil {
 		if err := m.registerServerTools(ctx, config.Name, client); err != nil {
-			fmt.Printf("[MCP Manager] Failed to register tools for %s: %v\n", config.Name, err)
+			log.Warnf("[MCP Manager] Failed to register tools for %s: %v\n", config.Name, err)
 		}
 	}
 
@@ -185,9 +186,9 @@ func (m *Manager) registerServerTools(ctx context.Context, serverName string, cl
 				Category: tools.CategoryNetwork,
 				AllowedModes: []string{"*"}, // Allow in all modes
 			}); err != nil {
-				fmt.Printf("[MCP Manager] Failed to register tool %s: %v\n", uniqueName, err)
+				log.Warnf("[MCP Manager] Failed to register tool %s: %v\n", uniqueName, err)
 			} else {
-				fmt.Printf("[MCP Manager] Registered tool: %s\n", uniqueName)
+				log.Infof("[MCP Manager] Registered tool: %s\n", uniqueName)
 			}
 		}
 	}
@@ -223,7 +224,8 @@ func (m *Manager) GetServerStatus() []ServerStatus {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	var statuses []ServerStatus	
+	var statuses []ServerStatus
+	
 	// Include all configured servers (even if connection failed)
 	for _, serverConfig := range m.config.Servers {
 		if serverConfig.Disabled {
@@ -296,7 +298,7 @@ func (m *Manager) RefreshTools(ctx context.Context) error {
 	// Re-register from all servers
 	for serverName, client := range m.clients {
 		if err := m.registerServerTools(ctx, serverName, client); err != nil {
-			fmt.Printf("[MCP Manager] Failed to refresh tools for %s: %v\n", serverName, err)
+			log.Warnf("[MCP Manager] Failed to refresh tools for %s: %v\n", serverName, err)
 		}
 	}
 
@@ -370,7 +372,7 @@ func (m *Manager) Close() error {
 
 	for name, client := range m.clients {
 		if err := client.Close(); err != nil {
-			fmt.Printf("[MCP Manager] Error closing %s: %v\n", name, err)
+			log.Warnf("[MCP Manager] Error closing %s: %v\n", name, err)
 		}
 	}
 

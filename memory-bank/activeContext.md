@@ -2,7 +2,84 @@
 
 ## Current Focus
 
-### 版本检测功能开发（当前会话）✅
+### TUI 迁移开发 ✅
+
+**状态**: Phase 1-7 已完成 + 运行时 bug 修复
+
+**时间**: 2026-07-12 ~ 2026-09-18
+
+**目标**: 将 gline 从 Wails v3 GUI 转为 Bubbletea TUI，同时保留双模式（`gline` → TUI, `gline --gui` → GUI）
+
+**已完成 (全部 7 个 Phase)**:
+
+Phase 1 - 基础框架:
+- ✅ `internal/tui/styles.go` - lipgloss 样式定义
+- ✅ `internal/tui/keys.go` - 键绑定定义
+- ✅ `internal/tui/callback.go` - StreamCallback → tea.Msg 适配器（12 种消息类型）
+- ✅ `internal/tui/status.go` - 状态栏（provider/model/mode/tokens/cwd）
+- ✅ `internal/tui/chat.go` - 聊天视图（viewport + 消息渲染 + streaming 光标）
+- ✅ `internal/tui/input.go` - 输入区域（textinput + 历史 + slash 补全）
+- ✅ `internal/tui/sidebar.go` - 任务历史侧边栏（从 SQLite 加载）
+- ✅ `internal/tui/app.go` - 主模型（589 行，组合所有子模型）
+- ✅ `internal/tui/tui.go` - TUI 入口函数
+- ✅ `cmd/gline/main.go` - 双模式入口（`--gui` flag）
+
+Phase 2 - Agent 集成:
+- ✅ Pointer model 修复（SetProgram 正确生效）
+- ✅ Provider info 自动更新到状态栏
+- ✅ Loading spinner 动画
+- ✅ Context cancel + agent abort（Esc 停止）
+
+Phase 3 - 工具调用展示:
+- ✅ Box border 工具调用面板
+- ✅ 工具输入摘要（read_file → 路径, execute_command → 命令等）
+- ✅ 结果截断（>5 行 / >500 字符）
+- ✅ 状态图标（⏳ 执行中 / ✓ 完成）
+
+Phase 4 - 任务历史:
+- ✅ sidebarModel 从 SQLite 加载任务
+- ✅ 任务状态图标（○ 运行 / ✓ 完成 / ✗ 失败）
+- ✅ Ctrl+B 折叠/展开
+
+Phase 5 - Slash 补全:
+- ✅ `/` 前缀触发补全列表
+- ✅ Up/Down 导航 + Tab/Enter 选择
+- ✅ 9 个内置命令
+
+Phase 6 - 高级功能:
+- ✅ Glamour Markdown 渲染（assistant 完整消息）
+- ✅ Streaming 时纯文本 + 光标
+
+Phase 7 - 最终完善:
+- ✅ Ctrl+C 优先停止任务再退出
+- ✅ 双模式路由（gline → TUI, gline --gui → GUI）
+
+**代码统计**: ~1900 行 Go 代码（9 个 TUI 文件 + MCP 日志修复）
+
+**运行时 Bug 修复（2026-09-18）**:
+
+| 问题 | 根因 | 修复 |
+|------|------|------|
+| `panic: cannot create context from nil parent` | `mcpManager.Start(nil)` 传了 nil context | `cmd/gline/chat.go` → `mcpManager.Start(context.Background())` |
+| TUI 日志污染终端 | MCP 用 `fmt.Printf` 直接输出 | `internal/mcp/*.go` 全部改为 `log.Infof/Warnf/Debugf` |
+| TUI 启动后显示 "Initializing..." 不渲染 | `View()` 在 width/height=0 时提前返回 | 改为用默认尺寸 80x24 渲染 |
+| 不能输入文字（光标不动） | `inputModel` 值拷贝导致 cursor 指针丢失 | `input` 字段改为 `*inputModel` 指针类型 |
+| `panic: nil pointer dereference` in cursor.BlinkCmd | `textinput.Focus()` 在 cursor 未初始化时调用 | 添加 `Focused()` 检查，仅首次 Focus |
+| TUI 模式 console 日志干扰 | `InitConfig()` 设 `Console: true` | `runTUI()` 重新初始化 logger，`Console: false` |
+
+**验证**:
+- ✅ `go vet ./internal/tui/...` 通过
+- ✅ `go build ./cmd/gline/...` 通过
+- ✅ `go build ./internal/gui/...` 通过（GUI 不受影响）
+- ✅ `gline` 启动正常，显示状态栏 + 输入框
+
+**安装位置**: `C:\Users\22569\bin\gline.exe`（在 PATH 中）
+
+**技术方案**: `docs/tui-migration-plan.md`
+
+---
+
+### 版本检测功能开发 ✅
 
 **状态**: 已完成
 

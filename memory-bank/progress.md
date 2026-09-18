@@ -4,6 +4,81 @@
 
 ---
 
+## 2026-07-12 / 2026-09-18 — TUI 迁移（Bubbletea）✅
+
+### 实现内容
+
+将 gline 从 Wails v3 GUI 转为 Bubbletea TUI，保留双模式。
+
+| 文件 | 行数 | 说明 |
+|------|------|------|
+| `internal/tui/app.go` | ~600 | 主模型：布局、键盘处理、slash 命令、agent 集成 |
+| `internal/tui/chat.go` | ~400 | 聊天视图：消息列表、viewport、streaming、Markdown 渲染 |
+| `internal/tui/input.go` | ~230 | 输入框：textinput + 历史 + slash 补全 |
+| `internal/tui/sidebar.go` | 138 | 任务历史侧边栏 |
+| `internal/tui/callback.go` | 134 | StreamCallback → tea.Msg 桥接（12 种消息） |
+| `internal/tui/status.go` | 96 | 状态栏（provider/model/mode/tokens） |
+| `internal/tui/styles.go` | 110 | lipgloss 样式 |
+| `internal/tui/keys.go` | 82 | 键绑定 |
+| `internal/tui/tui.go` | 33 | TUI 入口 |
+| `cmd/gline/main.go` | ~70 | 双模式入口（`--gui` flag） |
+| `internal/mcp/*.go` | — | `fmt.Printf` → `log.Infof/Warnf/Debugf`（MCP 日志修复） |
+
+**总计**: ~1900 行 Go 代码
+
+### 功能特性
+
+- ✅ Bubbletea Elm 架构（Model-Update-View）
+- ✅ 消息列表 viewport（滚动 + streaming 光标）
+- ✅ 用户/助手/系统/工具 四种消息渲染
+- ✅ Markdown 终端渲染（glamour）
+- ✅ 工具调用折叠面板（box border + 输入摘要）
+- ✅ 状态栏（provider/model/mode/tokens）
+- ✅ 输入框 + 输入历史（Up/Down）
+- ✅ Slash 命令补全（/ 触发，Up/Down 导航）
+- ✅ 任务历史侧边栏（Ctrl+B 折叠）
+- ✅ Plan/Act 模式切换（Tab）
+- ✅ Followup 问题交互
+- ✅ Loading spinner 动画
+- ✅ Ctrl+C 优先停止任务再退出
+- ✅ 双模式入口（`gline` → TUI, `gline --gui` → GUI）
+
+### 运行时 Bug 修复（2026-09-18）
+
+| 问题 | 根因 | 修复 |
+|------|------|------|
+| `panic: cannot create context from nil parent` | `mcpManager.Start(nil)` | `cmd/gline/chat.go` → `context.Background()` |
+| TUI 日志污染终端 | MCP 用 `fmt.Printf` | `internal/mcp/*.go` → `log.Infof/Warnf` |
+| 不渲染（显示 "Initializing..."） | `View()` 在 width=0 时提前返回 | 用默认尺寸 80x24 渲染 |
+| 不能输入文字 | `inputModel` 值拷贝丢失 cursor 指针 | `input` 改为 `*inputModel` |
+| `nil pointer` in cursor.BlinkCmd | `Focus()` 在 cursor 未初始化时调用 | 添加 `Focused()` 检查 |
+| TUI 模式 console 日志干扰 | `InitConfig()` 设 `Console: true` | `runTUI()` 重初始化 logger，关闭 console |
+
+### 构建验证
+
+- ✅ `go vet ./internal/tui/...` 通过
+- ✅ `go build ./cmd/gline/...` 通过
+- ✅ `go build ./internal/gui/...` 通过（GUI 不受影响）
+- ✅ `gline` 启动正常，显示状态栏 + 输入框
+
+### 安装位置
+
+`C:\Users\22569\bin\gline.exe`（已在 PATH 中）
+
+### 入口路由
+
+```
+gline           → TUI (Bubbletea)
+gline --gui     → GUI (Wails, 原有代码不变)
+gline chat      → CLI (已有)
+```
+
+### 技术方案
+
+`docs/tui-migration-plan.md`
+
+---
+
 ## 2025-01-09 — replace_in_file 工具错误信息优化 ✅
 
 ### 问题分析

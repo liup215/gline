@@ -1,6 +1,7 @@
 ﻿package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -121,7 +122,7 @@ func initializeAgent() (*agent.BaseAgent, error) {
 	// Initialize MCP Manager if configured
 	if len(cfg.MCP.Servers) > 0 {
 		mcpManager := mcp.NewManager(&cfg.MCP, registry)
-		if err := mcpManager.Start(nil); err != nil {
+		if err := mcpManager.Start(context.Background()); err != nil {
 			log.Warnf("Failed to start MCP manager: %v", err)
 		} else {
 			// Get status for logging

@@ -108,7 +108,7 @@ func (c *Client) Initialize(ctx context.Context, opts ClientOptions) (*Initializ
 	// Send initialized notification
 	if err := c.sendNotification("notifications/initialized", InitializedNotification{}); err != nil {
 		// Non-fatal, just log
-		fmt.Printf("[MCP] Failed to send initialized notification: %v\n", err)
+		log.Infof("[MCP] Failed to send initialized notification: %v\n", err)
 	}
 
 	c.initialized = true
@@ -220,21 +220,21 @@ func (c *Client) handleNotification(msg *JSONRPCMessage) error {
 		if err := json.Unmarshal(msg.Params, &notif); err != nil {
 			return err
 		}
-		fmt.Printf("[MCP Server] [%s] %v\n", notif.Level, notif.Data)
+		log.Infof("[MCP Server] [%s] %v\n", notif.Level, notif.Data)
 
 	case "notifications/tools/list_changed":
 		// Tools list changed, refresh
-		fmt.Printf("[MCP] Tools list changed, refreshing...\n")
+		log.Infof("[MCP] Tools list changed, refreshing...\n")
 		// Could trigger an async refresh here
 
 	case "notifications/resources/list_changed":
-		fmt.Printf("[MCP] Resources list changed\n")
+		log.Infof("[MCP] Resources list changed\n")
 
 	case "notifications/prompts/list_changed":
-		fmt.Printf("[MCP] Prompts list changed\n")
+		log.Infof("[MCP] Prompts list changed\n")
 
 	default:
-		fmt.Printf("[MCP] Unknown notification: %s\n", msg.Method)
+		log.Infof("[MCP] Unknown notification: %s\n", msg.Method)
 	}
 
 	return nil

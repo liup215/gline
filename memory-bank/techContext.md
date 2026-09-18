@@ -6,6 +6,10 @@
 
 | 组件 | 库 | 版本 | 用途 |
 |------|-----|------|------|
+| **TUI 框架** | `github.com/charmbracelet/bubbletea` | v1.3+ | Elm 架构终端 UI |
+| **TUI 组件** | `github.com/charmbracelet/bubbles` | v1.0+ | textinput, viewport, list 等 |
+| **TUI 样式** | `github.com/charmbracelet/lipgloss` | v1.1+ | 终端样式（颜色、边框、布局） |
+| **Markdown 渲染** | `github.com/charmbracelet/glamour` | v1.0+ | 终端 Markdown 渲染 |
 | GUI 框架 | `github.com/wailsapp/wails/v3` | v3.0-alpha | 跨平台桌面应用 |
 | CLI 框架 | `github.com/spf13/cobra` | v1.10+ | 命令行解析 |
 | 配置管理 | `github.com/spf13/viper` | v1.21+ | 配置加载/管理 |
