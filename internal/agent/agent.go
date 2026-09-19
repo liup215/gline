@@ -1147,6 +1147,11 @@ func (a *BaseAgent) executeToolCallsParallel(ctx context.Context, toolCalls []ty
 				info.result = fmt.Sprintf("Error: tool '%s' received invalid JSON input: %s", info.tc.Name, truncate(string(info.tc.Input), 200))
 				return
 			}
+			// Validate input against tool schema (catches mixed-up fields from confused models).
+			if err := tools.ValidateToolInput(info.tc.Name, info.tc.Input, info.tool.InputSchema()); err != nil {
+				info.result = fmt.Sprintf("Error: %v", err)
+				return
+			}
 			pre, ok := a.takePreDispatchResult(info.tc.ID)
 			if ok {
 				info.result = pre.result

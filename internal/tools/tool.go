@@ -73,6 +73,56 @@ func ParseInput(input json.RawMessage, target interface{}) error {
 	return nil
 }
 
+// ValidateToolInput checks if the input JSON only contains properties
+// defined in the tool's schema. Returns an error with guidance if unknown
+// properties are found, helping the LLM correct its output.
+func ValidateToolInput(toolName string, input json.RawMessage, schema json.RawMessage) error {
+	if len(input) == 0 || len(schema) == 0 {
+		return nil
+	}
+
+	// Parse the schema to get allowed properties.
+	var schemaObj map[string]interface{}
+	if err := json.Unmarshal(schema, &schemaObj); err != nil {
+		return nil // Can't validate, let it through
+	}
+
+	props, ok := schemaObj["properties"]
+	if !ok {
+		return nil // No properties constraint
+	}
+
+	propMap, ok := props.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+
+	// Parse the input to get actual keys.
+	var inputObj map[string]interface{}
+	if err := json.Unmarshal(input, &inputObj); err != nil {
+		return nil // Not an object, let ParseInput handle the error
+	}
+
+	// Check for unknown properties.
+	var unknown []string
+	for key := range inputObj {
+		if _, allowed := propMap[key]; !allowed {
+			unknown = append(unknown, key)
+		}
+	}
+
+	if len(unknown) > 0 {
+		// Build expected fields list.
+		var expected []string
+		for k := range propMap {
+			expected = append(expected, k)
+		}
+		return fmt.Errorf("tool '%s' received unexpected fields %v. Expected fields: %v. Please use only the correct fields for this tool.", toolName, unknown, expected)
+	}
+
+	return nil
+}
+
 // DisplayMode constants for ToolBehavior
 const (
 	// DisplayDefault shows a standard system message (e.g. "🔧 read: main.go")
