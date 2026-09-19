@@ -234,9 +234,29 @@ func truncateFromEndToTokens(s string, maxTokens int) string {
 	return s[start:]
 }
 
-// GetMessages returns all messages in the conversation
+// GetMessages returns a deep copy of all messages in the conversation.
+// This prevents callers from accidentally mutating internal state.
 func (c *Conversation) GetMessages() []Message {
-	return c.Messages
+	if len(c.Messages) == 0 {
+		return nil
+	}
+	msgs := make([]Message, len(c.Messages))
+	for i, msg := range c.Messages {
+		msgs[i] = msg
+		// Deep copy ToolCalls slice and their Input byte slices.
+		if len(msg.ToolCalls) > 0 {
+			msgs[i].ToolCalls = make([]ToolCall, len(msg.ToolCalls))
+			for j, tc := range msg.ToolCalls {
+				msgs[i].ToolCalls[j] = tc
+				if len(tc.Input) > 0 {
+					copiedInput := make([]byte, len(tc.Input))
+					copy(copiedInput, tc.Input)
+					msgs[i].ToolCalls[j].Input = copiedInput
+				}
+			}
+		}
+	}
+	return msgs
 }
 
 // GetLastMessage returns the last message in the conversation

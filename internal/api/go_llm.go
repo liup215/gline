@@ -368,10 +368,14 @@ func (p *GoLLMProvider) convertGoLLMEvent(event llm.Event) *agent.StreamChunk {
 		}
 	case llm.ToolCallEnd:
 		if p.partialTool != nil {
+			args := p.partialToolArgs.String()
+			if len(args) > 200 {
+			} else {
+			}
 			completed := agent.ToolCall{
 				ID:    p.partialTool.ID,
 				Name:  p.partialTool.Name,
-				Input: p.partialToolArgs.String(),
+				Input: args,
 			}
 			p.partialTool = nil
 			p.partialToolArgs.Reset()
