@@ -351,7 +351,34 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 		callback.OnStreamStart()
 
 		// Process the stream
+		msgCountBefore := len(a.conversation.GetMessages())
 		if err := a.processStream(ctx, streamChan, callback); err != nil {
+			// If no new messages were added (empty stream), retry with backoff.
+			msgCountAfter := len(a.conversation.GetMessages())
+			if msgCountAfter <= msgCountBefore {
+				a.consecutiveMistakes++
+				callback.OnError(err)
+				if a.consecutiveMistakes >= a.maxConsecutiveMistakes {
+					if a.store != nil && a.taskID != "" {
+						if dbErr := a.store.FailTask(a.taskID, err.Error()); dbErr != nil {
+							log.Warnf("Failed to mark task as failed: %v", dbErr)
+						}
+					}
+					return fmt.Errorf("max consecutive mistakes reached: %w", err)
+				}
+				backoff := time.Duration(1<<uint(a.consecutiveMistakes-1)) * time.Second
+				if backoff > 8*time.Second {
+					backoff = 8 * time.Second
+				}
+				log.Warnf("Stream error with no content (attempt %d/%d), retrying in %v: %v", a.consecutiveMistakes, a.maxConsecutiveMistakes, backoff, err)
+				select {
+				case <-time.After(backoff):
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+				continue
+			}
+			// Content was partially received; fail permanently.
 			if a.store != nil && a.taskID != "" {
 				if dbErr := a.store.FailTask(a.taskID, err.Error()); dbErr != nil {
 					log.Warnf("Failed to mark task as failed: %v", dbErr)
