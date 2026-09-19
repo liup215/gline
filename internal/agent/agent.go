@@ -141,6 +141,10 @@ type BaseAgent struct {
 	preDispatchedIDsMu sync.Mutex
 	preDispatchedIDs   map[string]bool
 
+	// cachedToolTokens caches the estimated token count of all tool descriptions.
+	// Computed once on first use, invalidated when tools change.
+	cachedToolTokens     int
+	cachedToolTokensOnce sync.Once
 }
 
 // preDispatchedResult holds the outcome of a tool call that was launched
@@ -268,12 +272,12 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 		}
 
 		// Trim conversation if it exceeds token budget before sending.
-		a.conversation.TrimToMaxTokens()
-
-		// Auto-compact if tokens exceed 60% of the max context.
-			// Earlier compaction prevents the token budget from growing too
-			// large and keeps API latency stable across long conversations.
+		// Only run compaction when conversation is large enough to warrant it.
+		// Skip for short conversations to avoid unnecessary O(n) traversals.
+		if a.conversation.GetTotalTokens() > a.conversation.MaxTokens*30/100 {
+			a.conversation.TrimToMaxTokens()
 			a.AutoCompact()
+		}
 
 		// Determine whether the assistant still has pending work.
 		// We require tools when:
@@ -825,12 +829,15 @@ func (a *BaseAgent) enforceTokenBudget(ctx context.Context, systemPrompt string,
 	// Add system prompt tokens.
 	total += types.EstimateTokens(systemPrompt)
 
-	// Add approximate tool description tokens.
+	// Add approximate tool description tokens (cached after first computation).
 	if len(availableTools) > 0 {
-		toolJSON, err := json.Marshal(availableTools)
-		if err == nil {
-			total += types.EstimateTokens(string(toolJSON))
-		}
+		a.cachedToolTokensOnce.Do(func() {
+			toolJSON, err := json.Marshal(availableTools)
+			if err == nil {
+				a.cachedToolTokens = types.EstimateTokens(string(toolJSON))
+			}
+		})
+		total += a.cachedToolTokens
 	}
 
 	if total <= budget*6/10 {
@@ -866,7 +873,7 @@ func (a *BaseAgent) processStream(ctx context.Context, streamChan <-chan StreamC
 			return chunk.Error
 		}
 
-		log.Infof("processStream chunk: content=%d reasoning=%d toolCall=%v isPartial=%v done=%v",
+		log.Debugf("processStream chunk: content=%d reasoning=%d toolCall=%v isPartial=%v done=%v",
 			len(chunk.Content), len(chunk.ReasoningContent), chunk.ToolCall != nil, chunk.IsPartial, chunk.Done)
 
 		// Accumulate real token usage from the API whenever available
