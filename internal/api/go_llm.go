@@ -46,7 +46,8 @@ func NewGoLLMProvider(apiKey, model, baseURL, name string) (*GoLLMProvider, erro
 
 	// Build compat options with default headers
 	compat := chatcompletions.Compat{
-		StreamIncludeUsage: true,
+		StreamIncludeUsage:       true,
+		InferMissingFinishReason: true,
 	}
 
 	// Add OpenCode Go specific headers
