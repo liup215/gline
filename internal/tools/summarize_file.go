@@ -11,7 +11,7 @@ import (
 )
 
 // SummarizeFileTool asks the summarizer to produce a structured summary of a
-// large file. It is useful when search_files/read_file cannot return enough
+// large file. It is useful when search_files/read cannot return enough
 // detail without overflowing the context window.
 type SummarizeFileTool struct {
 	BaseTool

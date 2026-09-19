@@ -75,7 +75,7 @@ func ParseInput(input json.RawMessage, target interface{}) error {
 
 // DisplayMode constants for ToolBehavior
 const (
-	// DisplayDefault shows a standard system message (e.g. "🔧 read_file: main.go")
+	// DisplayDefault shows a standard system message (e.g. "🔧 read: main.go")
 	DisplayDefault = "default"
 	// DisplayAssistant renders the tool output as an assistant message (full markdown)
 	DisplayAssistant = "assistant"

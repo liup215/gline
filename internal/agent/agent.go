@@ -978,17 +978,6 @@ func (a *BaseAgent) processStream(ctx context.Context, streamChan <-chan StreamC
 	// Build the final content strings after the stream is complete.
 	fullContent := content.String()
 
-	// Fallback: if no native tool_calls were received but the content contains
-	// XML-style tool calls (<tool_name>...params...</tool_name>), parse them.
-	if len(toolCalls) == 0 {
-		availableTools := convertTools(a.toolRegistry.GetAll())
-		parsedXML := ParseXMLToolCalls(fullContent, availableTools)
-		if len(parsedXML) > 0 {
-			log.Infof("Fallback: parsed %d XML tool calls from assistant content", len(parsedXML))
-			toolCalls = append(toolCalls, parsedXML...)
-		}
-	}
-
 	// Convert accumulated tool calls to types.ToolCall
 	var typesToolCalls []types.ToolCall
 	for _, tc := range toolCalls {
@@ -1045,7 +1034,7 @@ func (a *BaseAgent) preDispatchToolCall(ctx context.Context, tc ToolCall) {
 	// command execution, browser automation) to avoid race conditions and
 	// duplicate actions. Browser must not background-run due to resource cost.
 	switch tc.Name {
-	case "kb_ingest", "write_to_file", "replace_in_file", "execute_command", "memory_note", "browser_copy":
+	case "kb_ingest", "write", "edit", "run", "memory_note", "browser_copy":
 		return
 	}
 
@@ -1227,9 +1216,9 @@ func convertTools(toolsList []tools.Tool) []ToolDefinition {
 // filterPlanModeTools filters out act-only tools for plan mode
 func filterPlanModeTools(tools []prompts.ToolDescription) []prompts.ToolDescription {
 	actOnlyTools := map[string]bool{
-		"write_to_file":   true,
-		"replace_in_file": true,
-		"execute_command": true,
+		"write":   true,
+		"edit": true,
+		"run": true,
 	}
 
 	var filtered []prompts.ToolDescription

@@ -147,17 +147,17 @@ func buildToolSection(tools []ToolDescription) string {
 func GetToolDescriptions() []ToolDescription {
 	return []ToolDescription{
 		{
-			Name:        "read_file",
+			Name:        "read",
 			Description: "Read up to 50 lines of a file. Omit line_number to read lines 1-50; provide line_number to read 50 lines starting from that line.",
 			InputSchema: `{"type":"object","properties":{"path":{"type":"string"},"line_number":{"type":"integer"}},"required":["path"]}`,
 		},
 		{
-			Name:        "write_to_file",
+			Name:        "write",
 			Description: "Create or overwrite a file.",
 			InputSchema: `{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}`,
 		},
 		{
-			Name:        "replace_in_file",
+			Name:        "edit",
 			Description: "Replace specific content in a file using exact search/replace.",
 			InputSchema: `{"type":"object","properties":{"path":{"type":"string"},"search":{"type":"string"},"replace":{"type":"string"}},"required":["path","search","replace"]}`,
 		},
@@ -177,7 +177,7 @@ func GetToolDescriptions() []ToolDescription {
 			InputSchema: `{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}`,
 		},
 		{
-			Name:        "execute_command",
+			Name:        "run",
 			Description: "Execute a CLI command.",
 			InputSchema: `{"type":"object","properties":{"command":{"type":"string"}},"required":["command"]}`,
 		},
@@ -225,9 +225,9 @@ func GetPlanModeToolDescriptions() []ToolDescription {
 	var planTools []ToolDescription
 
 	actOnlyTools := map[string]bool{
-		"write_to_file":   true,
-		"replace_in_file": true,
-		"execute_command": true,
+		"write":   true,
+		"edit": true,
+		"run": true,
 	}
 
 	for _, tool := range allTools {

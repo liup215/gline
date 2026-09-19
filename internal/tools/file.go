@@ -22,7 +22,7 @@ type ReadFileInput struct {
 }
 
 // NewReadFileTool creates a new read_file tool
-const readFileChunkLines = 50
+const readFileChunkLines = 200
 
 func NewReadFileTool() *ReadFileTool {
 	schema := json.RawMessage(`{
@@ -42,7 +42,7 @@ func NewReadFileTool() *ReadFileTool {
 
 	return &ReadFileTool{
 		BaseTool: BaseTool{
-			name:        "read_file",
+			name:        "read",
 			description: fmt.Sprintf("Read up to %d lines of a file at the specified path. If line_number is omitted, reads lines 1-%d. If line_number is provided, reads %d lines starting from that line. For large files, use search_files first to find a relevant section, then use line_number to read that chunk.", readFileChunkLines, readFileChunkLines, readFileChunkLines),
 			inputSchema: schema,
 		},
@@ -127,7 +127,7 @@ type WriteFileInput struct {
 func NewWriteFileTool() *WriteFileTool {
 	return &WriteFileTool{
 		BaseTool: BaseTool{
-			name:        "write_to_file",
+			name:        "write",
 			description: "Write content to a file at the specified path. If the file exists, it will be overwritten. Use this when creating new files or completely rewriting existing files.",
 			inputSchema: PathAndContentSchema,
 		},
@@ -237,7 +237,7 @@ func NewReplaceInFileTool() *ReplaceInFileTool {
 
 	return &ReplaceInFileTool{
 		BaseTool: BaseTool{
-			name:        "replace_in_file",
+			name:        "edit",
 			description: "Replace specific content in a file using exact search/replace. Supports single blocks or an array of replacements for multiple edits. Use this for targeted modifications to existing files.",
 			inputSchema: schema,
 		},
@@ -301,11 +301,11 @@ func (t *ReplaceInFileTool) Execute(ctx context.Context, input json.RawMessage) 
 					"  • Indentation characters\n"+
 					"  • Trailing spaces\n\n"+
 					"TROUBLESHOOTING:\n"+
-					"1. Use read_file to get the CURRENT file content\n"+
+					"1. Use read to get the CURRENT file content\n"+
 					"2. Copy-paste the EXACT text you want to replace\n"+
 					"3. Check for tabs vs spaces - they are different!\n"+
 					"4. Try searching for a smaller unique substring\n"+
-					"5. For complex edits, consider using write_to_file instead",
+					"5. For complex edits, consider using write instead",
 				i+1,
 			)
 		}

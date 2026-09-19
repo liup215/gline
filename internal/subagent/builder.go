@@ -15,13 +15,13 @@ import (
 
 // AllowedTools defines the tools available inside a subagent run.
 var AllowedTools = []string{
-	"read_file",
+	"read",
 	"list_files",
 	"search_files",
 	"list_code_definition_names",
-	"execute_command",
+	"run",
 	"use_skill",
-	"write_to_file",
+	"write",
 	"attempt_completion",
 }
 

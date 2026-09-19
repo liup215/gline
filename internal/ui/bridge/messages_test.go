@@ -23,8 +23,8 @@ func TestContentEvent(t *testing.T) {
 }
 
 func TestToolStartEvent(t *testing.T) {
-	evt := ToolStartEvent{Name: "read_file", Input: `{"path":"."}`}
-	if evt.Name != "read_file" {
+	evt := ToolStartEvent{Name: "read", Input: `{"path":"."}`}
+	if evt.Name != "read" {
 		t.Fatalf("expected Name='read_file', got %q", evt.Name)
 	}
 	if evt.Input != `{"path":"."}` {
@@ -33,8 +33,8 @@ func TestToolStartEvent(t *testing.T) {
 }
 
 func TestToolCompleteEvent(t *testing.T) {
-	evt := ToolCompleteEvent{Name: "read_file", Result: "content"}
-	if evt.Name != "read_file" || evt.Result != "content" {
+	evt := ToolCompleteEvent{Name: "read", Result: "content"}
+	if evt.Name != "read" || evt.Result != "content" {
 		t.Fatalf("unexpected fields: %+v", evt)
 	}
 }

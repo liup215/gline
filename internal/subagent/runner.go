@@ -140,20 +140,7 @@ func (r *Runner) Run(ctx context.Context, prompt string, onProgress func(Progres
 			outputTokens += usage.OutputTokens
 		}
 
-		// Fallback: parse XML tool calls if native tool_calls were not received.
-		if len(assistantToolCalls) == 0 {
-			parsedXML := agent.ParseXMLToolCalls(content, convertedTools)
-			for _, tc := range parsedXML {
-				assistantToolCalls = append(assistantToolCalls, agent.ToolCall{
-					ID:    tc.ID,
-					Name:  tc.Name,
-					Input: tc.Input,
-				})
-			}
-			if len(assistantToolCalls) > 0 {
-				log.Infof("SubagentRunner: parsed %d XML tool calls", len(assistantToolCalls))
-			}
-		}
+		// XML tool call fallback removed; only native tool_calls are used.
 
 		var typesToolCalls []types.ToolCall
 		for _, tc := range assistantToolCalls {

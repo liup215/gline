@@ -117,7 +117,7 @@ func TestSQLiteStore_Messages(t *testing.T) {
 		msg := types.Message{
 			Role: types.RoleAssistant,
 			ToolCalls: []types.ToolCall{
-				{ID: "call_1", Name: "read_file", Input: []byte(`{"path": "/tmp/test"}`)},
+				{ID: "call_1", Name: "read", Input: []byte(`{"path": "/tmp/test"}`)},
 			},
 			Timestamp: time.Now(),
 		}
@@ -134,7 +134,7 @@ func TestSQLiteStore_Messages(t *testing.T) {
 				err := json.Unmarshal([]byte(r.ToolCalls), &tcs)
 				require.NoError(t, err)
 				assert.Len(t, tcs, 1)
-				assert.Equal(t, "read_file", tcs[0].Name)
+				assert.Equal(t, "read", tcs[0].Name)
 			}
 		}
 		assert.True(t, found, "should find message with tool calls")
@@ -148,7 +148,7 @@ func TestSQLiteStore_ToolCalls(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("start and complete tool call", func(t *testing.T) {
-		callID, err := s.StartToolCall(id, "read_file", []byte(`{"path": "/tmp/test"}`))
+		callID, err := s.StartToolCall(id, "read", []byte(`{"path": "/tmp/test"}`))
 		require.NoError(t, err)
 		assert.Greater(t, callID, int64(0))
 
@@ -157,7 +157,7 @@ func TestSQLiteStore_ToolCalls(t *testing.T) {
 	})
 
 	t.Run("start and fail tool call", func(t *testing.T) {
-		callID, err := s.StartToolCall(id, "write_to_file", []byte(`{"path": "/tmp/test"}`))
+		callID, err := s.StartToolCall(id, "write", []byte(`{"path": "/tmp/test"}`))
 		require.NoError(t, err)
 
 		err = s.FailToolCall(callID, assert.AnError)
@@ -269,7 +269,7 @@ func TestFormatTaskDetail(t *testing.T) {
 	}
 	msgs := []MessageRecord{
 		{Role: "user", Content: "hello"},
-		{Role: "assistant", Content: "", ToolCalls: `[{"id":"1","name":"read_file","input":"eyJwYXRoIjoiL3RtcC90ZXN0In0="}]`},
+		{Role: "assistant", Content: "", ToolCalls: `[{"id":"1","name":"read","input":"eyJwYXRoIjoiL3RtcC90ZXN0In0="}]`},
 	}
 	out := FormatTaskDetail(task, msgs)
 	assert.Contains(t, out, "Test task")
@@ -287,7 +287,7 @@ func TestToTypesMessage(t *testing.T) {
 		Content:          "test",
 		ReasoningContent: "thinking",
 		ToolCallID:       "call_1",
-		ToolCalls:        `[{"id":"call_1","name":"read_file","input":"eyJwYXRoIjoiL3RtcC90ZXN0In0="}]`,
+		ToolCalls:        `[{"id":"call_1","name":"read","input":"eyJwYXRoIjoiL3RtcC90ZXN0In0="}]`,
 		CreatedAt:        time.Now(),
 	}
 	msg, err := rec.ToTypesMessage()
@@ -297,5 +297,5 @@ func TestToTypesMessage(t *testing.T) {
 	assert.Equal(t, "thinking", msg.ReasoningContent)
 	assert.Equal(t, "call_1", msg.ToolCallID)
 	assert.Len(t, msg.ToolCalls, 1)
-	assert.Equal(t, "read_file", msg.ToolCalls[0].Name)
+	assert.Equal(t, "read", msg.ToolCalls[0].Name)
 }

@@ -48,7 +48,7 @@ func TestTUIBridge_OnToolCallStart(t *testing.T) {
 	ch := make(chan AgentEvent, 1)
 	b := NewTUIBridge(ch)
 
-	b.OnToolCallStart(agent.ToolCall{Name: "read_file", Input: `{"path":"."}`})
+	b.OnToolCallStart(agent.ToolCall{Name: "read", Input: `{"path":"."}`})
 
 	select {
 	case evt := <-ch:
@@ -56,7 +56,7 @@ func TestTUIBridge_OnToolCallStart(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected ToolStartEvent, got %T", evt)
 		}
-		if tse.Name != "read_file" {
+		if tse.Name != "read" {
 			t.Fatalf("expected Name='read_file', got %q", tse.Name)
 		}
 		if tse.Input != `{"path":"."}` {
@@ -71,7 +71,7 @@ func TestTUIBridge_OnToolCallComplete(t *testing.T) {
 	ch := make(chan AgentEvent, 1)
 	b := NewTUIBridge(ch)
 
-	b.OnToolCallComplete(agent.ToolCall{Name: "read_file"}, "file content")
+	b.OnToolCallComplete(agent.ToolCall{Name: "read"}, "file content")
 
 	select {
 	case evt := <-ch:
@@ -79,7 +79,7 @@ func TestTUIBridge_OnToolCallComplete(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected ToolCompleteEvent, got %T", evt)
 		}
-		if tce.Name != "read_file" {
+		if tce.Name != "read" {
 			t.Fatalf("expected Name='read_file', got %q", tce.Name)
 		}
 		if tce.Result != "file content" {

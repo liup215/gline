@@ -150,7 +150,7 @@ func TestReadFileTool_DefaultChunk(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.txt")
 	var lines []string
-	for i := 1; i <= 60; i++ {
+	for i := 1; i <= 250; i++ {
 		lines = append(lines, fmt.Sprintf("line%d", i))
 	}
 	content := strings.Join(lines, "\n")
@@ -163,16 +163,16 @@ func TestReadFileTool_DefaultChunk(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(result, "Lines 1-50") {
+	if !strings.Contains(result, "Lines 1-200") {
 		t.Errorf("expected default chunk header, got: %s", result)
 	}
-	if !strings.Contains(result, "line1") || !strings.Contains(result, "line50") {
+	if !strings.Contains(result, "line1") || !strings.Contains(result, "line200") {
 		t.Errorf("expected first and last line of chunk, got: %s", result)
 	}
-	if strings.Contains(result, "line51") {
-		t.Errorf("expected line 51 to be excluded, got: %s", result)
+	if strings.Contains(result, "line201") {
+		t.Errorf("expected line 201 to be excluded, got: %s", result)
 	}
-	if !strings.Contains(result, "line_number=51") {
+	if !strings.Contains(result, "line_number=201") {
 		t.Errorf("expected continuation hint, got: %s", result)
 	}
 }
@@ -181,7 +181,7 @@ func TestReadFileTool_LineNumberChunk(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.txt")
 	var lines []string
-	for i := 1; i <= 80; i++ {
+	for i := 1; i <= 300; i++ {
 		lines = append(lines, fmt.Sprintf("line%d", i))
 	}
 	content := strings.Join(lines, "\n")
@@ -190,21 +190,21 @@ func TestReadFileTool_LineNumberChunk(t *testing.T) {
 	tool := NewReadFileTool()
 	input, _ := json.Marshal(map[string]interface{}{
 		"path":        path,
-		"line_number": 21,
+		"line_number": 50,
 	})
 
 	result, err := tool.Execute(context.Background(), input)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(result, "Lines 21-70") {
+	if !strings.Contains(result, "Lines 50-249") {
 		t.Errorf("expected chunk header, got: %s", result)
 	}
-	if !strings.Contains(result, "line21") || !strings.Contains(result, "line70") {
-		t.Errorf("expected lines 21 and 70 in output, got: %s", result)
+	if !strings.Contains(result, "line50") || !strings.Contains(result, "line249") {
+		t.Errorf("expected lines 50 and 249 in output, got: %s", result)
 	}
-	if strings.Contains(result, "line20") || strings.Contains(result, "line71") {
-		t.Errorf("expected lines 20 and 71 to be excluded, got: %s", result)
+	if strings.Contains(result, "line49") || strings.Contains(result, "line250") {
+		t.Errorf("expected lines 49 and 250 to be excluded, got: %s", result)
 	}
 }
 

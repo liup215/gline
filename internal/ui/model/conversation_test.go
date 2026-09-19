@@ -119,11 +119,11 @@ func TestClear(t *testing.T) {
 
 func TestAddToolStart(t *testing.T) {
 	c := NewConversation()
-	c.AddToolStart("read_file")
+	c.AddToolStart("read")
 	if len(c.ToolHistory) != 1 {
 		t.Fatalf("expected 1 tool history entry, got %d", len(c.ToolHistory))
 	}
-	if c.ToolHistory[0].Name != "read_file" || c.ToolHistory[0].Status != "running" {
+	if c.ToolHistory[0].Name != "read" || c.ToolHistory[0].Status != "running" {
 		t.Fatalf("unexpected tool status: %+v", c.ToolHistory[0])
 	}
 	if c.ToolHistory[0].StartTime.IsZero() {
@@ -196,8 +196,8 @@ func TestConversationComplexScenario(t *testing.T) {
 	c.UpdateMessageContent(idx, " check")
 
 	// Tool is invoked
-	c.AddToolStart("read_file")
-	c.MarkToolComplete("read_file")
+	c.AddToolStart("read")
+	c.MarkToolComplete("read")
 
 	// More assistant content
 	c.UpdateMessageContent(idx, " the file.")

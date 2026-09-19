@@ -87,7 +87,7 @@ func TestHandleAgentToolStartReturnsNeedsRefresh(t *testing.T) {
 	m.height = 30
 
 	needsRefresh, cmds := handleAgentToolStart(m, bridge.ToolStartEvent{
-		Name:  "read_file",
+		Name:  "read",
 		Input: `{"path": "test.txt"}`,
 	})
 
@@ -97,13 +97,13 @@ func TestHandleAgentToolStartReturnsNeedsRefresh(t *testing.T) {
 	if len(cmds) != 0 {
 		t.Errorf("expected no cmds, got %d", len(cmds))
 	}
-	if m.currentTool != "read_file" {
+	if m.currentTool != "read" {
 		t.Errorf("expected currentTool='read_file', got %q", m.currentTool)
 	}
 	if len(m.conversation.ToolHistory) != 1 {
 		t.Errorf("expected 1 tool history entry, got %d", len(m.conversation.ToolHistory))
 	}
-	if m.conversation.ToolHistory[0].Name != "read_file" {
+	if m.conversation.ToolHistory[0].Name != "read" {
 		t.Errorf("expected tool name 'read_file', got %q", m.conversation.ToolHistory[0].Name)
 	}
 }
@@ -172,7 +172,7 @@ func TestHandleAgentToolStartSystemMessage(t *testing.T) {
 	m.height = 30
 
 	needsRefresh, _ := handleAgentToolStart(m, bridge.ToolStartEvent{
-		Name:  "write_to_file",
+		Name:  "write",
 		Input: `{"path": "test.txt"}`,
 	})
 
@@ -197,11 +197,11 @@ func TestHandleAgentToolCompleteReturnsNeedsRefresh(t *testing.T) {
 	m.height = 30
 
 	// Set up a running tool
-	m.conversation.AddToolStart("read_file")
-	m.currentTool = "read_file"
+	m.conversation.AddToolStart("read")
+	m.currentTool = "read"
 
 	needsRefresh, cmds := handleAgentToolComplete(m, bridge.ToolCompleteEvent{
-		Name:   "read_file",
+		Name:   "read",
 		Result: "file content",
 	})
 
@@ -295,7 +295,7 @@ func TestHandleAgentErrorReturnsNeedsRefresh(t *testing.T) {
 	m.height = 30
 
 	// Set up a running tool to be marked as failed
-	m.conversation.AddToolStart("read_file")
+	m.conversation.AddToolStart("read")
 	m.isProcessing = true
 	m.isStreaming = true
 
@@ -352,7 +352,7 @@ func TestHandleAgentCompleteReturnsNeedsRefresh(t *testing.T) {
 
 	m.isProcessing = true
 	m.isStreaming = true
-	m.currentTool = "read_file"
+	m.currentTool = "read"
 
 	needsRefresh, cmds := handleAgentComplete(m, bridge.CompleteEvent{})
 
@@ -496,8 +496,8 @@ func TestHandleAgentUpdateReturnsNeedsRefreshForAllEventTypes(t *testing.T) {
 		event bridge.AgentEvent
 	}{
 		{"ContentEvent", bridge.ContentEvent{Delta: "test"}},
-		{"ToolStartEvent", bridge.ToolStartEvent{Name: "read_file", Input: `{"path": "."}`}},
-		{"ToolCompleteEvent", bridge.ToolCompleteEvent{Name: "read_file", Result: "ok"}},
+		{"ToolStartEvent", bridge.ToolStartEvent{Name: "read", Input: `{"path": "."}`}},
+		{"ToolCompleteEvent", bridge.ToolCompleteEvent{Name: "read", Result: "ok"}},
 		{"ErrorEvent", bridge.ErrorEvent{Err: errors.New("test")}},
 		{"CompleteEvent", bridge.CompleteEvent{}},
 		{"StreamStartEvent", bridge.StreamStartEvent{}},

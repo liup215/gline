@@ -27,7 +27,7 @@ func TestContentUpdateSurvivesToolStatus(t *testing.T) {
 	m.isProcessing = true // Set processing so tool status appears
 
 	// Simulate tool start via bridge event - creates system message for tool
-	m.Update(bridge.ToolStartEvent{Name: "read_file", Input: "{}"})
+	m.Update(bridge.ToolStartEvent{Name: "read", Input: "{}"})
 
 	// Simulate content arriving from the LLM
 	updatedModel, _ := m.Update(bridge.ContentEvent{Delta: "text from model"})
@@ -69,8 +69,8 @@ func TestToolStatusArea(t *testing.T) {
 	}
 
 	// Simulate tool start - should set currentTool
-	m.Update(bridge.ToolStartEvent{Name: "read_file", Input: "{}"})
-	if m.currentTool != "read_file" {
+	m.Update(bridge.ToolStartEvent{Name: "read", Input: "{}"})
+	if m.currentTool != "read" {
 		t.Fatalf("expected currentTool='read_file', got: %q", m.currentTool)
 	}
 
@@ -81,7 +81,7 @@ func TestToolStatusArea(t *testing.T) {
 	}
 
 	// Mark tool as completed - should clear currentTool
-	m.Update(bridge.ToolCompleteEvent{Name: "read_file", Result: "done"})
+	m.Update(bridge.ToolCompleteEvent{Name: "read", Result: "done"})
 	if m.currentTool != "" {
 		t.Fatalf("expected currentTool cleared after complete, got: %q", m.currentTool)
 	}

@@ -114,10 +114,14 @@ var (
 
 // ToolDescriptions maps tool names to short human-friendly descriptions.
 var ToolDescriptions = map[string]string{
-	"read_file":             "read this file",
-	"write_to_file":         "created a new file",
-	"replace_in_file":       "edited this file",
-	"execute_command":       "executed this command",
+	"read":             "read this file",
+	"read_file":        "read this file",
+	"write":            "created a new file",
+	"write_to_file":    "created a new file",
+	"edit":             "edited this file",
+	"replace_in_file":  "edited this file",
+	"run":              "executed this command",
+	"execute_command":  "executed this command",
 	"search_files":          "searched files",
 	"attempt_completion":    "completed the task",
 	"ask_followup_question": "asked a question",
@@ -126,9 +130,22 @@ var ToolDescriptions = map[string]string{
 	"access_mcp_resource":   "accessed an MCP resource",
 }
 
-// NormalizeToolName converts camelCase to snake_case to make lookups predictable.
+// NormalizeToolName converts various tool name formats to a canonical form.
 func NormalizeToolName(name string) string {
-	return strings.ToLower(camelToSnakeRe.ReplaceAllString(name, "${1}_${2}"))
+	// First convert camelCase to snake_case.
+	normalized := strings.ToLower(camelToSnakeRe.ReplaceAllString(name, "${1}_${2}"))
+	// Then map legacy names to current short names.
+	switch normalized {
+	case "read_file":
+		return "read"
+	case "write_to_file":
+		return "write"
+	case "replace_in_file":
+		return "edit"
+	case "execute_command":
+		return "run"
+	}
+	return normalized
 }
 
 // GetToolDescription returns a short human-friendly description for a tool.

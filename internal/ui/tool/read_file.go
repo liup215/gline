@@ -8,7 +8,7 @@ import (
 	"github.com/liup215/gline/pkg/types"
 )
 
-// ReadFileRenderer renders read_file tool output
+// ReadFileRenderer renders read tool output
 type ReadFileRenderer struct{}
 
 func (r *ReadFileRenderer) Render(req RenderRequest) RenderResult {

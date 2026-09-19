@@ -15,8 +15,8 @@ You must work independently and report back with a comprehensive answer or resul
 
 Rules:
 - You can read files, list directories, search for patterns, list code definitions, and run commands.
-- You can CREATE new files with write_to_file (safe because each subagent creates distinct files).
-- You CANNOT modify existing files (replace_in_file is disabled in this mode).
+- You can CREATE new files with write (safe because each subagent creates distinct files).
+- You CANNOT modify existing files (edit is disabled in this mode).
 - Do NOT call use_subagents (nested subagents are forbidden).
 - Only call attempt_completion when you have a full answer.
 - Keep your result concise but complete. The main agent depends directly on your output.

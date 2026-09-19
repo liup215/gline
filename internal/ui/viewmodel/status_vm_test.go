@@ -168,7 +168,7 @@ func TestStatusViewModelRenderNotProcessing(t *testing.T) {
 
 func TestStatusViewModelRenderWithTool(t *testing.T) {
 	vm := NewStatusViewModel()
-	vm.Refresh(agent.ModeAct, "openai", "gpt-4", true, false, "read_file", 80)
+	vm.Refresh(agent.ModeAct, "openai", "gpt-4", true, false, "read", 80)
 
 	rendered := vm.Render()
 	if rendered == "" {

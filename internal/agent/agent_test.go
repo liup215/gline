@@ -27,7 +27,7 @@ func (p *toolOnlyProvider) CreateMessageStream(ctx context.Context, req *Message
 		chunkChan <- StreamChunk{
 			ToolCall: &ToolCall{
 				ID:    "call_1",
-				Name:  "read_file",
+				Name:  "read",
 				Input: `{"path":"README.md"}`,
 			},
 			IsPartial: false,
@@ -162,7 +162,7 @@ func TestRunWithCallbackToolCallsViaDedicatedCallbacks(t *testing.T) {
 	if len(assistantMsg.ToolCalls) != 1 {
 		t.Fatalf("expected assistant message to have 1 tool call, got %d", len(assistantMsg.ToolCalls))
 	}
-	if assistantMsg.ToolCalls[0].Name != "read_file" {
+	if assistantMsg.ToolCalls[0].Name != "read" {
 		t.Fatalf("expected tool call name 'read_file', got %q", assistantMsg.ToolCalls[0].Name)
 	}
 	// Content should only contain the LLM text, not tool call representations

@@ -4,10 +4,10 @@ package types
 type ToolName string
 
 const (
-	ToolReadFile             ToolName = "read_file"
-	ToolWriteToFile          ToolName = "write_to_file"
-	ToolReplaceInFile        ToolName = "replace_in_file"
-	ToolExecuteCommand       ToolName = "execute_command"
+	ToolReadFile             ToolName = "read"
+	ToolWriteToFile          ToolName = "write"
+	ToolReplaceInFile        ToolName = "edit"
+	ToolExecuteCommand       ToolName = "run"
 	ToolSearchFiles          ToolName = "search_files"
 	ToolSummarizeFile        ToolName = "summarize_file"
 	ToolAttemptCompletion    ToolName = "attempt_completion"

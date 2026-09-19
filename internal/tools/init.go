@@ -202,7 +202,7 @@ func GetToolsForMode(mode string) []Tool {
 		// Check if tool is allowed in this mode
 		// This is a simplified check - in production, use the registry
 		switch tool.Name() {
-		case "write_to_file", "replace_in_file", "execute_command":
+		case "write", "edit", "run":
 			if mode == "act" {
 				filtered = append(filtered, tool)
 			}
@@ -221,7 +221,7 @@ func GetToolsForMode(mode string) []Tool {
 // IsToolAllowed checks if a tool is allowed in a specific mode
 func IsToolAllowed(toolName string, mode string) bool {
 	switch toolName {
-	case "write_to_file", "replace_in_file", "execute_command":
+	case "write", "edit", "run":
 		return mode == "act"
 	case "plan_mode_respond":
 		return mode == "plan"

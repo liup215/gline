@@ -62,7 +62,7 @@ func TestHandleKeyMsgCtrlLClear(t *testing.T) {
 
 	// Add some messages
 	m.sendMessage("test message")
-	m.conversation.AddToolStart("read_file")
+	m.conversation.AddToolStart("read")
 
 	// Verify messages exist
 	if m.conversation.MessageCount() == 0 {

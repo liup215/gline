@@ -19,11 +19,11 @@ func TestNormalizeToolName(t *testing.T) {
 	tests := []struct {
 		input, want string
 	}{
-		{"readFile", "read_file"},
-		{"writeToFile", "write_to_file"},
-		{"replaceInFile", "replace_in_file"},
-		{"executeCommand", "execute_command"},
-		{"read_file", "read_file"}, // already snake_case
+		{"readFile", "read"},
+		{"writeToFile", "write"},
+		{"replaceInFile", "edit"},
+		{"executeCommand", "run"},
+		{"read", "read"}, // already snake_case
 		{"ABC", "abc"},             // all caps → just lowercased (no lowercase→uppercase boundary)
 	}
 	for _, tt := range tests {
@@ -35,7 +35,7 @@ func TestNormalizeToolName(t *testing.T) {
 }
 
 func TestGetToolDescription(t *testing.T) {
-	if d := GetToolDescription("read_file"); d != "read this file" {
+	if d := GetToolDescription("read"); d != "read this file" {
 		t.Errorf("expected 'read this file', got %q", d)
 	}
 	if d := GetToolDescription("unknown_tool"); d != "used a tool" {
@@ -49,22 +49,22 @@ func TestGetToolDescription(t *testing.T) {
 
 func TestGetToolMainArg(t *testing.T) {
 	// Path argument
-	if got := GetToolMainArg("read_file", `{"path":"/tmp/x"}`); got != "/tmp/x" {
+	if got := GetToolMainArg("read", `{"path":"/tmp/x"}`); got != "/tmp/x" {
 		t.Errorf("expected /tmp/x, got %q", got)
 	}
 	// Command argument (truncation)
 	longCmd := strings.Repeat("a", 150)
 	input := `{"command":"` + longCmd + `"}`
-	got := GetToolMainArg("execute_command", input)
+	got := GetToolMainArg("run", input)
 	if len(got) != 120 { // 117 + "..."
 		t.Errorf("expected truncated to 120 chars, got %d: %q", len(got), got)
 	}
 	// Empty input
-	if got := GetToolMainArg("read_file", ""); got != "" {
+	if got := GetToolMainArg("read", ""); got != "" {
 		t.Errorf("expected empty for empty input, got %q", got)
 	}
 	// Invalid JSON
-	if got := GetToolMainArg("read_file", "not json"); got != "" {
+	if got := GetToolMainArg("read", "not json"); got != "" {
 		t.Errorf("expected empty for invalid JSON, got %q", got)
 	}
 	// Regex + path
@@ -136,11 +136,11 @@ func TestRenderStatusBar(t *testing.T) {
 		Provider:     "openai",
 		ModelName:    "gpt-4",
 		IsProcessing: true,
-		CurrentTool:  "read_file",
+		CurrentTool:  "read",
 		SpinnerView:  "⠋",
 		Width:        80,
 	}))
-	if !strings.Contains(s, "Running: read_file") {
+	if !strings.Contains(s, "Running: read") {
 		t.Errorf("status bar missing running tool: %q", s)
 	}
 
@@ -230,13 +230,13 @@ func TestFormatToolStartDisplay(t *testing.T) {
 	}{
 		{
 			name:     "empty input",
-			toolName: "read_file",
+			toolName: "read",
 			input:    "",
 			wantSub:  "🔧 read this file",
 		},
 		{
 			name:     "with main arg",
-			toolName: "read_file",
+			toolName: "read",
 			input:    `{"path": "/tmp/x"}`,
 			wantSub:  "🔧 read this file: /tmp/x",
 		},
@@ -309,17 +309,17 @@ func TestFormatToolCompleteDisplay(t *testing.T) {
 	}{
 		{
 			name:     "completed with result",
-			toolName: "read_file",
+			toolName: "read",
 			result:   "file content",
 			status:   "completed",
-			wantSub:  "🔧 Completed: read_file",
+			wantSub:  "🔧 Completed: read",
 		},
 		{
 			name:     "failed status",
-			toolName: "execute_command",
+			toolName: "run",
 			result:   "error occurred",
 			status:   "failed",
-			wantSub:  "🔧 Failed: execute_command",
+			wantSub:  "🔧 Failed: run",
 		},
 		{
 			name:     "empty result",
@@ -330,7 +330,7 @@ func TestFormatToolCompleteDisplay(t *testing.T) {
 		},
 		{
 			name:     "result with truncated lines",
-			toolName: "read_file",
+			toolName: "read",
 			result:   "line1\nline2\nline3\nline4\nline5\nline6\nline7",
 			status:   "completed",
 			wantSub:  "...",

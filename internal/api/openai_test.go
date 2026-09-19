@@ -109,7 +109,7 @@ func TestOpenAIProvider_convertResponse(t *testing.T) {
 							ID:   "call_123",
 							Type: "function",
 							Function: OpenAIFunction{
-								Name:      "read_file",
+								Name:      "read",
 								Arguments: `{"path": "test.txt"}`,
 							},
 						},
@@ -136,7 +136,7 @@ func TestOpenAIProvider_convertResponse(t *testing.T) {
 		if tc.ID != "call_123" {
 			t.Errorf("Expected tool call ID 'call_123', got '%s'", tc.ID)
 		}
-		if tc.Name != "read_file" {
+		if tc.Name != "read" {
 			t.Errorf("Expected tool name 'read_file', got '%s'", tc.Name)
 		}
 		if tc.Input != `{"path": "test.txt"}` {

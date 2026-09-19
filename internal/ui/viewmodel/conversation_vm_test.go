@@ -175,11 +175,11 @@ func TestRefreshNoStreamingIndicatorWhenNotActive(t *testing.T) {
 func TestRefreshToolAreaWithHistory(t *testing.T) {
 	vm := NewConversationViewModel()
 	conv := model.NewConversation()
-	conv.AddToolStart("read_file")
+	conv.AddToolStart("read")
 	vm.Refresh(conv, 80, 3, false, -1)
 
 	toolArea := vm.ToolAreaContent()
-	if !strings.Contains(toolArea, "read_file") {
+	if !strings.Contains(toolArea, "read") {
 		t.Errorf("expected tool name in area, got: %q", toolArea)
 	}
 	if !strings.Contains(toolArea, "⏳") {
@@ -190,8 +190,8 @@ func TestRefreshToolAreaWithHistory(t *testing.T) {
 func TestRefreshToolAreaCompleted(t *testing.T) {
 	vm := NewConversationViewModel()
 	conv := model.NewConversation()
-	conv.AddToolStart("read_file")
-	conv.MarkToolComplete("read_file")
+	conv.AddToolStart("read")
+	conv.MarkToolComplete("read")
 	vm.Refresh(conv, 80, 3, false, -1)
 
 	toolArea := vm.ToolAreaContent()
@@ -203,8 +203,8 @@ func TestRefreshToolAreaCompleted(t *testing.T) {
 func TestRefreshToolAreaFailed(t *testing.T) {
 	vm := NewConversationViewModel()
 	conv := model.NewConversation()
-	conv.AddToolStart("read_file")
-	conv.MarkToolFailed("read_file")
+	conv.AddToolStart("read")
+	conv.MarkToolFailed("read")
 	vm.Refresh(conv, 80, 3, false, -1)
 
 	toolArea := vm.ToolAreaContent()

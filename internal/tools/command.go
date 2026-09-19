@@ -61,7 +61,7 @@ func NewExecuteCommandTool() *ExecuteCommandTool {
 
 	return &ExecuteCommandTool{
 		BaseTool: BaseTool{
-			name:        "execute_command",
+			name:        "run",
 			description: "Execute a CLI command on the system. Use this when you need to perform system operations or run specific commands. Commands that modify the system require approval by default.",
 			inputSchema: schema,
 		},

@@ -175,7 +175,7 @@ func (p *MockProvider) streamToolCall(ctx context.Context, chunkChan chan<- agen
 
 	// Simulate tool call building - OpenAI format sends tool calls incrementally
 	toolID := "call_abc123"
-	toolName := "read_file"
+	toolName := "read"
 
 	// Step 1: Send tool call start (name only)
 	chunkChan <- agent.StreamChunk{
@@ -259,7 +259,7 @@ func (p *MockProvider) streamToolThenText(ctx context.Context, chunkChan chan<- 
 	chunkChan <- agent.StreamChunk{
 		ToolCall: &agent.ToolCall{
 			ID:    toolID,
-			Name:  "read_file",
+			Name:  "read",
 			Input: `{"path": "/etc/config.json"}`,
 		},
 		IsPartial: false,
@@ -323,7 +323,7 @@ func (p *MockProvider) streamMultiTool(ctx context.Context, chunkChan chan<- age
 	chunkChan <- agent.StreamChunk{
 		ToolCall: &agent.ToolCall{
 			ID:    "call_222",
-			Name:  "read_file",
+			Name:  "read",
 			Input: `{"path": "/home/user/project/package.json"}`,
 		},
 		IsPartial: false,
