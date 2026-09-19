@@ -813,6 +813,10 @@ func (g *guiStreamCallback) OnStreamStart() {
 	g.app.Event.Emit("chat:streamStart", "")
 }
 
+func (g *guiStreamCallback) OnStreamEnd() {
+	g.app.Event.Emit("chat:streamEnd", "")
+}
+
 // OnToolCallStart is called when a tool call starts
 func (g *guiStreamCallback) OnToolCallStart(toolCall agent.ToolCall) {
 	g.app.Event.Emit("chat:toolStart", map[string]string{

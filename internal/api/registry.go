@@ -106,10 +106,38 @@ func CreateDefault(name string, config ProviderConfig) (agent.Provider, error) {
 
 // InitDefaultRegistry initializes the default registry with built-in providers
 func InitDefaultRegistry() {
-	// Register OpenAI-compatible provider
-	// Supports OpenAI, OpenRouter, and any OpenAI-compatible API
+	// Register OpenAI-compatible provider (legacy, uses custom implementation)
 	RegisterDefault("openai", func(config ProviderConfig) (agent.Provider, error) {
 		return NewOpenAIProvider(config.APIKey, config.Model, config.BaseURL), nil
+	})
+
+	// Register go-llm based providers (uses go-llm library)
+	// These support any OpenAI-compatible endpoint with full streaming and tool calling
+
+	// OpenCode Go - subscription service for open models
+	RegisterDefault("opencode-go", func(config ProviderConfig) (agent.Provider, error) {
+		baseURL := config.BaseURL
+		if baseURL == "" {
+			baseURL = OpenCodeGoBaseURL
+		}
+		return NewGoLLMProvider(config.APIKey, config.Model, baseURL, "opencode-go")
+	})
+
+	// OpenRouter - multi-provider routing
+	RegisterDefault("openrouter", func(config ProviderConfig) (agent.Provider, error) {
+		baseURL := config.BaseURL
+		if baseURL == "" {
+			baseURL = "https://openrouter.ai/api/v1"
+		}
+		return NewGoLLMProvider(config.APIKey, config.Model, baseURL, "openrouter")
+	})
+
+	// Generic OpenAI-compatible endpoint
+	RegisterDefault("openai-compatible", func(config ProviderConfig) (agent.Provider, error) {
+		if config.BaseURL == "" {
+			return nil, fmt.Errorf("base URL is required for openai-compatible provider")
+		}
+		return NewGoLLMProvider(config.APIKey, config.Model, config.BaseURL, "openai-compatible")
 	})
 }
 

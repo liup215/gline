@@ -140,6 +140,7 @@ type BaseAgent struct {
 	// so the main loop can avoid calling OnToolCallStart twice for the same call.
 	preDispatchedIDsMu sync.Mutex
 	preDispatchedIDs   map[string]bool
+
 }
 
 // preDispatchedResult holds the outcome of a tool call that was launched
@@ -366,137 +367,9 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 		if len(messages) > 0 {
 			lastMsg := messages[len(messages)-1]
 			if lastMsg.Role == types.RoleAssistant && len(lastMsg.ToolCalls) > 0 {
-				// Execute tools. Pre-dispatched results (computed while the stream
-				// was still active) are used when available; otherwise tools run
-				// synchronously here.
-				for _, tc := range lastMsg.ToolCalls {
-					if a.abort {
-						break
-					}
 
-					// Check if tool is allowed in current mode
-					if !a.toolRegistry.IsAllowed(string(a.mode), tc.Name) {
-						errorMsg := fmt.Sprintf("Error: Tool '%s' is not allowed in %s mode.", tc.Name, a.mode)
-						a.conversation.AddMessage(types.Message{
-							Role:       types.RoleTool,
-							ToolCallID: tc.ID,
-							Content:    errorMsg,
-						})
-						callback.OnToolCallComplete(ToolCall{
-							ID:    tc.ID,
-							Name:  tc.Name,
-							Input: string(tc.Input),
-						}, errorMsg)
-						continue
-					}
-
-					// Get the tool from registry
-					tool, err := a.toolRegistry.Get(tc.Name)
-					if err != nil {
-						errorMsg := fmt.Sprintf("Error: Tool '%s' not found: %v", tc.Name, err)
-						a.conversation.AddMessage(types.Message{
-							Role:       types.RoleTool,
-							ToolCallID: tc.ID,
-							Content:    errorMsg,
-						})
-						continue
-					}
-
-					// Only fire OnToolCallStart if this tool wasn't already
-					// pre-dispatched during the stream (where the callback was
-					// already triggered when the complete chunk arrived).
-					a.preDispatchedIDsMu.Lock()
-					wasPreDispatched := a.preDispatchedIDs[tc.ID]
-					delete(a.preDispatchedIDs, tc.ID)
-					a.preDispatchedIDsMu.Unlock()
-					if !wasPreDispatched {
-						callback.OnToolCallStart(ToolCall{
-							ID:    tc.ID,
-							Name:  tc.Name,
-							Input: string(tc.Input),
-						})
-					}
-
-					// Record tool call start in storage
-					var callID int64
-					if a.store != nil && a.taskID != "" {
-						cid, err := a.store.StartToolCall(a.taskID, tc.Name, tc.Input)
-						if err != nil {
-							log.Warnf("Failed to record tool call start: %v", err)
-						} else {
-							callID = cid
-						}
-					}
-
-					// If this is the ask_followup_question tool and the callback supports AskFollowupQuestion,
-					// inject the TUI/Callback handler so the tool doesn't read directly from stdin.
-					if askTool, ok := tool.(*tools.AskFollowupQuestionTool); ok {
-						askTool.SetHandler(func(question string, options []string) (string, error) {
-							return callback.AskFollowupQuestion(question, options)
-						})
-					}
-
-					var result string
-					var execErr error
-
-					// Use pre-dispatched result if available.
-					pre, ok := a.takePreDispatchResult(tc.ID)
-					if ok {
-						result = pre.result
-						execErr = pre.err
-					} else {
-						// Execute the tool synchronously as fallback.
-						result, execErr = tool.Execute(ctx, tc.Input)
-						if execErr != nil {
-							result = fmt.Sprintf("Error: %v", execErr)
-						}
-					}
-
-					// Add tool result to conversation
-					a.conversation.AddMessage(types.Message{
-						Role:       types.RoleTool,
-						ToolCallID: tc.ID,
-						Content:    result,
-					})
-
-					// Save tool result message and complete tool call record
-					if a.store != nil && a.taskID != "" {
-						if lastMsg := a.conversation.GetLastMessage(); lastMsg != nil {
-							if dbErr := a.store.SaveMessage(a.taskID, *lastMsg); dbErr != nil {
-								log.Warnf("Failed to save tool result message: %v", dbErr)
-							}
-						}
-						if callID > 0 {
-							if execErr != nil {
-								if dbErr := a.store.FailToolCall(callID, execErr); dbErr != nil {
-									log.Warnf("Failed to record tool call failure: %v", dbErr)
-								}
-							} else {
-								if dbErr := a.store.CompleteToolCall(callID, result); dbErr != nil {
-									log.Warnf("Failed to record tool call completion: %v", dbErr)
-								}
-							}
-						}
-					}
-
-					// Notify callback that tool is complete
-					callback.OnToolCallComplete(ToolCall{
-						ID:    tc.ID,
-						Name:  tc.Name,
-						Input: string(tc.Input),
-					}, result)
-
-					// Special tools that can terminate the conversation.
-					// Only attempt_completion (task done) or plan_mode_respond
-					// (plan mode turn finished) mark the conversation as complete.
-					// ask_followup_question must NOT mark it complete — the agent
-					// needs to continue the loop after receiving the user's answer.
-					switch tc.Name {
-					case types.ToolAttemptCompletion.String(),
-						types.ToolPlanModeRespond.String():
-						a.conversation.SetComplete()
-					}
-				}
+				// Execute tools in parallel for better performance.
+				a.executeToolCallsParallel(ctx, lastMsg.ToolCalls, callback)
 			}
 		}
 
@@ -509,6 +382,11 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 				lastMsg := messages[len(messages)-1]
 				if lastMsg.Role == types.RoleAssistant && len(lastMsg.ToolCalls) == 0 && needsTool {
 					a.consecutiveMistakes++
+					// Check for empty content - break if model keeps returning empty responses
+					if strings.TrimSpace(lastMsg.Content) == "" && a.consecutiveMistakes >= a.maxConsecutiveMistakes {
+						callback.OnError(fmt.Errorf("model returned empty response %d times", a.consecutiveMistakes))
+						return fmt.Errorf("model returned empty response %d times", a.consecutiveMistakes)
+					}
 					a.conversation.AddMessage(types.Message{
 						Role:    types.RoleUser,
 						Content: noToolsUsedMsg,
@@ -974,12 +852,22 @@ func (a *BaseAgent) processStream(ctx context.Context, streamChan <-chan StreamC
 	var toolCalls []ToolCall
 
 	for chunk := range streamChan {
+		// Respect cancellation and abort requests promptly.
+		if a.abort {
+			return context.Canceled
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		if chunk.Error != nil {
 			return chunk.Error
 		}
 
-		log.Debugf("processStream chunk: content=%d reasoning=%d toolCall=%v done=%v",
-			len(chunk.Content), len(chunk.ReasoningContent), chunk.ToolCall != nil, chunk.Done)
+		log.Infof("processStream chunk: content=%d reasoning=%d toolCall=%v isPartial=%v done=%v",
+			len(chunk.Content), len(chunk.ReasoningContent), chunk.ToolCall != nil, chunk.IsPartial, chunk.Done)
 
 		// Accumulate real token usage from the API whenever available
 		if chunk.Usage.TotalTokens > 0 {
@@ -1009,35 +897,36 @@ func (a *BaseAgent) processStream(ctx context.Context, streamChan <-chan StreamC
 		// Handle tool call
 		if chunk.ToolCall != nil {
 			if chunk.IsPartial {
-				// Partial tool calls from provider are already accumulated
-				// Provider sends copies, so we don't need to track state here
-				// Just ignore partials in processStream
-			} else {
-				// Complete tool call received
-				tc := *chunk.ToolCall
-				toolCalls = append(toolCalls, tc)
-
-				// Notify UI that a tool call has been detected in the stream.
-				callback.OnToolCallStart(tc)
-
-				// Track in pending list (used by tests / diagnostics).
-				a.pendingToolCallsMu.Lock()
-				a.pendingToolCalls = append(a.pendingToolCalls, tc)
-				a.pendingToolCallsMu.Unlock()
-
-				// Mark this call ID as pre-dispatched so the main loop skips
-				// calling OnToolCallStart a second time.
-				a.preDispatchedIDsMu.Lock()
-				if a.preDispatchedIDs == nil {
-					a.preDispatchedIDs = make(map[string]bool)
-				}
-				a.preDispatchedIDs[tc.ID] = true
-				a.preDispatchedIDsMu.Unlock()
-
-				// Pre-dispatch: launch tool execution in the background so it
-				// can overlap with the remaining SSE stream.
-				go a.preDispatchToolCall(ctx, tc)
+				// Partial tool-call fragments are accumulated by providers
+				// (e.g. go-llm) and emitted as complete calls below. Skip
+				// partial chunks here so we don't process incomplete args.
+				continue
 			}
+
+			// Complete tool call received
+			tc := *chunk.ToolCall
+			toolCalls = append(toolCalls, tc)
+
+			// Notify UI that a tool call has been detected in the stream.
+			callback.OnToolCallStart(tc)
+
+			// Track in pending list (used by tests / diagnostics).
+			a.pendingToolCallsMu.Lock()
+			a.pendingToolCalls = append(a.pendingToolCalls, tc)
+			a.pendingToolCallsMu.Unlock()
+
+			// Mark this call ID as pre-dispatched so the main loop skips
+			// calling OnToolCallStart a second time.
+			a.preDispatchedIDsMu.Lock()
+			if a.preDispatchedIDs == nil {
+				a.preDispatchedIDs = make(map[string]bool)
+			}
+			a.preDispatchedIDs[tc.ID] = true
+			a.preDispatchedIDsMu.Unlock()
+
+			// Pre-dispatch: launch tool execution in the background so it
+			// can overlap with the remaining SSE stream.
+			go a.preDispatchToolCall(ctx, tc)
 		}
 	}
 
@@ -1065,14 +954,19 @@ func (a *BaseAgent) processStream(ctx context.Context, streamChan <-chan StreamC
 		})
 	}
 
-	// Add assistant message to conversation, including any accumulated reasoning content.
-	// Tool calls are stored in the ToolCalls field; the TUI renders them via OnToolCallStart/Complete callbacks.
-	a.conversation.AddMessage(types.Message{
-		Role:             types.RoleAssistant,
-		Content:          fullContent,
-		ReasoningContent: reasoning.String(),
-		ToolCalls:        typesToolCalls,
-	})
+	// Add assistant message to conversation.
+	if fullContent != "" || len(typesToolCalls) > 0 || reasoning.String() != "" {
+		a.conversation.AddMessage(types.Message{
+			Role:             types.RoleAssistant,
+			Content:          fullContent,
+			ReasoningContent: reasoning.String(),
+			ToolCalls:        typesToolCalls,
+		})
+	} else {
+		log.Warnf("processStream: empty response (no content, no tool calls)")
+	}
+
+	callback.OnStreamEnd()
 
 	return nil
 }
@@ -1110,6 +1004,11 @@ func (a *BaseAgent) preDispatchToolCall(ctx context.Context, tc ToolCall) {
 		return
 	}
 
+	// Validate JSON before executing.
+	if !json.Valid([]byte(tc.Input)) {
+		a.recordPreDispatch(tc.ID, fmt.Sprintf("Error: tool '%s' received invalid JSON input", tc.Name), nil)
+		return
+	}
 	res, execErr := tool.Execute(ctx, []byte(tc.Input))
 	if execErr != nil {
 		res = fmt.Sprintf("Error: %v", execErr)
@@ -1141,6 +1040,130 @@ func (a *BaseAgent) takePreDispatchResult(callID string) (preDispatchedResult, b
 		delete(a.preDispatchedResults, callID)
 	}
 	return r, ok
+}
+
+
+// toolCallExecInfo holds the state for a single tool call during parallel execution.
+type toolCallExecInfo struct {
+	tc            types.ToolCall
+	tool          tools.Tool
+	result        string
+	execErr       error
+	callID        int64
+	allowed       bool
+	toolFound     bool
+}
+
+// executeToolCallsParallel executes multiple tool calls from an assistant message.
+// It uses a three-phase approach: Phase 1 (sequential) validates and prepares,
+// Phase 2 (parallel) executes all tools concurrently, Phase 3 (sequential) processes results.
+func (a *BaseAgent) executeToolCallsParallel(ctx context.Context, toolCalls []types.ToolCall, callback StreamCallback) {
+	infos := make([]toolCallExecInfo, len(toolCalls))
+
+	// Phase 1: Validate and prepare each tool call (sequential, fast).
+	for i, tc := range toolCalls {
+		if a.abort {
+			break
+		}
+		info := &infos[i]
+		info.tc = tc
+		if !a.toolRegistry.IsAllowed(string(a.mode), tc.Name) {
+			continue
+		}
+		info.allowed = true
+		tool, err := a.toolRegistry.Get(tc.Name)
+		if err != nil {
+			continue
+		}
+		info.toolFound = true
+		info.tool = tool
+		a.preDispatchedIDsMu.Lock()
+		wasPreDispatched := a.preDispatchedIDs[tc.ID]
+		delete(a.preDispatchedIDs, tc.ID)
+		a.preDispatchedIDsMu.Unlock()
+		if !wasPreDispatched {
+			callback.OnToolCallStart(ToolCall{ID: tc.ID, Name: tc.Name, Input: string(tc.Input)})
+		}
+		if a.store != nil && a.taskID != "" {
+			cid, err := a.store.StartToolCall(a.taskID, tc.Name, tc.Input)
+			if err != nil {
+				log.Warnf("Failed to record tool call start: %v", err)
+			} else {
+				info.callID = cid
+			}
+		}
+		if askTool, ok := tool.(*tools.AskFollowupQuestionTool); ok {
+			askTool.SetHandler(func(question string, options []string) (string, error) {
+				return callback.AskFollowupQuestion(question, options)
+			})
+		}
+	}
+
+	// Phase 2: Execute all tools concurrently.
+	var execWg sync.WaitGroup
+	for i := range infos {
+		info := &infos[i]
+		if !info.allowed || !info.toolFound {
+			continue
+		}
+		execWg.Add(1)
+		go func(info *toolCallExecInfo) {
+			defer execWg.Done()
+			if !json.Valid(info.tc.Input) {
+				info.result = fmt.Sprintf("Error: tool '%s' received invalid JSON input: %s", info.tc.Name, truncate(string(info.tc.Input), 200))
+				return
+			}
+			pre, ok := a.takePreDispatchResult(info.tc.ID)
+			if ok {
+				info.result = pre.result
+				info.execErr = pre.err
+			} else {
+				info.result, info.execErr = info.tool.Execute(ctx, info.tc.Input)
+				if info.execErr != nil {
+					info.result = fmt.Sprintf("Error: %v", info.execErr)
+				}
+			}
+		}(info)
+	}
+	execWg.Wait()
+
+	// Phase 3: Process results sequentially (conversation, storage, callbacks).
+	for i := range infos {
+		info := &infos[i]
+		tc := info.tc
+		if !info.allowed {
+			errorMsg := fmt.Sprintf("Error: Tool '%s' is not allowed in %s mode.", tc.Name, a.mode)
+			a.conversation.AddMessage(types.Message{Role: types.RoleTool, ToolCallID: tc.ID, Content: errorMsg})
+			callback.OnToolCallComplete(ToolCall{ID: tc.ID, Name: tc.Name, Input: string(tc.Input)}, errorMsg)
+			continue
+		}
+		if !info.toolFound {
+			errorMsg := fmt.Sprintf("Error: Tool '%s' not found", tc.Name)
+			a.conversation.AddMessage(types.Message{Role: types.RoleTool, ToolCallID: tc.ID, Content: errorMsg})
+			callback.OnToolCallComplete(ToolCall{ID: tc.ID, Name: tc.Name, Input: string(tc.Input)}, errorMsg)
+			continue
+		}
+		a.conversation.AddMessage(types.Message{Role: types.RoleTool, ToolCallID: tc.ID, Content: info.result})
+		if a.store != nil && a.taskID != "" {
+			if savedMsg := a.conversation.GetLastMessage(); savedMsg != nil {
+				if dbErr := a.store.SaveMessage(a.taskID, *savedMsg); dbErr != nil {
+					log.Warnf("Failed to save tool result message: %v", dbErr)
+				}
+			}
+			if info.callID > 0 {
+				if info.execErr != nil {
+					_ = a.store.FailToolCall(info.callID, info.execErr)
+				} else {
+					_ = a.store.CompleteToolCall(info.callID, info.result)
+				}
+			}
+		}
+		callback.OnToolCallComplete(ToolCall{ID: tc.ID, Name: tc.Name, Input: string(tc.Input)}, info.result)
+		switch tc.Name {
+		case types.ToolAttemptCompletion.String(), types.ToolPlanModeRespond.String():
+			a.conversation.SetComplete()
+		}
+	}
 }
 
 // convertTools converts internal tool definitions to provider format

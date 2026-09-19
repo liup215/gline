@@ -105,13 +105,47 @@ func (b *Backend) initAgent() error {
 
 	var provider agent.Provider
 	var maxTokens int
+	var err error
+
 	switch providerName {
 	case "openai":
 		s := cfg.Provider.OpenAI
 		provider = api.NewOpenAIProvider(s.APIKey, s.Model, s.BaseURL)
 		maxTokens = s.MaxContextTokens
+
+	case "opencode-go":
+		s := cfg.Provider.OpenCodeGo
+		apiKey := s.APIKey
+		if apiKey == "" {
+			apiKey = os.Getenv("OPENCODE_API_KEY")
+		}
+		model := s.Model
+		if model == "" {
+			model = "kimi-k2.7-code"
+		}
+		baseURL := s.BaseURL
+		if baseURL == "" {
+			baseURL = api.OpenCodeGoBaseURL
+		}
+		provider, err = api.NewGoLLMProvider(apiKey, model, baseURL, "opencode-go")
+		if err != nil {
+			return fmt.Errorf("failed to create OpenCode Go provider: %w", err)
+		}
+		maxTokens = s.MaxContextTokens
+
+	case "openrouter":
+		apiKey := os.Getenv("OPENROUTER_API_KEY")
+		if apiKey == "" {
+			return fmt.Errorf("OpenRouter API key not configured")
+		}
+		model := "anthropic/claude-sonnet-4"
+		provider, err = api.NewGoLLMProvider(apiKey, model, "https://openrouter.ai/api/v1", "openrouter")
+		if err != nil {
+			return fmt.Errorf("failed to create OpenRouter provider: %w", err)
+		}
+
 	default:
-		return fmt.Errorf("unknown provider: %s", providerName)
+		return fmt.Errorf("unknown provider: %s. Supported: openai, opencode-go, openrouter", providerName)
 	}
 
 	customRules := loadCustomRules()
@@ -163,12 +197,16 @@ func (b *Backend) initAgent() error {
 	b.skillRegistry = skills.NewRegistry()
 	b.skillRegistry.LoadFromDirs(skills.DefaultSkillDirs...)
 
-	// Subagent builder for large-file summarizer.
-	subBuilder := subagent.NewBuilder(provider, nil, "", customRules, b.skillRegistry.GetMeta())
+	// Initialize tool registry first (without summarizer) to break the
+	// circular dependency between registry, subagent builder and summarizer.
+	registry := tools.InitDefaultRegistry(memoryEngine, nil)
+
+	// Subagent builder for large-file summarizer, using the real registry.
+	subBuilder := subagent.NewBuilder(provider, registry, "", customRules, b.skillRegistry.GetMeta())
 	sum := summarizer.NewSummarizer(subagent.NewSummarizerCaller(subBuilder), summarizer.DefaultOptions())
 
-	// Initialize tool registry and register use_skill with the skill registry
-	registry := tools.InitDefaultRegistry(memoryEngine, sum)
+	// Register summarization tool and remaining tools.
+	_ = tools.RegisterSummarizeFileTool(registry, sum)
 	tools.RegisterSkillTool(registry, b.skillRegistry)
 
 	// Register use_subagents tool

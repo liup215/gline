@@ -4,6 +4,36 @@
 
 ---
 
+## 2026-09-18 ~ 2026-09-19 — TUI 优化与修复 ✅
+
+### 完成内容
+
+| 改动 | 文件 | 说明 |
+|------|------|------|
+| 恢复 legacy TUI | `internal/ui/*`, `cmd/gline/chat.go` | 从 git history 恢复 Bubbletea TUI，删除 internal/tui/ |
+| go-llm Provider | `internal/api/go_llm.go` | 新增 opencode-go/volcano/openrouter |
+| 默认 Provider | `~/.gline/config.yaml` | volcano → opencode-go/mimo-v2.5 |
+| 系统提示词 | `internal/prompts/system.go` | 从 ~200 行简化到 ~80 行 |
+| 流式修复 | `internal/ui/bridge/*`, `internal/ui/tui.go` | 事件通道 64→1024，reasoning 事件，OnStreamEnd |
+| Thinking 交错 | `internal/ui/tui_state.go` | handleAgentStreamStart 检查 ReasoningContent |
+| Markdown 换行 | `internal/ui/viewmodel/conversation_vm.go` | 预处理单换行→段落分隔 |
+| Working 指示器 | `internal/ui/view/status_bar.go`, `internal/ui/tui.go` | 动态 spinner |
+| JSON 验证 | `internal/agent/agent.go`, `internal/api/go_llm.go` | sanitizeToolCallArgs + agent 层验证 |
+| 注册表顺序 | `cmd/gline/chat.go`, `internal/gui/backend.go` | 打破循环依赖 |
+| read_file 简化 | `internal/tools/file.go` | 单个 line_number 参数，50 行/次 |
+| 迭代上限 | `internal/agent/agent.go` | 移除 50 次上限 |
+| 工具并行执行 | `internal/agent/agent.go` | executeToolCallsParallel |
+
+### 性能优化方案（待实施）
+
+| 优先级 | 方案 | 收益 | 说明 |
+|--------|------|------|------|
+| P0 | 缓存工具 token | 大 | enforceTokenBudget 每次序列化 50+ 工具 |
+| P0 | 日志降级 | 中 | processStream chunk 日志 Info→Debug |
+| P1 | 跳过低水位 compaction | 中 | Token < 40% 时跳过 |
+
+---
+
 ## 2026-07-12 / 2026-09-18 — TUI 迁移（Bubbletea）✅
 
 ### 实现内容

@@ -192,6 +192,9 @@ type StreamCallback interface {
 	// This allows the UI to prepare a new assistant message slot for streaming content.
 	OnStreamStart()
 
+	// OnStreamEnd is called when a streaming response ends (before tool execution).
+	OnStreamEnd()
+
 	// OnToolCallStart is called when a tool call starts
 	OnToolCallStart(toolCall ToolCall)
 
@@ -220,6 +223,7 @@ type StreamCallbackAdapter struct{}
 func (a *StreamCallbackAdapter) OnContent(delta string)                              {}
 func (a *StreamCallbackAdapter) OnReasoning(delta string)                           {}
 func (a *StreamCallbackAdapter) OnStreamStart()                                      {}
+func (a *StreamCallbackAdapter) OnStreamEnd()                                        {}
 func (a *StreamCallbackAdapter) OnToolCallStart(toolCall ToolCall)                   {}
 func (a *StreamCallbackAdapter) OnToolCallComplete(toolCall ToolCall, result string) {}
 func (a *StreamCallbackAdapter) OnError(err error)                                   {}

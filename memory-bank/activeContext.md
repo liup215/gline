@@ -2,6 +2,50 @@
 
 ## Current Focus
 
+### TUI 优化与修复（2026-09-18 ~ 2026-09-19）
+
+**状态**: 大部分完成，性能优化待实施
+
+**本次会话完成的修改**:
+
+1. **恢复 legacy TUI（internal/ui）**: 从 git history 恢复 Bubbletea TUI，删除 internal/tui/
+2. **go-llm 多 Provider 支持**: 新增 opencode-go/volcano/openrouter provider
+3. **默认 Provider 切换**: volcano → opencode-go/mimo-v2.5
+4. **系统提示词简化**: 从 ~200 行缩减到 ~80 行
+5. **流式响应修复**: 增大事件通道缓冲（64→1024），reasoning 事件发送，OnStreamEnd 回调
+6. **Thinking 交错显示**: 修复 handleAgentStreamStart 重用条件（检查 ReasoningContent），每个迭代创建独立 assistant 消息
+7. **Markdown 换行修复**: renderMarkdown 预处理单换行→段落分隔
+8. **Working 指示器**: InputStatusBar 新增动态 spinner（每 100ms tick + agent 事件 tick）
+9. **工具输入 JSON 验证**: sanitizeToolCallArgs + agent 层验证
+10. **Subagent 注册表初始化顺序修复**: 打破 registry→subagent→summarizer 循环依赖
+11. **read_file 工具简化**: 改为单个 line_number 参数，每次读 50 行
+12. **取消 50 次迭代上限**
+13. **工具并行执行**: executeToolCallsParallel（Phase 1 验证 → Phase 2 并发 → Phase 3 串行结果）
+
+**待实施的性能优化**:
+- P0: 缓存工具描述 token 数（enforceTokenBudget 每次序列化所有工具）
+- P0: processStream 日志从 Info 降为 Debug
+- P1: 低水位时跳过 TrimToMaxTokens/AutoCompact
+
+**已知问题**:
+- 工具调用偶尔报 "chatcompletions tool call args must be valid JSON"（已加 sanitizeToolCallArgs）
+
+---
+
+### TUI attempt_completion 结果展示修复 ✅（2026-09-18）
+
+**问题**: TUI 中 `attempt_completion` 工具结果未正常展示。链路：Agent `OnToolCallComplete` 传的是工具 `Execute()` **格式化后的输出**（`\n✅ Task Completed\n====\n\n<结果>\n\n====\n`），而非 JSON 输入；但 `AttemptCompletionRenderer.extractContent` 期望解析 JSON，失败后原样返回整个带横幅文本；ViewModel `TypeToolComplete` 分支又只用 `ToolCompletedStyle.Render()`（单行绿色文本），忽略 `StrategyMarkdown`，导致多行结果被压成一行、横幅残留、Markdown 不渲染。
+
+**修复**（2 个文件）:
+1. `internal/ui/tool/attempt_completion.go` — 新增 `stripCompletionBanner()` 剥离横幅/`====` 分隔行，只留结果文本；`Render()` 输出加 `✅ ` 图标前缀；保留 JSON 输入兼容分支。
+2. `internal/ui/viewmodel/conversation_vm.go` — `renderSystemMessage` 的 `TypeToolComplete` 分支：`Strategy == StrategyMarkdown` 时走 `renderMarkdown`（多行完整渲染），否则保持单行绿色状态行（普通工具不受影响）。
+
+**新增测试**:
+- `internal/ui/tool/attempt_completion_test.go` — 5 个用例（横幅剥离、图标前缀、JSON 兼容、空输入跳过、Start 跳过）
+- `internal/ui/viewmodel/conversation_vm_test.go` — `TestToolCompleteMarkdownStrategyRendersFullBlock` / `TestToolCompletePlainStrategyStaysSingleLine`
+
+**验证**: `go build ./...` ✅ | `go test ./... -count=1` 全部通过 ✅ | `go vet` ✅ | 已重装 `C:\Users\22569\bin\gline.exe`（纯 Go TUI 无需 frontend 产物）
+
 ### TUI 迁移开发 ✅
 
 **状态**: Phase 1-7 已完成 + 运行时 bug 修复

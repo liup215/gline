@@ -17,12 +17,13 @@ type ReadFileTool struct {
 
 // ReadFileInput represents the input for read_file tool
 type ReadFileInput struct {
-	Path      string `json:"path"`
-	StartLine int    `json:"start_line,omitempty"`
-	EndLine   int    `json:"end_line,omitempty"`
+	Path       string `json:"path"`
+	LineNumber int    `json:"line_number,omitempty"`
 }
 
 // NewReadFileTool creates a new read_file tool
+const readFileChunkLines = 50
+
 func NewReadFileTool() *ReadFileTool {
 	schema := json.RawMessage(`{
 		"type": "object",
@@ -31,13 +32,9 @@ func NewReadFileTool() *ReadFileTool {
 				"type": "string",
 				"description": "The path of the file to read"
 			},
-			"start_line": {
+			"line_number": {
 				"type": "integer",
-				"description": "Optional 1-based starting line number. Use this to read a specific range instead of the whole file."
-			},
-			"end_line": {
-				"type": "integer",
-				"description": "Optional 1-based ending line number (0 means read to end). Use together with start_line."
+				"description": "Optional 1-based starting line number. If omitted, reads the first 50 lines. If provided, reads 50 lines starting from this line number."
 			}
 		},
 		"required": ["path"]
@@ -46,7 +43,7 @@ func NewReadFileTool() *ReadFileTool {
 	return &ReadFileTool{
 		BaseTool: BaseTool{
 			name:        "read_file",
-			description: "Read the contents of a file at the specified path. For large files (over ~100KB or ~4000 tokens), only specific line ranges should be read. Prefer search_files first to find the relevant sections, then use start_line/end_line to read only that range.",
+			description: fmt.Sprintf("Read up to %d lines of a file at the specified path. If line_number is omitted, reads lines 1-%d. If line_number is provided, reads %d lines starting from that line. For large files, use search_files first to find a relevant section, then use line_number to read that chunk.", readFileChunkLines, readFileChunkLines, readFileChunkLines),
 			inputSchema: schema,
 		},
 	}
@@ -85,40 +82,34 @@ func (t *ReadFileTool) Execute(ctx context.Context, input json.RawMessage) (stri
 		return "", fmt.Errorf("failed to read file: %w", err)
 	}
 
-	// If a line range is requested, slice the content first.
-	if req.StartLine > 0 || req.EndLine > 0 {
-		sliced, start, end, err := sliceLines(content, req.StartLine, req.EndLine)
-		if err != nil {
-			return "", fmt.Errorf("invalid line range: %w", err)
-		}
-		// Even for ranges, enforce a soft token/byte cap so an enormous range
-		// cannot explode the context.
-		const maxRangeSize = 100 * 1024
-		if len(sliced) > maxRangeSize {
-			return fmt.Sprintf("%s...\n\n[Range truncated: requested lines %d-%d, %d bytes total, showing first %d bytes]",
-				string(sliced[:maxRangeSize]), start, end, len(sliced), maxRangeSize), nil
-			}
-		return fmt.Sprintf("[Lines %d-%d of %s]\n%s", start, end, path, string(sliced)), nil
+	// Always read a 50-line chunk. If line_number is omitted or <= 0, start at line 1.
+	startLine := req.LineNumber
+	if startLine <= 0 {
+		startLine = 1
+	}
+	endLine := startLine + readFileChunkLines - 1
+
+	sliced, start, end, err := sliceLines(content, startLine, endLine)
+	if err != nil {
+		return "", fmt.Errorf("invalid line number: %w", err)
 	}
 
-	// Large file guard: do not return the full content directly. Ask the
-	// caller to narrow down using search/range or request a summary.
-	const largeFileByteThreshold = 100 * 1024
-	const largeFileTokenEstimate = 4000
-	approxTokens := estimateTokensFromBytes(content)
-	if len(content) > largeFileByteThreshold || approxTokens > largeFileTokenEstimate {
-		lineCount := countLines(content)
-		return fmt.Sprintf(
-			"[File too large: %s (%d bytes, ~%d tokens, %d lines).]\n"+
-				"Please narrow down what you need by using one of the following approaches:\n"+
-				"1. Use search_files to find relevant sections.\n"+
-				"2. Use read_file with start_line and end_line to read a specific range.\n"+
-				"3. Ask for a high-level summary if you only need an overview.",
-			path, len(content), approxTokens, lineCount,
-		), nil
+	// Soft cap on chunk size to prevent enormous lines from exploding context.
+	const maxChunkSize = 100 * 1024
+	prefix := fmt.Sprintf("[Lines %d-%d of %s]\n", start, end, path)
+	if len(sliced) > maxChunkSize {
+		return fmt.Sprintf("%s%s...\n\n[Chunk truncated: %d bytes total, showing first %d bytes]",
+			prefix, string(sliced[:maxChunkSize]), len(sliced), maxChunkSize), nil
 	}
 
-	return string(content), nil
+	// Large file guard: if this is not the full file, tell the user how to move forward.
+	lineCount := countLines(content)
+	if end < lineCount {
+		return fmt.Sprintf("%s%s\n\n[File continues: %d total lines. Use line_number=%d to read the next chunk.]",
+			prefix, string(sliced), lineCount, end+1), nil
+	}
+
+	return prefix + string(sliced), nil
 }
 
 // WriteFileTool writes content to a file

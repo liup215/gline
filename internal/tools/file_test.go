@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -145,37 +146,72 @@ func TestComputeDiff(t *testing.T) {
 	}
 }
 
-func TestReadFileTool_LineRange(t *testing.T) {
+func TestReadFileTool_DefaultChunk(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.txt")
-	content := "line1\nline2\nline3\nline4\nline5\n"
+	var lines []string
+	for i := 1; i <= 60; i++ {
+		lines = append(lines, fmt.Sprintf("line%d", i))
+	}
+	content := strings.Join(lines, "\n")
+	_ = os.WriteFile(path, []byte(content), 0644)
+
+	tool := NewReadFileTool()
+	input, _ := json.Marshal(map[string]string{"path": path})
+
+	result, err := tool.Execute(context.Background(), input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(result, "Lines 1-50") {
+		t.Errorf("expected default chunk header, got: %s", result)
+	}
+	if !strings.Contains(result, "line1") || !strings.Contains(result, "line50") {
+		t.Errorf("expected first and last line of chunk, got: %s", result)
+	}
+	if strings.Contains(result, "line51") {
+		t.Errorf("expected line 51 to be excluded, got: %s", result)
+	}
+	if !strings.Contains(result, "line_number=51") {
+		t.Errorf("expected continuation hint, got: %s", result)
+	}
+}
+
+func TestReadFileTool_LineNumberChunk(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.txt")
+	var lines []string
+	for i := 1; i <= 80; i++ {
+		lines = append(lines, fmt.Sprintf("line%d", i))
+	}
+	content := strings.Join(lines, "\n")
 	_ = os.WriteFile(path, []byte(content), 0644)
 
 	tool := NewReadFileTool()
 	input, _ := json.Marshal(map[string]interface{}{
-		"path":       path,
-		"start_line": 2,
-		"end_line":   4,
+		"path":        path,
+		"line_number": 21,
 	})
 
 	result, err := tool.Execute(context.Background(), input)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(result, "Lines 2-4") {
-		t.Errorf("expected line range header, got: %s", result)
+	if !strings.Contains(result, "Lines 21-70") {
+		t.Errorf("expected chunk header, got: %s", result)
 	}
-	if !strings.Contains(result, "line2") || !strings.Contains(result, "line4") {
-		t.Errorf("expected lines 2 and 4 in output, got: %s", result)
+	if !strings.Contains(result, "line21") || !strings.Contains(result, "line70") {
+		t.Errorf("expected lines 21 and 70 in output, got: %s", result)
 	}
-	if strings.Contains(result, "line1") || strings.Contains(result, "line5") {
-		t.Errorf("expected lines 1 and 5 to be excluded, got: %s", result)
+	if strings.Contains(result, "line20") || strings.Contains(result, "line71") {
+		t.Errorf("expected lines 20 and 71 to be excluded, got: %s", result)
 	}
 }
 
-func TestReadFileTool_LargeFileRejected(t *testing.T) {
+func TestReadFileTool_LargeChunkTruncated(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "big.txt")
+	// One enormous line exceeding the 100KB chunk cap.
 	big := strings.Repeat("x", 110*1024)
 	_ = os.WriteFile(path, []byte(big), 0644)
 
@@ -186,10 +222,7 @@ func TestReadFileTool_LargeFileRejected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(result, "File too large") {
-		t.Errorf("expected 'File too large' guard, got: %s", result)
-	}
-	if !strings.Contains(result, "search_files") {
-		t.Errorf("expected guidance to use search_files, got: %s", result)
+	if !strings.Contains(result, "Chunk truncated") {
+		t.Errorf("expected chunk truncation message, got: %s", result)
 	}
 }

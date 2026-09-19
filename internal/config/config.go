@@ -37,7 +37,7 @@ type Config struct {
 
 // ProviderConfig holds LLM provider settings
 type ProviderConfig struct {
-	// Default provider to use (openai)
+	// Default provider to use (openai, opencode-go)
 	Default string `mapstructure:"default" json:"Default"`
 
 	// Anthropic provider settings
@@ -45,6 +45,12 @@ type ProviderConfig struct {
 
 	// OpenAI provider settings
 	OpenAI ProviderSettings `mapstructure:"openai" json:"OpenAI"`
+
+	// OpenCode Go provider settings
+	OpenCodeGo ProviderSettings `mapstructure:"opencode-go" json:"OpenCodeGo"`
+
+	// Volcano (ARK Agent Plan) provider settings
+	Volcano ProviderSettings `mapstructure:"volcano" json:"Volcano"`
 }
 
 // ProviderSettings holds settings for a specific LLM provider

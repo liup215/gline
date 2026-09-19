@@ -76,6 +76,8 @@ func (c *recordingCallback) OnStreamStart() {
 	c.streamStarts++
 }
 
+func (c *recordingCallback) OnStreamEnd() {}
+
 func (c *recordingCallback) OnToolCallStart(toolCall ToolCall) {
 	c.toolStartCount++
 }
