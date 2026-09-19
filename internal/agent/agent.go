@@ -331,6 +331,17 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 			if a.consecutiveMistakes >= a.maxConsecutiveMistakes {
 				return fmt.Errorf("max consecutive mistakes reached: %w", err)
 			}
+			// Exponential backoff: 1s, 2s, 4s, 8s (max)
+			backoff := time.Duration(1<<uint(a.consecutiveMistakes-1)) * time.Second
+			if backoff > 8*time.Second {
+				backoff = 8 * time.Second
+			}
+			log.Warnf("LLM error (attempt %d/%d), retrying in %v: %v", a.consecutiveMistakes, a.maxConsecutiveMistakes, backoff, err)
+			select {
+			case <-time.After(backoff):
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 			continue
 		}
 
