@@ -31,7 +31,15 @@ You have access to tools for file operations, code search, command execution, an
 You MUST use tools to act. Do not just describe what you would do.
 When you need to explore or modify the project, invoke the appropriate tool using the native tool_call format.
 After each tool use, wait for the result before proceeding.
-End your work with attempt_completion.
+
+# Tool Usage Rules
+- read: {"path": "...", "line_number": N} — read a file
+- write: {"path": "...", "content": "..."} — create/overwrite a file
+- edit: {"path": "...", "search": "...", "replace": "..."} — edit a file
+- run: {"command": "..."} — execute a command
+- attempt_completion: {"result": "..."} — ONLY has a 'result' field. Never add other fields like path or command.
+
+End your work with attempt_completion when the task is complete.
 
 `)
 
