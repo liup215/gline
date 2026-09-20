@@ -404,13 +404,14 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 			}
 		}
 
-		// Execute any tool calls from the last assistant message
+		// Execute any tool calls from the last assistant message.
+		// CRITICAL: Only execute tool calls that are explicitly listed in the
+		// assistant message's tool_calls field. Never create tool calls from
+		// other sources (content, pre-dispatch, etc.).
 		messages := a.conversation.GetMessages()
 		if len(messages) > 0 {
 			lastMsg := messages[len(messages)-1]
 			if lastMsg.Role == types.RoleAssistant && len(lastMsg.ToolCalls) > 0 {
-
-				// Execute tools in parallel for better performance.
 				a.executeToolCallsParallel(ctx, lastMsg.ToolCalls, callback)
 			}
 		}
