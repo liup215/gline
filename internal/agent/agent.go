@@ -141,6 +141,10 @@ type BaseAgent struct {
 	preDispatchedIDsMu sync.Mutex
 	preDispatchedIDs   map[string]bool
 
+	// consecutiveToolErrors counts consecutive tool execution errors.
+	// Reset on success. Stops the agent if it exceeds the limit.
+	consecutiveToolErrors int
+
 	// cachedToolTokens caches the estimated token count of all tool descriptions.
 	// Computed once on first use, invalidated when tools change.
 	cachedToolTokens     int
@@ -413,7 +417,27 @@ func (a *BaseAgent) RunWithCallback(ctx context.Context, prompt string, callback
 			lastMsg := messages[len(messages)-1]
 			if lastMsg.Role == types.RoleAssistant && len(lastMsg.ToolCalls) > 0 {
 				a.executeToolCallsParallel(ctx, lastMsg.ToolCalls, callback)
+
+				// Check if THIS iteration's tool calls had errors.
+				numToolCalls := len(lastMsg.ToolCalls)
+			numErrors := 0
+			msgs := a.conversation.GetMessages()
+			for i := len(msgs) - numToolCalls; i < len(msgs); i++ {
+				if i >= 0 && msgs[i].Role == types.RoleTool && strings.HasPrefix(msgs[i].Content, "Error:") {
+					numErrors++
+				}
 			}
+			hadToolError := numErrors > 0
+			if hadToolError {
+				a.consecutiveToolErrors++
+				if a.consecutiveToolErrors >= a.maxConsecutiveMistakes {
+					callback.OnError(fmt.Errorf("tool calls failed %d times consecutively", a.consecutiveToolErrors))
+					return fmt.Errorf("tool calls failed %d times consecutively", a.consecutiveToolErrors)
+				}
+			} else {
+				a.consecutiveToolErrors = 0
+			}
+		}
 		}
 
 		// If the conversation is not complete but the last assistant message has
