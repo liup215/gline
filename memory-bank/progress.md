@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-09-21 — 自定义规则从未注入的 bug 修复 ✅（已部署）
+
+用户问“gline 有没有加载 rule”。排查结论：**机制存在但主循环从不注入** —— `~/.gline/rules/memory_bank.md` 从未进入系统提示词。
+
+| 断点 | 详情 |
+|------|------|
+| 核心 | `adkagent.SystemInstruction()` 硬编码提示词，从不调用 LoadCustomRules |
+| 误导 | `chat.go` `_, _ = prompts.LoadCustomRules()` 加载后丢弃（喂 subagent builder 的历史残留）|
+| 死代码 | `gui/backend.go` 还有一份重复的 loadCustomRules/loadRulesFromDir 本地实现，裁剪后无人调用 |
+
+**修复（提交 7d16c2a）**：
+- `SystemInstruction()` 在 cwd 之后、Skills 之前追加 `prompts.LoadCustomRules()` 输出；**每次模型调用重读**（与 Plan/Act 动态渲染同哲学，规则热改立即生效，文件小成本可忽略）
+- 清理 chat.go 丢弃调用 + backend.go 重复实现
+- 新测试 `TestSystemInstructionIncludesCustomRules`（t.Chdir + workspace rules；负例只断言 Workspace Rules 缺席 —— 因为本机 HOME 真有全局规则）
+
+**规则机制备忘**：全局 `~/.gline/rules/*.md|txt` + 工作区 `./.gline/rules/*.md|txt`，分别加 `# Global Rules` / `# Workspace Rules` 标题后拼接。
+
 ## 2026-09-21 — 参数修复层 + pi 式行为化描述（D80）✅（已部署）
 
 背景：用户反馈 gline“用起来笨、总乱用工具”。对比 pi-go（`C:/Users/22569/Documents/20-Projects/pi-go/internal/tools/`）后定位根因：不是描述文字，而是**容错层缺失** —— 模型按 Claude Code/pi 约定发 `file_path`/`offset`/`"3"` 时，gline 严格 schema 直接报错，浪费一轮。
