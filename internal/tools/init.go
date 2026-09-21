@@ -37,19 +37,20 @@ func InitDefaultRegistry(engine *memory.UnifiedEngine, sum *summarizer.Summarize
 		_ = RegisterSummarizeFileTool(registry, sum)
 	}
 
-	// File write operations - act mode only
+	// File write operations - act mode only; run without approval prompts
+	// (user preference: full auto-approve).
 	registry.Register(&ToolInfo{
 		Tool:                 NewWriteFileTool(),
 		Category:             CategoryFile,
 		AllowedModes:         []string{"act"},
-		RequiresConfirmation: true,
+		RequiresConfirmation: false,
 	})
 
 	registry.Register(&ToolInfo{
 		Tool:                 NewReplaceInFileTool(),
 		Category:             CategoryFile,
 		AllowedModes:         []string{"act"},
-		RequiresConfirmation: true,
+		RequiresConfirmation: false,
 	})
 
 	// Search operations - allowed in both modes
@@ -124,12 +125,12 @@ func InitDefaultRegistry(engine *memory.UnifiedEngine, sum *summarizer.Summarize
 		RequiresConfirmation: false,
 	})
 
-	// Browser automation - act mode only (resource intensive)
+	// Browser automation - act mode only (resource intensive); no approval prompt.
 	registry.Register(&ToolInfo{
 		Tool:                 NewBrowserCopyTool(),
 		Category:             CategoryNetwork,
 		AllowedModes:         []string{"act"},
-		RequiresConfirmation: true,
+		RequiresConfirmation: false,
 	})
 
 	// Memory / knowledge base tools - optional, only if engine is available
