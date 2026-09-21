@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-09-21 — 参数修复层 + pi 式行为化描述（D80）✅（已部署）
+
+背景：用户反馈 gline“用起来笨、总乱用工具”。对比 pi-go（`C:/Users/22569/Documents/20-Projects/pi-go/internal/tools/`）后定位根因：不是描述文字，而是**容错层缺失** —— 模型按 Claude Code/pi 约定发 `file_path`/`offset`/`"3"` 时，gline 严格 schema 直接报错，浪费一轮。
+
+**D80 设计**：
+- `internal/tools/argrepair.go` 新增 `RepairToolArgs(toolName, schema, args)`：① 参数别名表（read 12 个别名；edit 接受 old_string/new_string；grep 接受 pattern/query/include；run 接受 cmd/workdir；等）② 类型强转（按工具 schema 声明的类型：字符串数字→int、`"true"`→bool、积分 float64→int、JSON 字符串→array/object）③ **不可解析的值原样保留** —— 让工具自己的错误到达模型，不做静默猜测
+- 别名只填充 canonical 名未设的字段；canonical 值优先（防覆盖）
+- 接入两条执行路径：`adkTool.Run`（ADK 主循环）+ `subagent/runner.go`（已确认 ADK `base_flow.go:1386` 在 Run 前无 schema 校验，修复一定生效）
+- **run 描述烤入启动时解析的 shell**（pi 规则：“只有描述告诉模型该写哪种语法”）—— bash 机器写 POSIX 指引，cmd 机器写 cmd 语法指引；并写明超时语义（SECONDS、到期被杀、长任务主动调大 timeout）+ 路由指引（读文件用 read、搜代码用 grep/glob，不要 cat/find）；删除死参数 `requires_approval`（schema+struct）
+- 描述增强：read（截断后从 next line_number 续读、禁止 cat/head）、edit（EXACT 匹配强调 + 新文件用 write）、write（小改动用 edit）、ls（glob/grep 路由）、grep（优先于整读）
+
+**验证**：build ✓ vet ✓ 全套测试 ✓ 受影响包 -race ✓ 已部署（提交 e2279cf）。新测试 `argrepair_test.go` 8 个用例（含自映射删除回归守卫）+ `command_test.go` 2 个（描述不许可 hedge、schema 无 requires_approval）。
+
+**可选后续**：pi 还有 read/write 账本互锁（write 拒绝覆盖未 read 过的文件）—— 未移植，属行为变更需用户确认。
+
 ## 2026-09-21 — 工具裁剪：6 个工具下架 ✅（已部署）
 
 用户决策“工具太多”，从 ADK 工具面下架：`list_code_definition_names`、`summarize_file`、`use_subagents`、`web_fetch`、`browser_copy`（`attempt_completion` 此前已被 legacyToolNames 隐藏；保留注册因 subagent 终止依赖它）。
