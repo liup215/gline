@@ -143,48 +143,82 @@ export function useChat(onLoadHistory: () => void, onLoadStatus: () => void, get
   }, []);
 
   const setupEventListeners = useCallback(() => {
-    Events.On('chat:streamStart', () => {
-      setIsLoading(true);
-      setMessages(prev => [...prev, { role: 'assistant', content: '', streaming: true }]);
-    });
-
-    Events.On('chat:content', (data: any) => {
-      const delta = data?.data ?? '';
-      setMessages(prev => {
-        const last = prev[prev.length - 1];
-        if (last && last.role === 'assistant' && last.streaming) {
-          return [...prev.slice(0, -1), { ...last, content: last.content + delta }];
+    // Wails v3 dispatches each Go Emit on its own goroutine, so stream
+    // events (content deltas especially) can arrive out of order — the
+    // symptom was scrambled message text ("语序错乱") while the persisted
+    // transcript stayed clean. Every stream event carries a monotonic seq
+    // (guiStreamCallback.emit); this dispatcher applies handlers strictly
+    // in seq order, stashing early arrivals until their predecessors land.
+    // It also swallows stale duplicates (double listener registration).
+    let expected = -1;
+    const stash = new Map<number, () => void>();
+    const ordered = (seq: number, fn: () => void) => {
+      if (expected === -1) expected = seq; // first event after (re)load anchors
+      if (seq === expected) {
+        fn();
+        expected++;
+        while (stash.has(expected)) {
+          const f = stash.get(expected)!;
+          stash.delete(expected);
+          f();
+          expected++;
         }
-        return prev;
-      });
-    });
-
-    Events.On('chat:toolStart', (data: any) => {
-      const { id, name, input: toolInput } = data?.data ?? {};
-      setMessages(prev => {
-        const last = prev[prev.length - 1];
-        if (last && last.role === 'assistant' && last.content.trim() === '' && last.streaming) {
-          return [...prev.slice(0, -1), { role: 'tool', id, toolName: name, toolInput, content: '' }];
-        }
-        return [...prev, { role: 'tool', id, toolName: name, toolInput, content: '' }];
-      });
-    });
-
-    Events.On('chat:toolComplete', (data: any) => {
-      const { id, name, result } = data?.data ?? {};
-      setMessages(prev => {
-        const updated = prev.map(m => (m.id === id ? { ...m, toolResult: result } : m));
-        // For attempt_completion, also insert the result as an assistant message
-        // so the user can see the final summary without expanding tool details.
-        if (name === 'attempt_completion' && result) {
-          return [...updated, { role: 'assistant', content: result }];
-        }
-        return updated;
-      });
-      if (name === 'attempt_completion') {
-        setIsLoading(false);
+      } else if (seq > expected) {
+        stash.set(seq, fn);
       }
-      onLoadStatus();
+    };
+
+    Events.On('chat:streamStart', (ev: any) => {
+      ordered(ev?.data?.seq ?? 0, () => {
+        setIsLoading(true);
+        setMessages(prev => [...prev, { role: 'assistant', content: '', streaming: true }]);
+      });
+    });
+
+    Events.On('chat:content', (ev: any) => {
+      const seq = ev?.data?.seq ?? 0;
+      const delta = ev?.data?.delta ?? '';
+      ordered(seq, () => {
+        setMessages(prev => {
+          const last = prev[prev.length - 1];
+          if (last && last.role === 'assistant' && last.streaming) {
+            return [...prev.slice(0, -1), { ...last, content: last.content + delta }];
+          }
+          return prev;
+        });
+      });
+    });
+
+    Events.On('chat:toolStart', (ev: any) => {
+      const { seq, id, name, input: toolInput } = ev?.data ?? {};
+      ordered(seq ?? 0, () => {
+        setMessages(prev => {
+          const last = prev[prev.length - 1];
+          if (last && last.role === 'assistant' && last.content.trim() === '' && last.streaming) {
+            return [...prev.slice(0, -1), { role: 'tool', id, toolName: name, toolInput, content: '' }];
+          }
+          return [...prev, { role: 'tool', id, toolName: name, toolInput, content: '' }];
+        });
+      });
+    });
+
+    Events.On('chat:toolComplete', (ev: any) => {
+      const { seq, id, name, result } = ev?.data ?? {};
+      ordered(seq ?? 0, () => {
+        setMessages(prev => {
+          const updated = prev.map(m => (m.id === id ? { ...m, toolResult: result } : m));
+          // For attempt_completion, also insert the result as an assistant message
+          // so the user can see the final summary without expanding tool details.
+          if (name === 'attempt_completion' && result) {
+            return [...updated, { role: 'assistant', content: result }];
+          }
+          return updated;
+        });
+        if (name === 'attempt_completion') {
+          setIsLoading(false);
+        }
+        onLoadStatus();
+      });
     });
 
     Events.On('chat:error', (data: any) => {
@@ -193,37 +227,45 @@ export function useChat(onLoadHistory: () => void, onLoadStatus: () => void, get
       setMessages(prev => [...prev, { role: 'system', content: `Error: ${err}` }]);
     });
 
-    Events.On('chat:complete', () => {
-      setIsLoading(false);
-      setMessages(prev => {
-        const last = prev[prev.length - 1];
-        if (last && last.role === 'assistant' && last.streaming) {
-          if (!last.content.trim()) {
-            return prev.slice(0, -1);
+    Events.On('chat:complete', (ev: any) => {
+      ordered(ev?.data?.seq ?? 0, () => {
+        setIsLoading(false);
+        setMessages(prev => {
+          const last = prev[prev.length - 1];
+          if (last && last.role === 'assistant' && last.streaming) {
+            if (!last.content.trim()) {
+              return prev.slice(0, -1);
+            }
+            return [...prev.slice(0, -1), { ...last, streaming: false }];
           }
-          return [...prev.slice(0, -1), { ...last, streaming: false }];
-        }
-        return prev;
+          return prev;
+        });
+        onLoadHistory();
+        onLoadStatus();
       });
-      onLoadHistory();
-      onLoadStatus();
     });
 
     Events.On('chat:taskCreated', () => {
       onLoadHistory();
     });
 
-    Events.On('chat:systemMessage', (data: any) => {
-      const content = data?.data?.content ?? data?.data ?? '';
-      if (content) {
-        setMessages(prev => [...prev, { role: 'system', content } as Message]);
-      }
+    Events.On('chat:systemMessage', (ev: any) => {
+      const seq = ev?.data?.seq ?? 0;
+      const content = ev?.data?.content ?? ev?.data ?? '';
+      ordered(seq, () => {
+        if (content) {
+          setMessages(prev => [...prev, { role: 'system', content } as Message]);
+        }
+      });
     });
 
-    Events.On('chat:followupQuestion', (data: any) => {
-      const q = data?.data?.question ?? '';
-      const opts = (data?.data?.options as string[]) || [];
-      setFollowup({ question: q, options: opts });
+    Events.On('chat:followupQuestion', (ev: any) => {
+      const seq = ev?.data?.seq ?? 0;
+      const q = ev?.data?.question ?? '';
+      const opts = (ev?.data?.options as string[]) || [];
+      ordered(seq, () => {
+        setFollowup({ question: q, options: opts });
+      });
     });
 
     WML.Reload();

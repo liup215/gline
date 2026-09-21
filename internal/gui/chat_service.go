@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/liup215/gline/internal/agent"
@@ -796,27 +797,45 @@ func (c *ChatService) GetConversationState() string {
 type guiStreamCallback struct {
 	app *application.App
 	svc *ChatService
+	// seq numbers every stream event. Wails v3 dispatches each Emit on its
+	// own goroutine, so high-frequency stream events (content deltas) can
+	// reach the JS listeners out of order — the GUI rendered scrambled text
+	// while the persisted transcript stayed clean. The frontend reorders by
+	// seq before applying (useChat.ts ordered dispatcher).
+	seq atomic.Uint64
+}
+
+// emit sends one stream event with the next sequence number attached.
+// All events that participate in the stream's visual order (content,
+// reasoning, stream start/end, tool activity, system messages, followup,
+// completion) must go through here.
+func (g *guiStreamCallback) emit(name string, payload map[string]any) {
+	if payload == nil {
+		payload = map[string]any{}
+	}
+	payload["seq"] = g.seq.Add(1)
+	g.app.Event.Emit(name, payload)
 }
 
 func (g *guiStreamCallback) OnContent(delta string) {
-	g.app.Event.Emit("chat:content", delta)
+	g.emit("chat:content", map[string]any{"delta": delta})
 }
 
 func (g *guiStreamCallback) OnReasoning(delta string) {
-	g.app.Event.Emit("chat:reasoning", delta)
+	g.emit("chat:reasoning", map[string]any{"delta": delta})
 }
 
 func (g *guiStreamCallback) OnStreamStart() {
-	g.app.Event.Emit("chat:streamStart", "")
+	g.emit("chat:streamStart", nil)
 }
 
 func (g *guiStreamCallback) OnStreamEnd() {
-	g.app.Event.Emit("chat:streamEnd", "")
+	g.emit("chat:streamEnd", nil)
 }
 
 // OnToolCallStart is called when a tool call starts
 func (g *guiStreamCallback) OnToolCallStart(toolCall agent.ToolCall) {
-	g.app.Event.Emit("chat:toolStart", map[string]string{
+	g.emit("chat:toolStart", map[string]any{
 		"id":    toolCall.ID,
 		"name":  toolCall.Name,
 		"input": toolCall.Input,
@@ -836,7 +855,7 @@ func truncateEventPayload(s string) string {
 }
 
 func (g *guiStreamCallback) OnToolCallComplete(toolCall agent.ToolCall, result string) {
-	g.app.Event.Emit("chat:toolComplete", map[string]interface{}{
+	g.emit("chat:toolComplete", map[string]any{
 		"id":     toolCall.ID,
 		"name":   toolCall.Name,
 		"result": truncateEventPayload(result),
@@ -847,14 +866,14 @@ func (g *guiStreamCallback) OnToolCallComplete(toolCall agent.ToolCall, result s
 	switch toolCall.Name {
 	case "plan_mode_respond":
 		if safeResult != "" {
-			g.app.Event.Emit("chat:systemMessage", map[string]interface{}{
+			g.emit("chat:systemMessage", map[string]any{
 				"role":    "system",
 				"content": safeResult,
 			})
 		}
 	case "attempt_completion":
 		if safeResult != "" {
-			g.app.Event.Emit("chat:systemMessage", map[string]interface{}{
+			g.emit("chat:systemMessage", map[string]any{
 				"role":    "system",
 				"content": "📋 " + safeResult,
 			})
@@ -887,7 +906,7 @@ func (g *guiStreamCallback) AskFollowupQuestion(question string, options []strin
 		}
 		g.svc.mu.Unlock()
 	}()
-	g.app.Event.Emit("chat:followupQuestion", map[string]interface{}{
+	g.emit("chat:followupQuestion", map[string]any{
 		"question": question,
 		"options":  options,
 	})
@@ -900,11 +919,13 @@ func (g *guiStreamCallback) AskFollowupQuestion(question string, options []strin
 }
 
 func (g *guiStreamCallback) OnError(err error) {
+	// Deliberately NOT sequenced: the run is dead at this point and the
+	// payload stays a plain string (matching ChatService-level error emits).
 	g.app.Event.Emit("chat:error", err.Error())
 }
 
 func (g *guiStreamCallback) OnComplete() {
-	g.app.Event.Emit("chat:complete", "")
+	g.emit("chat:complete", nil)
 }
 
 func (g *guiStreamCallback) OnTaskCreated(taskID string) {
