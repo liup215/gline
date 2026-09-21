@@ -1,5 +1,17 @@
 # Progress
 
+## 2026-09-21 — TUI ask_followup_question 交互链路修复 ✅（提交 db9dc9f，已部署）
+
+**症状**：TUI 里 ask_followup_question 交互不完成，且打破底部 input area。
+
+**根因**：ADK 适配层直接执行工具，而 `AskFollowupQuestionTool.SetHandler` **全仓零调用** —— handler 为 nil，工具落入 CLI stdin 回退（`fmt.Println` + `bufio.NewReader(os.Stdin)`），在 agent goroutine 里与 Bubbletea 抢 stdin：按键被偷走/原始文本破坏 alt-screen 渲染，交互永远无法完成。之前为 legacy loop 建的整套 TUI picker 机制（AskQuestionEvent → pendingQuestions → 选项选择器，commit a3e7d88）在 ADK 路径上够不着。
+
+**修复**：`adkagent/tool.go` adkTool.Run 在执行前把共享工具实例的 handler 重接到**当前 run 的 callback**（与审批同路径；每次 run 独建 bridge、串行 run，覆写幂等）。三端自动全通：TUI 选项 picker / GUI 对话框（guiStreamCallback 已实现）/ CLI prompt（printCallback 已实现）。工具 Execute 加 nil-ctx 防御（headless 调用不 panic）。
+
+**测试**：`tool_askfollowup_test.go` TestAskFollowupRoutesThroughStreamCallback（callback 收到问题+选项、答案映射进结果）。
+
+**遗留**：GUI 侧 backend.go 从未把 guiStreamCallback 接给工具（同样靠本次修复惠及）；若 GUI 未来有自己的交互控件，验证其 AskFollowupQuestion 实现路径。
+
 ## 2026-09-21 — TUI 侧 skill 链路断裂修复 ✅（已部署）
 
 用户问“skill 加载了吗”。审计：**GUI 侧链路完整，TUI 侧两头全断**（提交 2193347）：
