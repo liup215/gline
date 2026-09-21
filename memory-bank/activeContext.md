@@ -2,6 +2,28 @@
 
 ## Current Focus
 
+### rg/fd 外部搜索工具集成 ✅（2026-09-21, commit 70fee1b, 已部署）
+
+**需求**: 像 pi agent 一样用 rg/fd 等外部工具搜索文件/内容，提升大仓库性能。
+
+**实现**（internal/tools/）:
+1. **search_files → rg 后端优先**（search_rg.go 新建 + search.go 重构）:
+   - `rgBinary()` sync.Once 检测 PATH（external.go）；rg 缺失/失败时透明回退到纯 Go 实现（searchFilesGo，从原 Execute 抽取）
+   - `rg --json --no-messages --max-filesize 8M --max-columns 500 --max-columns-preview -C 2 --glob <skip> [--glob file_pattern] -- <pattern> <path>`
+   - JSON 流解析: begin→(context|match)*→end 按文件分组；submatch 展开为独立 SearchResult（与 Go 实现一致）；rune 列 = `utf8.RuneCountInString(text[:sm.Start])+1`；Context 块格式与 Go 版完全相同（"> N: line"）
+   - rg 退出码 1（无匹配）= 有效空结果；退出码 2/启动失败 = 回退；**ctx 取消/超时直接传播，不回退重搜**
+   - 30s TTL 缓存两后端共享（storeSearchCache）
+2. **新增 find_files 工具**（find_files.go）: fd 递归文件名搜索
+   - `fd --type f --max-results 500 --no-messages --exclude <dir>... --glob <pattern|*> --search-path <path>`
+   - fdSkipDirs 显式排除（fd 只跳 hidden/gitignore，无 gitignore 的仓库需显式排除 node_modules 等）
+   - 空 pattern = `--glob '*'` 列全部文件；输出排序 + 500 上限
+   - 回退: 复用 search.go 的 findFiles walk
+3. **关键 gotcha — rg glob 绝对路径**: 含 `/` 的 glob（如 `!node_modules/**`）锚定完整路径，搜索根为绝对路径时永不匹配 → **必须用无斜杠目录名 `!{__pycache__,build,dist,node_modules,out,target,vendor}`**（rgSkipGlob）
+4. **hideConsole**（exec_windows.go/exec_other.go）: Windows 子进程 CREATE_NO_WINDOW + HideWindow，防 GUI 模式控制台闪烁
+5. 注册: init.go（CategorySearch/双模式/免确认）+ GetDefaultTools + pkg/types ToolFindFiles + prompts GetToolDescriptions + ui/view styles 显示别名 "found files"
+
+**测试**（search_rg_test.go / find_files_test.go，9 个新用例）: rg JSON 解析（多字节列、CRLF、流截断 flush）、rg 集成、坏二进制回退（override var）、fd 集成、无匹配、路径校验。全套 `go test ./... -race` 17 包绿。
+
 ### TUI 交互式问题选项选择器 OK（2026-09-19, commit a3e7d88）
 
 `ask_followup_question` 的问题现在带键盘驱动的选项选择器，不再必须手动打字：
