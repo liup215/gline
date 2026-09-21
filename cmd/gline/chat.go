@@ -167,9 +167,9 @@ func initializeAgent() (ui.AgentRunner, storage.Store, error) {
 		return nil, nil, fmt.Errorf("mock provider is no longer supported (legacy agent loop removed); configure a real provider")
 	}
 
-	// Shared tool-assembly. (skillReg is consumed inside; the agent only
-	// needs registry + store now that use_subagents is disabled.)
-	registry, store, _, err := assembleSharedComponents()
+	// Shared tool-assembly. (skillReg feeds both the use_skill tool and the
+	// agent's Skills metadata; the agent needs registry + store + skills.)
+	registry, store, skillReg, err := assembleSharedComponents()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -195,6 +195,7 @@ func initializeAgent() (ui.AgentRunner, storage.Store, error) {
 		BaseURL:        settings.baseURL,
 		Tools:          registry,
 		Mode:           string(glineagent.ModeAct),
+		Skills:         skillReg.GetMeta(),
 		SessionService: sessionService,
 		Store:          store,
 		Compaction:     defaultCompactionConfig(),
@@ -223,8 +224,13 @@ func assembleSharedComponents() (*tools.Registry, storage.Store, *skills.Registr
 	// (Custom rules are loaded per model call by adkagent.SystemInstruction;
 	// they used to be loaded-and-discarded here for the subagent builder.)
 
-	// Initialize skills registry
+	// Initialize skills registry and load from the well-known directories
+	// (~/.gline/skills, ~/.agents/skills, ~/.cline/skills, ~/.claude/skills).
+	// Missing directories are non-fatal.
 	skillReg := skills.NewRegistry()
+	if err := skillReg.LoadFromDirs(skills.DefaultSkillDirs...); err != nil {
+		log.Warnf("skill load: %v", err)
+	}
 
 	// Create tool registry first (without summarizer, to break the circular
 	// dependency between registry -> subagent builder -> summarizer -> registry).
