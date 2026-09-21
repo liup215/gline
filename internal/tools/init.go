@@ -165,58 +165,6 @@ func RegisterSkillTool(registry *Registry, skillRegistry SkillRegistry) {
 	})
 }
 
-// GetDefaultTools returns a list of all default tools
-func GetDefaultTools() []Tool {
-	return []Tool{
-		NewReadFileTool(),
-		NewWriteFileTool(),
-		NewReplaceInFileTool(),
-		NewLsTool(),
-		NewGlobTool(),
-		NewGrepTool(),
-		NewListCodeDefinitionNamesTool(),
-		NewExecuteCommandTool(),
-		NewAskFollowupQuestionTool(),
-		NewPlanModeRespondTool(),
-		NewAttemptCompletionTool(),
-		NewWebFetchTool(),
-		NewBrowserCopyTool(),
-	}
-}
-
-// GetToolsForMode returns tools available for a specific mode
-func GetToolsForMode(mode string) []Tool {
-	allTools := GetDefaultTools()
-	var filtered []Tool
-
-	for _, tool := range allTools {
-		// Check if tool is allowed in this mode
-		// This is a simplified check - in production, use the registry
-		switch tool.Name() {
-		case "write", "edit", "run":
-			if mode == "act" {
-				filtered = append(filtered, tool)
-			}
-		case "plan_mode_respond":
-			if mode == "plan" {
-				filtered = append(filtered, tool)
-			}
-		default:
-			filtered = append(filtered, tool)
-		}
-	}
-
-	return filtered
-}
-
-// IsToolAllowed checks if a tool is allowed in a specific mode
-func IsToolAllowed(toolName string, mode string) bool {
-	switch toolName {
-	case "write", "edit", "run":
-		return mode == "act"
-	case "plan_mode_respond":
-		return mode == "plan"
-	default:
-		return true
-	}
-}
+// (GetDefaultTools / GetToolsForMode / IsToolAllowed — the pre-ADK loop's
+// hardcoded dispatch helpers — were removed on 2026-09-21. Tool surface and
+// mode gating now live entirely in the Registry + adkagent's buildTools.)

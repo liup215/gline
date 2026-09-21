@@ -25,12 +25,6 @@ func (t ToolName) String() string {
 	return string(t)
 }
 
-// IsSpecialTool returns true if the tool requires special handling
-func (t ToolName) IsSpecialTool() bool {
-	switch t {
-	case ToolAttemptCompletion, ToolAskFollowupQuestion, ToolPlanModeRespond:
-		return true
-	default:
-		return false
-	}
-}
+// IsSpecialTool returns true if the tool requires special handling// (IsSpecialTool removed 2026-09-21: no callers; special-casing lives in
+// the
+// adkagent.legacyToolNames and the TUI renderer registry.)
