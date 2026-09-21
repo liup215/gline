@@ -4,6 +4,34 @@
 
 ---
 
+## 2026-09-19 — Agent Loop 重构 Phase 3 ✅（014b329）
+
+### 完成内容
+
+| 组件 | 文件 | 说明 |
+|------|------|------|
+| Agent 核心 | `internal/adkagent/agent.go` | New/RunWithCallback/SetMode/Abort；动态 InstructionProvider（Plan/Act 不重建）|
+| 工具适配 | `internal/adkagent/tool.go` | adkTool（Tool+RequestProcessor+Declaration+Run）；planGate 拦截；确认门+yolo |
+| 事件桥 | `internal/adkagent/bridge.go` | SSE→StreamCallback；StreamEnd 先于 ToolCallStart；model 轮文本 guard |
+| 流助手 | `internal/adkagent/eventstream.go` | StreamDedup + EventError（pi-go 移植）|
+| 单测 | `agent_test.go` + `eventstream_test.go` | 9 个全绿（fakeModel 走真实 runner）|
+| Live smoke | `live_smoke_test.go` | opencode 一轮+工具执行 PASS；volcano plan endpoint PASS |
+
+### 关键决策（新增）
+- **D21**: stream 结束顺序 — OnStreamEnd 必须先于同轮 OnToolCallStart（TUI 文本槽先闭合再开工具面板），bridge 用两遍遍历实现
+- **D22**: bridge 只对 model/thinking role 发文本；runner 会 yield 用户输入 event（role=user），不 guard 会把用户 prompt 当助手文本重复显示
+- **D23**: 命名冲突 — ADK `agent` 包 vs gline `internal/agent`，后者别名 `glineagent`
+- **D24**: `NewWithModel` 是测试注入点（fakeModel），生产走 `New`→`provider.NewLLM`
+- **D25**: `tools.DefaultRegistry` 是空的包级变量；adkagent.Options.Tools 必须显式传
+
+### 剩余 Phase
+- Phase 4: MCP/skills 桥接 + 逐工具适配测试
+- Phase 5: TUI/CLI/GUI 切到新 agent（sessionstore 接入）
+- Phase 6: AutoCompact/记忆挂接/history 续接
+- Phase 7: 删 go-llm + 旧循环，重装 gline.exe
+
+---
+
 ## 2026-09-18 ~ 2026-09-19 — TUI 优化与修复 ✅
 
 ### 完成内容

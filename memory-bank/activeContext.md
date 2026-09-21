@@ -2,6 +2,22 @@
 
 ## Current Focus
 
+### Agent Loop 重构 — Phase 3 完成（2026-09-19）
+
+**状态**: Phase 0/1/2/3 已提交，下一步 Phase 4（MCP 桥接 + 工具适配测试）
+
+**Phase 3 产出（commit 014b329，`internal/adkagent/`）**:
+- `agent.go` — `New/NewWithModel/RunWithCallback/SetMode/Abort/SessionID/Mode/SetYolo/IsRunning`；动态 `InstructionProvider`（每次模型调用读活模式 → Plan/Act 切换不重建 agent）；session 用 `session.InMemoryService()`（生产传 `sessionstore.Open`，Phase 5/6 接入）
+- `tool.go` — `adkTool` 适配器：实现 `tool.Tool`（Name/Description/IsLongRunning）+ `Declaration()`（gline json.RawMessage schema → `ParametersJsonSchema any`）+ `ProcessRequest`（`toolutils.PackTool`）+ `Run`（map→json.RawMessage→`inner.Execute`→`{"result": string}`）；确认门（`RequiresConfirmation && !yolo` → `AskFollowupQuestion`）；`planGate` BeforeToolCallback 拦截 plan 模式禁用工具（返回文本结果，非 Go error）
+- `bridge.go` — ADK event → `glineagent.StreamCallback`；**顺序保证：OnStreamEnd 先于同轮 OnToolCallStart**（两遍遍历：先文本+关文本槽，再工具事件）；只对 model/thinking role 发文本（防用户输入回显泄漏，runner 会 yield 用户输入 event）
+- `eventstream.go` — `StreamDedup`（SSE aggregate 重发抑制；BeginEvent 在非 model 轮重置）/`EventError`（nil Go error + ErrorCode 的 provider 失败，STREAM_ERROR 裸消息）
+- 9 个单元测试全绿：fakeModel 走真实 ADK runner（无 orphan/事件顺序/plan 拦截+配对/确认拒绝与 yolo/会话跨轮持久化/SetMode 指令切换/dedup×2/EventError）
+- Live smoke（`GLINE_LIVE_SMOKE=1`）：opencode/mimo-v2.5 一轮对话 PASS（stream_start→content→stream_end→complete）、真实 read 工具执行 PASS（模型读临时文件并引用内容）、volcano/ark-code-latest plan endpoint PASS
+- 遗留工具排除表 `legacyToolNames`：attempt_completion/plan_mode_respond/use_mcp_tool/access_mcp_resource 不进 ADK 工具清单
+- `Options.Tools == nil` 时 fallback `tools.DefaultRegistry`（空的包级变量；生产必须显式传）
+
+**Phase 4 剩余**：MCP manager → ADK 工具桥接；use_skill/use_subagents 桥接；逐工具适配测试；skills 菜单进系统提示词
+
 ### Agent Loop 重构规划（2026-09-19）— 采採 pi-go / ADK 架构
 
 **状态**: 方案已定稿，待实施
