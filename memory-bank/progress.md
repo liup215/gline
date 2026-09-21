@@ -11,6 +11,7 @@
 | Windows 控制台抑制 | `internal/tools/exec_windows.go`（新） | CREATE_NO_WINDOW，防 GUI 闪烁 |
 | glob 绝对路径 gotcha | search_rg.go | 跳过目录 glob 必须无斜杠（`!dir` 而非 `!dir/**`） |
 | 注册/提示词/显示 | init.go, tool_names.go, system.go, styles.go | find_files 全链路接入 |
+| 系统提示词策略 | internal/prompts/system.go | Tool Usage Rules + Code Search Strategy 块：优先 rg/fd 工具而非 run 拼 grep；find_files → read → edit 探索流；500 上限收窄提示 |
 
 **性能**: rg/fd 并行遍历 + SIMD 匹配 + .gitignore 感知，大仓库比纯 Go walk 快 10-100x。
 
