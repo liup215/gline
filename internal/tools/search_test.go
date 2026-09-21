@@ -35,8 +35,8 @@ func TestSearchFiles(t *testing.T) {
 	}
 
 	// Test 1: literal search for "func".
-	tool := NewSearchFilesTool()
-	input, _ := json.Marshal(SearchFilesInput{
+	tool := NewGrepTool()
+	input, _ := json.Marshal(GrepInput{
 		Path:  tmpDir,
 		Regex: "func",
 	})
@@ -55,7 +55,7 @@ func TestSearchFiles(t *testing.T) {
 	}
 
 	// Test 2: regex search with metacharacter.
-	input2, _ := json.Marshal(SearchFilesInput{
+	input2, _ := json.Marshal(GrepInput{
 		Path:  tmpDir,
 		Regex: `func \w+`,
 	})
@@ -68,7 +68,7 @@ func TestSearchFiles(t *testing.T) {
 	}
 
 	// Test 3: file pattern filter.
-	input3, _ := json.Marshal(SearchFilesInput{
+	input3, _ := json.Marshal(GrepInput{
 		Path:        tmpDir,
 		Regex:       "func",
 		FilePattern: "*.go",
@@ -182,8 +182,8 @@ func BenchmarkSearchConcurrent(b *testing.B) {
 		os.WriteFile(f, []byte(content), 0644)
 	}
 
-	tool := NewSearchFilesTool()
-	input, _ := json.Marshal(SearchFilesInput{
+	tool := NewGrepTool()
+	input, _ := json.Marshal(GrepInput{
 		Path:  tmpDir,
 		Regex: "println",
 	})

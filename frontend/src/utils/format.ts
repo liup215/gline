@@ -46,9 +46,9 @@ export function getToolHint(name: string, rawInput: string | undefined): string 
       return input.path ? `Write: ${input.path}` : name;
     case 'replace_in_file':
       return input.path ? `Edit: ${input.path}` : name;
-    case 'list_files':
+    case 'ls':
       return input.path ? `List: ${input.path}` : name;
-    case 'search_files':
+    case 'grep':
       return input.regex ? `Search "${input.regex}"${input.path ? ` in ${input.path}` : ''}` : name;
     case 'list_code_definition_names':
       return input.path ? `Definitions in ${input.path}` : name;

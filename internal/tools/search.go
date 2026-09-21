@@ -37,7 +37,7 @@ var (
 	searchCache      = make(map[searchCacheKey]*searchCacheEntry)
 	searchCacheMu    sync.RWMutex
 	searchCacheTTL   = 30 * time.Second // refresh after 30s
-	maxSearchResults = 500               // cap results to avoid huge payloads
+	maxSearchResults = 500              // cap results to avoid huge payloads
 )
 
 // clearExpiredSearchCache removes stale entries (called lazily on write).
@@ -70,16 +70,16 @@ var skipDirs = map[string]bool{
 
 // Binary file extensions to skip.
 var binaryExts = map[string]bool{
-	".exe":   true, ".dll": true, ".so": true, ".dylib": true,
-	".bin":   true, ".o": true, ".a": true, ".obj": true,
-	".png":   true, ".jpg": true, ".jpeg": true, ".gif": true,
-	".bmp":   true, ".ico": true, ".webp": true,
-	".mp3":   true, ".mp4": true, ".avi": true, ".mov": true,
-	".zip":   true, ".tar": true, ".gz": true, ".rar": true,
-	".7z":    true, ".pdf": true, ".doc": true, ".docx": true,
-	".xls":   true, ".xlsx": true, ".ppt": true, ".pptx": true,
-	".woff":  true, ".woff2": true, ".ttf": true, ".otf": true,
-	".eot":   true, ".wasm": true, ".sqlite": true, ".db": true,
+	".exe": true, ".dll": true, ".so": true, ".dylib": true,
+	".bin": true, ".o": true, ".a": true, ".obj": true,
+	".png": true, ".jpg": true, ".jpeg": true, ".gif": true,
+	".bmp": true, ".ico": true, ".webp": true,
+	".mp3": true, ".mp4": true, ".avi": true, ".mov": true,
+	".zip": true, ".tar": true, ".gz": true, ".rar": true,
+	".7z": true, ".pdf": true, ".doc": true, ".docx": true,
+	".xls": true, ".xlsx": true, ".ppt": true, ".pptx": true,
+	".woff": true, ".woff2": true, ".ttf": true, ".otf": true,
+	".eot": true, ".wasm": true, ".sqlite": true, ".db": true,
 }
 
 const (
@@ -135,13 +135,13 @@ func (s *literalSearcher) FindAllIndex(b []byte) [][]int {
 
 func (s *literalSearcher) String() string { return string(s.pattern) }
 
-// SearchFilesTool searches for patterns in files.
-type SearchFilesTool struct {
+// GrepTool searches for patterns in files.
+type GrepTool struct {
 	BaseTool
 }
 
-// SearchFilesInput represents the input for search_files tool.
-type SearchFilesInput struct {
+// GrepInput represents the input for grep tool.
+type GrepInput struct {
 	Path        string `json:"path"`
 	Regex       string `json:"regex"`
 	FilePattern string `json:"file_pattern,omitempty"`
@@ -157,15 +157,15 @@ type SearchResult struct {
 	ContextLine int    `json:"context_line"`
 }
 
-// SearchFilesOutput represents the output of search_files tool.
+// SearchFilesOutput represents the output of grep tool.
 type SearchFilesOutput struct {
 	Results      []SearchResult `json:"results"`
 	TotalFiles   int            `json:"total_files"`
 	TotalMatches int            `json:"total_matches"`
 }
 
-// NewSearchFilesTool creates a new search_files tool.
-func NewSearchFilesTool() *SearchFilesTool {
+// NewGrepTool creates a new grep tool.
+func NewGrepTool() *GrepTool {
 	schema := json.RawMessage(`{
 		"type": "object",
 		"properties": {
@@ -185,9 +185,9 @@ func NewSearchFilesTool() *SearchFilesTool {
 		"required": ["path", "regex"]
 	}`)
 
-	return &SearchFilesTool{
+	return &GrepTool{
 		BaseTool: BaseTool{
-			name:        "search_files",
+			name:        "grep",
 			description: "Search for a regex pattern in files within a directory. Returns context-rich results with file paths, line numbers, and surrounding context. Powered by ripgrep (fast, respects .gitignore) when installed.",
 			inputSchema: schema,
 		},
@@ -195,8 +195,8 @@ func NewSearchFilesTool() *SearchFilesTool {
 }
 
 // Execute searches for the pattern.
-func (t *SearchFilesTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var req SearchFilesInput
+func (t *GrepTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
+	var req GrepInput
 	if err := ParseInput(input, &req); err != nil {
 		return "", err
 	}
@@ -617,9 +617,9 @@ type listDefCacheKey struct {
 }
 
 var (
-	listDefCache      = make(map[listDefCacheKey]*listDefCacheEntry)
-	listDefCacheMu    sync.RWMutex
-	listDefCacheTTL   = 30 * time.Second
+	listDefCache         = make(map[listDefCacheKey]*listDefCacheEntry)
+	listDefCacheMu       sync.RWMutex
+	listDefCacheTTL      = 30 * time.Second
 	maxDefinitionResults = 500
 )
 

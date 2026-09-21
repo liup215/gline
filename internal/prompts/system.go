@@ -36,16 +36,16 @@ After each tool use, wait for the result before proceeding.
 - read: {"path": "...", "line_number": N, "limit": N} — read a file (~, relative and absolute paths; default 200 lines, max 2000 per read)
 - write: {"path": "...", "content": "..."} — create/overwrite a file
 - edit: {"path": "...", "search": "...", "replace": "..."} — edit a file
-- search_files: {"path": "...", "regex": "...", "file_pattern": "*.go"} — search file CONTENTS by regex
-- find_files: {"path": "...", "pattern": "*.go"} — find files by name glob
+- grep: {"path": "...", "regex": "...", "file_pattern": "*.go"} — search file CONTENTS by regex
+- glob: {"path": "...", "pattern": "*.go"} — find files by name glob
 - run: {"command": "..."} — execute a command
 - attempt_completion: {"result": "..."} — ONLY has a 'result' field. Never add other fields like path or command.
 
 # Code Search Strategy
-- find_files locates files by name; search_files greps content by regex. Both are fast (ripgrep/fd-backed) and respect .gitignore, skipping hidden/vendor dirs.
+- glob locates files by name; grep greps content by regex. Both are fast (ripgrep/fd-backed) and respect .gitignore, skipping hidden/vendor dirs.
 - Prefer these over shelling out to grep/rg/find via run — they return structured, line-numbered results you can feed directly into read.
-- Typical exploration flow: find_files → read the relevant files → edit.
-- search_files caps at 500 matches; narrow with file_pattern or a more specific regex if flooded.
+- Typical exploration flow: glob → read the relevant files → edit.
+- grep caps at 500 matches; narrow with file_pattern or a more specific regex if flooded.
 
 End your work with attempt_completion when the task is complete.
 
@@ -163,7 +163,7 @@ func buildToolSection(tools []ToolDescription) string {
 func GetToolDescriptions() []ToolDescription {
 	return []ToolDescription{
 		{
-			Name: "read",
+			Name:        "read",
 			Description: "Read lines from a file (~, relative, absolute paths). 200 lines by default starting at line_number; pass limit for more (max 2000). Output includes the line range, total line count and the next line_number to continue from.",
 			InputSchema: `{"type":"object","properties":{"path":{"type":"string"},"line_number":{"type":"integer"},"limit":{"type":"integer"}},"required":["path"]}`,
 		},
@@ -178,17 +178,17 @@ func GetToolDescriptions() []ToolDescription {
 			InputSchema: `{"type":"object","properties":{"path":{"type":"string"},"search":{"type":"string"},"replace":{"type":"string"}},"required":["path","search","replace"]}`,
 		},
 		{
-			Name:        "list_files",
+			Name:        "ls",
 			Description: "List files and directories.",
 			InputSchema: `{"type":"object","properties":{"path":{"type":"string"},"recursive":{"type":"boolean"}},"required":["path"]}`,
 		},
 		{
-			Name:        "search_files",
+			Name:        "grep",
 			Description: "Search file contents for a regex pattern (fast, ripgrep-backed).",
 			InputSchema: `{"type":"object","properties":{"path":{"type":"string"},"regex":{"type":"string"},"file_pattern":{"type":"string"}},"required":["path","regex"]}`,
 		},
 		{
-			Name:        "find_files",
+			Name:        "glob",
 			Description: "Find files by name with a glob pattern (recursive, fast).",
 			InputSchema: `{"type":"object","properties":{"path":{"type":"string"},"pattern":{"type":"string"}},"required":["path"]}`,
 		},
@@ -246,9 +246,9 @@ func GetPlanModeToolDescriptions() []ToolDescription {
 	var planTools []ToolDescription
 
 	actOnlyTools := map[string]bool{
-		"write":   true,
-		"edit": true,
-		"run": true,
+		"write": true,
+		"edit":  true,
+		"run":   true,
 	}
 
 	for _, tool := range allTools {

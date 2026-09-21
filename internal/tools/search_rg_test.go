@@ -98,8 +98,8 @@ func TestSearchFilesRipgrepIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tool := NewSearchFilesTool()
-	input, _ := json.Marshal(SearchFilesInput{Path: tmpDir, Regex: "func"})
+	tool := NewGrepTool()
+	input, _ := json.Marshal(GrepInput{Path: tmpDir, Regex: "func"})
 	output, err := tool.Execute(context.Background(), input)
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)
@@ -127,8 +127,8 @@ func TestSearchFilesFallsBackWhenRgBroken(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tool := NewSearchFilesTool()
-	input, _ := json.Marshal(SearchFilesInput{Path: tmpDir, Regex: "needle"})
+	tool := NewGrepTool()
+	input, _ := json.Marshal(GrepInput{Path: tmpDir, Regex: "needle"})
 	output, err := tool.Execute(context.Background(), input)
 	if err != nil {
 		t.Fatalf("fallback execute failed: %v", err)
@@ -147,8 +147,8 @@ func TestSearchFilesRipgrepLargeFileSkipped(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tool := NewSearchFilesTool()
-	input, _ := json.Marshal(SearchFilesInput{Path: tmpDir, Regex: "func"})
+	tool := NewGrepTool()
+	input, _ := json.Marshal(GrepInput{Path: tmpDir, Regex: "func"})
 	output, err := tool.Execute(context.Background(), input)
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)

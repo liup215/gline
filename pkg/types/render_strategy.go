@@ -10,4 +10,3 @@ const (
 	StrategySpecial  RenderStrategy = 3
 	StrategySkip     RenderStrategy = 4
 )
-

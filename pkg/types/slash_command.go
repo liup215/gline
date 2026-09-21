@@ -1,4 +1,4 @@
-﻿// Package types defines slash command types shared across the codebase.
+// Package types defines slash command types shared across the codebase.
 package types
 
 // SlashCommandSection categorizes commands into groups.

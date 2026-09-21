@@ -1,6 +1,6 @@
 package tools
 
-// ripgrep-backed fast path for search_files.
+// ripgrep-backed fast path for grep.
 //
 // When rg is installed it replaces the pure-Go walk-and-read loop with rg's
 // parallel traversal, SIMD-accelerated matching and .gitignore awareness.

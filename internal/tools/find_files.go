@@ -1,11 +1,11 @@
 package tools
 
-// FindFilesTool recursively finds files by name using a glob pattern.
+// GlobTool recursively finds files by name using a glob pattern.
 //
 // When fd (fd-find) is installed it handles the search — parallel traversal
 // with .gitignore awareness, far faster than a Go walk on large repos. When
 // fd is missing the tool falls back to the pure-Go findFiles walk shared
-// with search_files.
+// with grep.
 
 import (
 	"bufio"
@@ -26,19 +26,19 @@ import (
 // without a .gitignore (fd already skips hidden entries and VCS ignores).
 var fdSkipDirs = []string{"node_modules", "vendor", "__pycache__", "dist", "build", "target", "out"}
 
-// FindFilesTool lists files recursively by name pattern.
-type FindFilesTool struct {
+// GlobTool lists files recursively by name pattern.
+type GlobTool struct {
 	BaseTool
 }
 
-// FindFilesInput represents the input for find_files tool.
-type FindFilesInput struct {
+// GlobInput represents the input for glob tool.
+type GlobInput struct {
 	Path    string `json:"path"`
 	Pattern string `json:"pattern,omitempty"`
 }
 
-// NewFindFilesTool creates a new find_files tool.
-func NewFindFilesTool() *FindFilesTool {
+// NewGlobTool creates a new glob tool.
+func NewGlobTool() *GlobTool {
 	schema := json.RawMessage(`{
 		"type": "object",
 		"properties": {
@@ -54,18 +54,18 @@ func NewFindFilesTool() *FindFilesTool {
 		"required": ["path"]
 	}`)
 
-	return &FindFilesTool{
+	return &GlobTool{
 		BaseTool: BaseTool{
-			name:        "find_files",
-			description: "Find files recursively by name using a glob pattern (e.g. '*.go', '*config*'). Respects .gitignore and skips hidden/vendor directories. Returns up to 500 matching file paths. Use search_files to search file CONTENTS.",
+			name:        "glob",
+			description: "Find files recursively by name using a glob pattern (e.g. '*.go', '*config*'). Respects .gitignore and skips hidden/vendor directories. Returns up to 500 matching file paths. Use grep to search file CONTENTS.",
 			inputSchema: schema,
 		},
 	}
 }
 
 // Execute finds files matching the pattern.
-func (t *FindFilesTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var req FindFilesInput
+func (t *GlobTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
+	var req GlobInput
 	if err := ParseInput(input, &req); err != nil {
 		return "", err
 	}

@@ -34,10 +34,10 @@ func TestFindFilesFDIntegration(t *testing.T) {
 	}
 	tmpDir := setupFindFilesTree(t)
 
-	tool := NewFindFilesTool()
+	tool := NewGlobTool()
 
 	// Glob filter: only .go files, node_modules excluded.
-	input, _ := json.Marshal(FindFilesInput{Path: tmpDir, Pattern: "*.go"})
+	input, _ := json.Marshal(GlobInput{Path: tmpDir, Pattern: "*.go"})
 	output, err := tool.Execute(context.Background(), input)
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)
@@ -50,7 +50,7 @@ func TestFindFilesFDIntegration(t *testing.T) {
 	}
 
 	// Empty pattern lists all files (node_modules still excluded).
-	input2, _ := json.Marshal(FindFilesInput{Path: tmpDir})
+	input2, _ := json.Marshal(GlobInput{Path: tmpDir})
 	output2, err := tool.Execute(context.Background(), input2)
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)
@@ -66,8 +66,8 @@ func TestFindFilesFallsBackWhenFdBroken(t *testing.T) {
 
 	tmpDir := setupFindFilesTree(t)
 
-	tool := NewFindFilesTool()
-	input, _ := json.Marshal(FindFilesInput{Path: tmpDir, Pattern: "*.go"})
+	tool := NewGlobTool()
+	input, _ := json.Marshal(GlobInput{Path: tmpDir, Pattern: "*.go"})
 	output, err := tool.Execute(context.Background(), input)
 	if err != nil {
 		t.Fatalf("fallback execute failed: %v", err)
@@ -86,8 +86,8 @@ func TestFindFilesNoMatches(t *testing.T) {
 
 	tmpDir := setupFindFilesTree(t)
 
-	tool := NewFindFilesTool()
-	input, _ := json.Marshal(FindFilesInput{Path: tmpDir, Pattern: "*.zig"})
+	tool := NewGlobTool()
+	input, _ := json.Marshal(GlobInput{Path: tmpDir, Pattern: "*.zig"})
 	output, err := tool.Execute(context.Background(), input)
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)
@@ -98,7 +98,7 @@ func TestFindFilesNoMatches(t *testing.T) {
 }
 
 func TestFindFilesPathValidation(t *testing.T) {
-	tool := NewFindFilesTool()
+	tool := NewGlobTool()
 
 	if _, err := tool.Execute(context.Background(), json.RawMessage(`{"path":""}`)); err == nil {
 		t.Error("expected error for empty path")

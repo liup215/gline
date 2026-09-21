@@ -148,7 +148,7 @@ type ToolBehavior struct {
 // DefaultToolBehavior returns the default behavior (both modes = DisplayDefault).
 func DefaultToolBehavior() ToolBehavior {
 	return ToolBehavior{
-		StartDisplayMode:   DisplayDefault,
+		StartDisplayMode:    DisplayDefault,
 		CompleteDisplayMode: DisplayDefault,
 	}
 }

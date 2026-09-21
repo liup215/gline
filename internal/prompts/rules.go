@@ -13,14 +13,14 @@ const (
 	globalRulesSubdir = "rules"
 	workspaceRulesDir = ".gline/rules"
 	supportedExtMd    = ".md"
-	supportedExtTxt     = ".txt"
+	supportedExtTxt   = ".txt"
 )
 
 // RuleFileInfo holds metadata about a loaded rule file.
 type RuleFileInfo struct {
 	Name    string `json:"name"`
-	Source  string `json:"source"` // "global" or "workspace"
-	Size    int64  `json:"size"`   // file size in bytes
+	Source  string `json:"source"`  // "global" or "workspace"
+	Size    int64  `json:"size"`    // file size in bytes
 	ModTime int64  `json:"modTime"` // unix timestamp (seconds)
 }
 

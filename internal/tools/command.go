@@ -18,10 +18,10 @@ type ExecuteCommandTool struct {
 
 // ExecuteCommandInput represents the input for execute_command tool
 type ExecuteCommandInput struct {
-	Command         string `json:"command"`
+	Command          string `json:"command"`
 	RequiresApproval bool   `json:"requires_approval"`
-	Cwd             string `json:"cwd,omitempty"`
-	Timeout         int    `json:"timeout,omitempty"`
+	Cwd              string `json:"cwd,omitempty"`
+	Timeout          int    `json:"timeout,omitempty"`
 }
 
 // ExecuteCommandOutput represents the output of execute_command tool

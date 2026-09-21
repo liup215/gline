@@ -53,7 +53,7 @@ func (r *Registry) initDescriptions() {
 	r.descriptions[types.ToolWriteToFile] = "created a new file"
 	r.descriptions[types.ToolReplaceInFile] = "edited this file"
 	r.descriptions[types.ToolExecuteCommand] = "executed this command"
-	r.descriptions[types.ToolSearchFiles] = "searched files"
+	r.descriptions[types.ToolGrep] = "searched files"
 	r.descriptions[types.ToolAttemptCompletion] = "completed the task"
 	r.descriptions[types.ToolAskFollowupQuestion] = "asked a question"
 	r.descriptions[types.ToolPlanModeRespond] = "provided a plan response"
@@ -80,7 +80,7 @@ func GetDefaultDescription(name types.ToolName) string {
 		return "edited this file"
 	case types.ToolExecuteCommand:
 		return "executed this command"
-	case types.ToolSearchFiles:
+	case types.ToolGrep:
 		return "searched files"
 	case types.ToolAttemptCompletion:
 		return "completed the task"
@@ -121,7 +121,7 @@ func NewDefaultRegistry() *Registry {
 	reg.Register(NewDefaultRenderer(types.ToolWriteToFile, "created a new file"))
 	reg.Register(NewDefaultRenderer(types.ToolReplaceInFile, "edited this file"))
 	reg.Register(NewDefaultRenderer(types.ToolExecuteCommand, "executed this command"))
-	reg.Register(NewDefaultRenderer(types.ToolSearchFiles, "searched files"))
+	reg.Register(NewDefaultRenderer(types.ToolGrep, "searched files"))
 	reg.Register(NewDefaultRenderer(types.ToolUseMcpTool, "used an MCP tool"))
 	reg.Register(NewDefaultRenderer(types.ToolAccessMcpResource, "accessed an MCP resource"))
 

@@ -4,20 +4,21 @@ package types
 type ToolName string
 
 const (
-	ToolReadFile             ToolName = "read"
-	ToolWriteToFile          ToolName = "write"
-	ToolReplaceInFile        ToolName = "edit"
-	ToolExecuteCommand       ToolName = "run"
-	ToolSearchFiles          ToolName = "search_files"
-	ToolFindFiles            ToolName = "find_files"
-	ToolSummarizeFile        ToolName = "summarize_file"
-	ToolAttemptCompletion    ToolName = "attempt_completion"
-	ToolAskFollowupQuestion  ToolName = "ask_followup_question"
-	ToolPlanModeRespond      ToolName = "plan_mode_respond"
-	ToolUseMcpTool           ToolName = "use_mcp_tool"
-	ToolAccessMcpResource    ToolName = "access_mcp_resource"
-	ToolUseSkill             ToolName = "use_skill"
-	ToolUseSubagents         ToolName = "use_subagents"
+	ToolReadFile            ToolName = "read"
+	ToolWriteToFile         ToolName = "write"
+	ToolReplaceInFile       ToolName = "edit"
+	ToolExecuteCommand      ToolName = "run"
+	ToolGrep                ToolName = "grep"
+	ToolGlob                ToolName = "glob"
+	ToolLs                  ToolName = "ls"
+	ToolSummarizeFile       ToolName = "summarize_file"
+	ToolAttemptCompletion   ToolName = "attempt_completion"
+	ToolAskFollowupQuestion ToolName = "ask_followup_question"
+	ToolPlanModeRespond     ToolName = "plan_mode_respond"
+	ToolUseMcpTool          ToolName = "use_mcp_tool"
+	ToolAccessMcpResource   ToolName = "access_mcp_resource"
+	ToolUseSkill            ToolName = "use_skill"
+	ToolUseSubagents        ToolName = "use_subagents"
 )
 
 func (t ToolName) String() string {

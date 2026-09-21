@@ -17,8 +17,9 @@ import (
 // AllowedTools defines the tools available inside a subagent run.
 var AllowedTools = []string{
 	"read",
-	"list_files",
-	"search_files",
+	"ls",
+	"grep",
+	"glob",
 	"list_code_definition_names",
 	"run",
 	"use_skill",
@@ -29,11 +30,11 @@ var AllowedTools = []string{
 // Builder constructs the running environment for a single subagent.
 type Builder struct {
 	// LLM is the model backend used for every assistant turn (internal/provider).
-	LLM         model.LLM
+	LLM          model.LLM
 	FullRegistry *tools.Registry
-	WorkingDir  string
-	CustomRules string
-	Skills      []types.SkillMeta
+	WorkingDir   string
+	CustomRules  string
+	Skills       []types.SkillMeta
 }
 
 // NewBuilder creates a new Builder with the given dependencies.

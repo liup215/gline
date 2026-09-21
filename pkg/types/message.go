@@ -317,9 +317,9 @@ func EstimateTokens(s string) int {
 		return 0
 	}
 	total := 0
-	wordRun := 0    // consecutive non-space ASCII characters
-	spaceRun := 0   // consecutive whitespace characters
-	nonASCII := 0   // non-ASCII runes
+	wordRun := 0  // consecutive non-space ASCII characters
+	spaceRun := 0 // consecutive whitespace characters
+	nonASCII := 0 // non-ASCII runes
 	for i := 0; i < len(s); {
 		r, size := utf8.DecodeRuneInString(s[i:])
 		if r < 128 {

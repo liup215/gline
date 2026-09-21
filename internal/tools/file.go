@@ -26,9 +26,9 @@ type ReadFileInput struct {
 
 // NewReadFileTool creates a new read_file tool
 const (
-	readFileChunkLines = 200          // default page size
-	readFileMaxLines   = 2000         // hard cap per read (raise via limit)
-	readFileMaxBytes   = 50 * 1024    // byte cap on returned content
+	readFileChunkLines = 200       // default page size
+	readFileMaxLines   = 2000      // hard cap per read (raise via limit)
+	readFileMaxBytes   = 50 * 1024 // byte cap on returned content
 )
 
 // imageExts marks extensions treated as image files: their bytes cannot be
@@ -90,7 +90,7 @@ func NewReadFileTool() *ReadFileTool {
 			description: "Read lines from a file. Supports ~ (home), relative, and absolute paths. " +
 				fmt.Sprintf("Reads %d lines by default starting at line_number; pass limit for more (max %d per read). ", readFileChunkLines, readFileMaxLines) +
 				"Output reports the line range, total line count and the next line_number to continue from. " +
-				"For large files, use search_files first to find a relevant section, then read that chunk with line_number.",
+				"For large files, use grep first to find a relevant section, then read that chunk with line_number.",
 			inputSchema: schema,
 		},
 	}
@@ -118,13 +118,13 @@ func (t *ReadFileTool) Execute(ctx context.Context, input json.RawMessage) (stri
 	info, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return "", fmt.Errorf("file not found: %s (check the path, or use find_files/search_files to locate it)", path)
+			return "", fmt.Errorf("file not found: %s (check the path, or use glob/grep to locate it)", path)
 		}
 		return "", fmt.Errorf("failed to stat file: %w", err)
 	}
 
 	if info.IsDir() {
-		return "", fmt.Errorf("path is a directory, not a file: %s (use list_files or find_files to explore it)", path)
+		return "", fmt.Errorf("path is a directory, not a file: %s (use ls or glob to explore it)", path)
 	}
 
 	// Image files: binary content cannot be returned as text — report
@@ -277,6 +277,7 @@ type ReplacementBlock struct {
 // Supports two calling styles:
 //   - Single block: path + search + replace
 //   - Multiple blocks: path + replacements (array of {search, replace})
+//
 // When editing the same file multiple times, use a single call with the replacements array.
 type ReplaceInFileInput struct {
 	Path         string             `json:"path"`
@@ -382,7 +383,7 @@ func (t *ReplaceInFileTool) Execute(ctx context.Context, input json.RawMessage) 
 					continue
 				}
 			}
-		// Build detailed error with helpful guidance
+			// Build detailed error with helpful guidance
 			return "", fmt.Errorf(
 				"Block %d – search content not found in file.\n\n"+
 					"The search must match EXACTLY, including:\n"+
@@ -656,18 +657,18 @@ func estimateTokensFromBytes(b []byte) int {
 // countLines removed: read tool now counts lines in a single bytes.Count pass
 // over the raw content (no string copy).
 
-// ListFilesTool lists files and directories
-type ListFilesTool struct {
+// LsTool lists files and directories
+type LsTool struct {
 	BaseTool
 }
 
-// ListFilesInput represents the input for list_files tool
-type ListFilesInput struct {
+// LsInput represents the input for ls tool
+type LsInput struct {
 	Path string `json:"path"`
 }
 
-// NewListFilesTool creates a new list_files tool
-func NewListFilesTool() *ListFilesTool {
+// NewLsTool creates a new ls tool
+func NewLsTool() *LsTool {
 	schema := json.RawMessage(`{
 		"type": "object",
 		"properties": {
@@ -679,9 +680,9 @@ func NewListFilesTool() *ListFilesTool {
 		"required": ["path"]
 	}`)
 
-	return &ListFilesTool{
+	return &LsTool{
 		BaseTool: BaseTool{
-			name:        "list_files",
+			name:        "ls",
 			description: "List files and directories at the specified path. Use this to explore the file system.",
 			inputSchema: schema,
 		},
@@ -689,8 +690,8 @@ func NewListFilesTool() *ListFilesTool {
 }
 
 // Execute lists files
-func (t *ListFilesTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var req ListFilesInput
+func (t *LsTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
+	var req LsInput
 	if err := ParseInput(input, &req); err != nil {
 		return "", err
 	}
@@ -745,4 +746,3 @@ func listFiles(path string, result *strings.Builder) error {
 
 	return nil
 }
-

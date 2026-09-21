@@ -20,9 +20,9 @@ type KBSearchTool struct {
 
 // KBSearchInput represents the input for kb_search
 type KBSearchInput struct {
-	Query   string `json:"query"`
-	KBID    string `json:"kb_id,omitempty"`
-	TopK    int    `json:"top_k,omitempty"`
+	Query    string  `json:"query"`
+	KBID     string  `json:"kb_id,omitempty"`
+	TopK     int     `json:"top_k,omitempty"`
 	MinScore float64 `json:"min_score,omitempty"`
 }
 
@@ -384,11 +384,11 @@ func (t *MemoryNoteTool) Execute(ctx context.Context, input json.RawMessage) (st
 	if err != nil {
 		// If Add requires a caller, create a manual fact
 		fact := memory.Fact{
-			Category: cat,
-			Subject:  req.Subject,
+			Category:  cat,
+			Subject:   req.Subject,
 			Predicate: "is noted as",
-			Object:   req.Text,
-			Source:   source,
+			Object:    req.Text,
+			Source:    source,
 		}
 		change := memory.FactChange{Action: "ADD", Fact: fact}
 		err = t.engine.FactStore.Apply(ctx, []memory.FactChange{change})

@@ -68,7 +68,7 @@ func TestGetToolMainArg(t *testing.T) {
 		t.Errorf("expected empty for invalid JSON, got %q", got)
 	}
 	// Regex + path
-	if got := GetToolMainArg("search_files", `{"regex":"TODO","path":"."}`); got != "'TODO' in ." {
+	if got := GetToolMainArg("grep", `{"regex":"TODO","path":"."}`); got != "'TODO' in ." {
 		t.Errorf("expected 'TODO in .', got %q", got)
 	}
 }
@@ -323,10 +323,10 @@ func TestFormatToolCompleteDisplay(t *testing.T) {
 		},
 		{
 			name:     "empty result",
-			toolName: "search_files",
+			toolName: "grep",
 			result:   "",
 			status:   "completed",
-			wantSub:  "🔧 Completed: search_files",
+			wantSub:  "🔧 Completed: grep",
 		},
 		{
 			name:     "result with truncated lines",

@@ -26,7 +26,7 @@ func InitDefaultRegistry(engine *memory.UnifiedEngine, sum *summarizer.Summarize
 	})
 
 	registry.Register(&ToolInfo{
-		Tool:                 NewListFilesTool(),
+		Tool:                 NewLsTool(),
 		Category:             CategoryFile,
 		AllowedModes:         []string{"plan", "act"},
 		RequiresConfirmation: false,
@@ -55,14 +55,14 @@ func InitDefaultRegistry(engine *memory.UnifiedEngine, sum *summarizer.Summarize
 
 	// Search operations - allowed in both modes
 	registry.Register(&ToolInfo{
-		Tool:                 NewSearchFilesTool(),
+		Tool:                 NewGrepTool(),
 		Category:             CategorySearch,
 		AllowedModes:         []string{"plan", "act"},
 		RequiresConfirmation: false,
 	})
 
 	registry.Register(&ToolInfo{
-		Tool:                 NewFindFilesTool(),
+		Tool:                 NewGlobTool(),
 		Category:             CategorySearch,
 		AllowedModes:         []string{"plan", "act"},
 		RequiresConfirmation: false,
@@ -93,7 +93,7 @@ func InitDefaultRegistry(engine *memory.UnifiedEngine, sum *summarizer.Summarize
 		AllowedModes:         []string{"plan", "act"},
 		RequiresConfirmation: false,
 		Behavior: ToolBehavior{
-			StartDisplayMode:   DisplaySkip,
+			StartDisplayMode:    DisplaySkip,
 			CompleteDisplayMode: DisplaySkip,
 		},
 	})
@@ -106,7 +106,7 @@ func InitDefaultRegistry(engine *memory.UnifiedEngine, sum *summarizer.Summarize
 		AllowedModes:         []string{"plan"},
 		RequiresConfirmation: false,
 		Behavior: ToolBehavior{
-			StartDisplayMode:   DisplaySkip,
+			StartDisplayMode:    DisplaySkip,
 			CompleteDisplayMode: DisplayAssistant,
 		},
 	})
@@ -119,7 +119,7 @@ func InitDefaultRegistry(engine *memory.UnifiedEngine, sum *summarizer.Summarize
 		AllowedModes:         []string{"plan", "act"},
 		RequiresConfirmation: false,
 		Behavior: ToolBehavior{
-			StartDisplayMode:   DisplayAssistant,
+			StartDisplayMode:    DisplayAssistant,
 			CompleteDisplayMode: DisplaySkip,
 		},
 	})
@@ -190,9 +190,9 @@ func GetDefaultTools() []Tool {
 		NewReadFileTool(),
 		NewWriteFileTool(),
 		NewReplaceInFileTool(),
-		NewListFilesTool(),
-		NewFindFilesTool(),
-		NewSearchFilesTool(),
+		NewLsTool(),
+		NewGlobTool(),
+		NewGrepTool(),
 		NewListCodeDefinitionNamesTool(),
 		NewExecuteCommandTool(),
 		NewAskFollowupQuestionTool(),
