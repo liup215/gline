@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-09-21 — 工具裁剪：6 个工具下架 ✅（已部署）
+
+用户决策“工具太多”，从 ADK 工具面下架：`list_code_definition_names`、`summarize_file`、`use_subagents`、`web_fetch`、`browser_copy`（`attempt_completion` 此前已被 legacyToolNames 隐藏；保留注册因 subagent 终止依赖它）。
+
+| 改动 | 文件 | 说明 |
+|------|------|------|
+| 移除 4 个注册块 | `internal/tools/init.go` | `sum` 参数保留以兼容签名；构造函数与 RegisterSummarizeFileTool/subagent.RegisterTool 保持可编译，随时可恢复 |
+| 拆除 sub-LLM 装配 | `cmd/gline/chat.go` | subLLM/subBuilder/sum 只服务这两个工具，全删；`skillReg` 改 `_` 接收 |
+| GUI 同步裁剪 | `internal/gui/backend.go` | subLLM **保留**（memory engine 依赖 initMemoryEngine(subLLM)）|
+| AllowedTools 收紧 | `internal/subagent/builder.go` | 移除 list_code_definition_names |
+
+**裁剪后广告给模型的工具（9 个基础）**：read, ls, write, edit, grep, glob, run, ask_followup_question, use_skill（+ 可选 kb/memory 工具与 MCP server 工具）。
+
+**附带发现**：`prompts/system.go` 的 hardcoded GetToolDescriptions（含 15 工具清单）在 ADK 时代是**死代码**（SystemInstruction 不嵌入工具清单，工具面完全由 registry 决定）—— 后续可删除。`memory-bank/tool-reference.md`（旧会话遗留）已加时效标注。
+
+验证：build ✓ vet ✓ 全套测试 ✓ 受影响包 -race ✓ 已部署 C:\Users\22569\bin\gline.exe（提交 4d919b0）。
+
 ## 2026-09-21 — run 工具默认改用 bash 执行 ✅（已部署）
 
 新建 `internal/shell` 叶子包（避免循环依赖），`tools`/`prompts`/`subagent` 共用：

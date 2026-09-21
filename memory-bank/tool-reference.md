@@ -1,3 +1,5 @@
+"><!-- STATUS 2026-09-21: 6 tools disabled from the ADK surface (list_code_definition_names, summarize_file, use_subagents, web_fetch, browser_copy; attempt_completion already legacy-hidden). This catalog describes the registered constructors, NOT the currently advertised tool set. See progress.md. -->
+
 # Gline Tool Reference
 
 ## Framework (from `tool.go`)
