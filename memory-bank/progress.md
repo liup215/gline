@@ -1,5 +1,25 @@
 # Progress
 
+## 2026-09-21 — 旧机制清理审计（D82）✅（已部署）
+
+用户问“多余的、旧的机制是否都已清理”。全仓审计结果：**已确认干净** + 新删 3 处（提交 002edde，-169 行）：
+
+**本次删除（pre-ADK 时代死代码，0 外部调用）：**
+- `tools/init.go` GetDefaultTools/GetToolsForMode/IsToolAllowed —— 旧手写循环的硬编码分发辅助
+- `prompts/system.go` GetToolDescriptions/GetPlanModeToolDescriptions/GetActModeToolDescriptions —— 硬编码 15 工具描述表（buildToolSection 保留，subagent GetSystemPrompt 锚定）
+- `pkg/types/tool_names.go` IsSpecialTool —— 0 调用者
+
+**确认已干净的：** internal/tui ✓ internal/api ✓ internal/agent 只剩共享契约 ✓ ui 包只用 adkagent ✓ retry 被 provider 用 ✓ ls recursive schema ✓ requires_approval ✓
+
+**有意保留（parked，非垃圾，勿重复清理）：**
+- 6 个下架工具构造函数 + RegisterSummarizeFileTool + subagent.RegisterTool（D80 重启用预留）
+- subagent + summarizer 整包（use_subagents 停用但基础设施完整）
+- attempt_completion 注册 + legacyToolNames 对（D81 subagent 终止契约）
+- plan_mode_respond 的 TUI/GUI 渲染路径 + use_mcp_tool ToolName 常量（旧任务历史显示兼容）
+- frontend format.ts list_code_definition_names 图标 case（同上）
+
+**遗留文档（backlog 非机制）：** roadmap.md 过期、agent-loop-refactor-plan.md 剩压测项、memory-bank/activeContext.md 待归档。
+
 ## 2026-09-21 — 自定义规则从未注入的 bug 修复 ✅（已部署）
 
 用户问“gline 有没有加载 rule”。排查结论：**机制存在但主循环从不注入** —— `~/.gline/rules/memory_bank.md` 从未进入系统提示词。
