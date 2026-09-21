@@ -14,7 +14,6 @@ require (
 	github.com/go-rod/rod v0.116.2
 	github.com/go-shiori/go-readability v0.0.0-20251205110129-5db1dc9836f0
 	github.com/openai/openai-go/v3 v3.56.0
-	github.com/pkieltyka/go-llm v0.3.0
 	github.com/rs/zerolog v1.35.1
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0

@@ -6,11 +6,12 @@ import (
 	"os"
 	"runtime"
 
-	"github.com/liup215/gline/internal/agent"
 	"github.com/liup215/gline/internal/log"
 	"github.com/liup215/gline/internal/prompts"
 	"github.com/liup215/gline/internal/tools"
 	"github.com/liup215/gline/pkg/types"
+	"google.golang.org/adk/v2/model"
+	"google.golang.org/genai"
 )
 
 // AllowedTools defines the tools available inside a subagent run.
@@ -27,17 +28,18 @@ var AllowedTools = []string{
 
 // Builder constructs the running environment for a single subagent.
 type Builder struct {
-	Provider     agent.Provider
+	// LLM is the model backend used for every assistant turn (internal/provider).
+	LLM         model.LLM
 	FullRegistry *tools.Registry
-	WorkingDir   string
-	CustomRules  string
-	Skills       []types.SkillMeta
+	WorkingDir  string
+	CustomRules string
+	Skills      []types.SkillMeta
 }
 
 // NewBuilder creates a new Builder with the given dependencies.
-func NewBuilder(provider agent.Provider, fullRegistry *tools.Registry, workingDir, customRules string, skills []types.SkillMeta) *Builder {
+func NewBuilder(llm model.LLM, fullRegistry *tools.Registry, workingDir, customRules string, skills []types.SkillMeta) *Builder {
 	return &Builder{
-		Provider:     provider,
+		LLM:          llm,
 		FullRegistry: fullRegistry,
 		WorkingDir:   workingDir,
 		CustomRules:  customRules,
@@ -84,19 +86,29 @@ func (b *Builder) BuildSystemPrompt(mode string) string {
 	return basePrompt + SubagentSystemSuffix
 }
 
-// ConvertTools converts the restricted registry to agent tool definitions.
-func (b *Builder) ConvertTools() []agent.ToolDefinition {
+// buildDeclarations converts the restricted registry into genai function
+// declarations for the LLM request. The tool JSON schema arrives as
+// json.RawMessage and is decoded into plain any, matching the shape
+// genai.FunctionDeclaration.ParametersJsonSchema serializes verbatim.
+func (b *Builder) buildDeclarations() ([]*genai.FunctionDeclaration, error) {
 	restricted := b.BuildRestrictedRegistry()
 	all := restricted.GetAll()
-	defs := make([]agent.ToolDefinition, len(all))
-	for i, t := range all {
-		defs[i] = agent.ToolDefinition{
+	decls := make([]*genai.FunctionDeclaration, 0, len(all))
+	for _, t := range all {
+		decl := &genai.FunctionDeclaration{
 			Name:        t.Name(),
 			Description: t.Description(),
-			InputSchema: t.InputSchema(),
 		}
+		if raw := t.InputSchema(); len(raw) > 0 {
+			var schema any
+			if err := json.Unmarshal(raw, &schema); err != nil {
+				return nil, fmt.Errorf("tool %q: decoding schema: %w", t.Name(), err)
+			}
+			decl.ParametersJsonSchema = schema
+		}
+		decls = append(decls, decl)
 	}
-	return defs
+	return decls, nil
 }
 
 // BuildEnvironmentBlock returns workspace metadata for the initial user message.
@@ -137,8 +149,8 @@ Current Working Directory: %s
 }
 
 // RegisterTool registers the use_subagents tool in the given registry.
-func RegisterTool(registry *tools.Registry, provider agent.Provider, fullRegistry *tools.Registry, workingDir, customRules string, skills []types.SkillMeta) {
-	builder := NewBuilder(provider, fullRegistry, workingDir, customRules, skills)
+func RegisterTool(registry *tools.Registry, llm model.LLM, fullRegistry *tools.Registry, workingDir, customRules string, skills []types.SkillMeta) {
+	builder := NewBuilder(llm, fullRegistry, workingDir, customRules, skills)
 	_ = registry.Register(&tools.ToolInfo{
 		Tool:                 NewUseSubagentsTool(builder),
 		Category:             tools.CategoryInteraction,

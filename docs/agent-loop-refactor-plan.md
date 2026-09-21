@@ -171,10 +171,13 @@ cmd/gline (TUI 默认 / --gui / 子命令)
 - ✅ 删除 `internal/api/mock.go`（无引用）；go-llm 仍保留（Phase 7b）
 - ✅ 验证：18 包全绿、vet 干净、CLI live smoke（PONG-7A-OK）、GUI smoke（ADK 日志）、GLINE_LIVE_SMOKE 3 项（OneShot/ToolRun/HistoryResume）全过、已重装 `C:\Users\22569\bin\gline.exe`
 
-**Phase 7b — port sub-LLM 工具并删除 go-llm（待办）**
+**Phase 7b — port sub-LLM 工具并删除 go-llm ✅（2026-09-21）**
 
-- 将 `internal/subagent` runner 与 `summarizer` 的 sub-LLM 调用从 `agent.Provider.CreateMessageStream/CreateMessage` 迁到 `internal/provider` iter 事件流
-- 迁移后删除 `internal/api/go_llm.go` 与 go-llm 依赖
+- ✅ `internal/subagent`：`Builder.Provider`（agent.Provider）→ `Builder.LLM`（model.LLM，internal/provider）；`NewBuilder`/`RegisterTool` 签名同步更换；runner 主循环改为 genai.Content 会话 + `GenerateContent(ctx, req, true)` 流式迭代，累积 text/FunctionCall/UsageMetadata；工具声明改为 `genai.FunctionDeclaration`（ParametersJsonSchema）；工具结果包装为 FunctionResponse（`{"result": ...}`）；`convertTools`/`agent.ToolCall`/`agent.StreamChunk` 依赖全部消除；Token 治理由 `types.Conversation.TrimToMaxTokens` 改为粗估上限（>200k 失败，不静默截断）
+- ✅ `internal/agent/summarizer_caller.go` 删除（无引用；summarizer 走 `subagent.SubagentSummarizerCaller`）
+- ✅ `cmd/gline/chat.go` + `internal/gui/backend.go`：sub-LLM 改用 `provider.NewLLM(...)`（`internal/provider` 工厂，opencode-go→opencode 映射不变）；GUI memory Caller 同步迁到 model.LLM 非流式调用；`api.OpenCodeGoBaseURL` 常量内联
+- ✅ **删除整个 `internal/api` 包**（go_llm.go/openai.go/opencode.go/registry.go/mock 早已删）；`go mod tidy` 移除 go-llm 依赖（go.mod/go.sum 零残留）
+- ✅ 验证：17 包全绿、vet 干净、CLI live smoke（PONG-7B-OK）、**subagent 端到端真机 smoke（use_subagents → SUBAGENT-7B-OK）**、GUI smoke（ADK 日志）、GLINE_LIVE_SMOKE 3 项全过、已重装 `C:\Users\22569\bin\gline.exe`
 
 **原 Phase 7 描述**：
 - 删除 `internal/api/go_llm.go`、旧 `RunWithCallback/processStream/preDispatch/executeToolCallsParallel`、go-llm 依赖

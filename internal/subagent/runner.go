@@ -7,10 +7,11 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/liup215/gline/internal/agent"
 	"github.com/liup215/gline/internal/log"
 	"github.com/liup215/gline/internal/tools"
 	"github.com/liup215/gline/pkg/types"
+	"google.golang.org/adk/v2/model"
+	"google.golang.org/genai"
 )
 
 // RunStatus represents the final status of a subagent run.
@@ -41,6 +42,10 @@ type ProgressUpdate struct {
 	ToolCalls    int
 	LatestTool   string
 }
+
+// maxPromptTokens bounds the accumulated subagent conversation. When the
+// estimate exceeds it the run fails instead of silently truncating history.
+const maxPromptTokens = 200_000
 
 // Runner executes a single subagent task with an independent conversation loop.
 type Runner struct {
@@ -73,6 +78,15 @@ When you have a task to perform, you MUST use one of the available tools.
 Only calling attempt_completion can end the subagent run.
 Please review your task and call the appropriate tool(s).`
 
+// turn holds the accumulated result of one assistant turn.
+type turn struct {
+	text     string
+	calls    []*genai.FunctionCall
+	inTok    int
+	outTok   int
+	thinking string
+}
+
 // Run executes a subagent with the given prompt and reports progress.
 func (r *Runner) Run(ctx context.Context, prompt string, onProgress func(ProgressUpdate)) RunResult {
 	r.abortMu.Lock()
@@ -80,18 +94,24 @@ func (r *Runner) Run(ctx context.Context, prompt string, onProgress func(Progres
 	r.abortMu.Unlock()
 
 	restrictedRegistry := r.builder.BuildRestrictedRegistry()
-	convertedTools := r.builder.ConvertTools()
-	systemPrompt := r.builder.BuildSystemPrompt(string(agent.ModeAct))
+	decls, err := r.builder.buildDeclarations()
+	if err != nil {
+		res := RunResult{Status: StatusFailed, Error: err.Error()}
+		onProgress(ProgressUpdate{Status: StatusFailed, Error: res.Error})
+		return res
+	}
+	systemPrompt := r.builder.BuildSystemPrompt("act")
 
-	conv := types.NewConversation()
-	conv.MaxTokens = 262000
-
+	var contents []*genai.Content
+	appendUser := func(text string) {
+		contents = append(contents, genai.NewContentFromText(text, "user"))
+	}
 	envBlock := r.builder.BuildEnvironmentBlock()
 	initialContent := prompt
 	if envBlock != "" {
 		initialContent += "\n\n" + envBlock
 	}
-	conv.AddMessage(types.Message{Role: types.RoleUser, Content: initialContent})
+	appendUser(initialContent)
 
 	inputTokens := 0
 	outputTokens := 0
@@ -106,86 +126,67 @@ func (r *Runner) Run(ctx context.Context, prompt string, onProgress func(Progres
 			return res
 		}
 
-		conv.TrimToMaxTokens()
-		needsTool := needsToolSet(convertedTools)
-
-		req := &agent.MessageRequest{
-			Messages:     conv.GetMessages(),
-			Tools:        convertedTools,
-			SystemPrompt: systemPrompt,
-		}
-		if needsTool {
-			req.ToolChoice = agent.ToolChoiceAuto
+		if est := estimateContentsTokens(contents); est > maxPromptTokens {
+			res := RunResult{Status: StatusFailed, Error: fmt.Sprintf("subagent prompt too large (~%d tokens)", est)}
+			onProgress(ProgressUpdate{Status: StatusFailed, Error: res.Error})
+			return res
 		}
 
-		log.Infof("SubagentRunner: requesting tools=%d needsTool=%v", len(convertedTools), needsTool)
-
-		streamChan, err := r.builder.Provider.CreateMessageStream(ctx, req)
+		t, err := r.generateTurn(ctx, systemPrompt, decls, contents)
 		if err != nil {
 			res := RunResult{Status: StatusFailed, Error: err.Error()}
 			onProgress(ProgressUpdate{Status: StatusFailed, Error: res.Error})
 			return res
 		}
-
-		content, reasoning, assistantToolCalls, usage, err := r.processStream(ctx, streamChan)
-		if err != nil {
-			res := RunResult{Status: StatusFailed, Error: err.Error()}
-			onProgress(ProgressUpdate{Status: StatusFailed, Error: res.Error})
-			return res
+		inputTokens += t.inTok
+		outputTokens += t.outTok
+		if t.inTok+t.outTok > 0 {
+			log.Debugf("SubagentRunner: turn usage in=%d out=%d", t.inTok, t.outTok)
 		}
 
-		if usage.TotalTokens > 0 {
-			conv.AddActualTokens(usage.InputTokens, usage.OutputTokens)
-			inputTokens += usage.InputTokens
-			outputTokens += usage.OutputTokens
+		// Record the assistant turn in the conversation.
+		parts := make([]*genai.Part, 0, 1+len(t.calls))
+		if t.text != "" {
+			parts = append(parts, genai.NewPartFromText(t.text))
 		}
-
-		// XML tool call fallback removed; only native tool_calls are used.
-
-		var typesToolCalls []types.ToolCall
-		for _, tc := range assistantToolCalls {
-			typesToolCalls = append(typesToolCalls, types.ToolCall{
-				ID:    tc.ID,
-				Name:  tc.Name,
-				Input: []byte(tc.Input),
-			})
+		for _, fc := range t.calls {
+			parts = append(parts, &genai.Part{FunctionCall: fc})
 		}
-		conv.AddMessage(types.Message{
-			Role:             types.RoleAssistant,
-			Content:          content,
-			ReasoningContent: reasoning,
-			ToolCalls:        typesToolCalls,
-		})
+		contents = append(contents, &genai.Content{Role: "model", Parts: parts})
 
 		// Handle empty response (no tools while tools are required).
-		if !conv.IsComplete() && len(assistantToolCalls) == 0 && needsTool {
+		if len(t.calls) == 0 && needsToolSet(decls) {
 			emptyRetries++
 			if emptyRetries > maxEmptyRetries {
 				res := RunResult{Status: StatusFailed, Error: "subagent did not call attempt_completion"}
 				onProgress(ProgressUpdate{Status: StatusFailed, Error: res.Error})
 				return res
 			}
-			conv.AddMessage(types.Message{Role: types.RoleUser, Content: noToolsUsedMsg})
+			appendUser(noToolsUsedMsg)
 			continue
 		}
 		emptyRetries = 0
 
 		// Execute tool calls.
-		if len(assistantToolCalls) > 0 {
-			toolResults, completed, completionResult, shouldStop, err := r.executeToolCalls(ctx, assistantToolCalls, restrictedRegistry, onProgress)
+		if len(t.calls) > 0 {
+			toolResults, completed, completionResult, shouldStop, err := r.executeToolCalls(ctx, t.calls, restrictedRegistry, onProgress)
 			if err != nil {
 				res := RunResult{Status: StatusFailed, Error: err.Error()}
 				onProgress(ProgressUpdate{Status: StatusFailed, Error: res.Error})
 				return res
 			}
-			toolCallsCount += len(assistantToolCalls)
+			toolCallsCount += len(t.calls)
+			resultParts := make([]*genai.Part, 0, len(toolResults))
 			for _, tr := range toolResults {
-				conv.AddMessage(types.Message{
-					Role:       types.RoleTool,
-					ToolCallID: tr.callID,
-					Content:    tr.result,
+				resultParts = append(resultParts, &genai.Part{
+					FunctionResponse: &genai.FunctionResponse{
+						ID:       tr.callID,
+						Name:     tr.name,
+						Response: map[string]any{"result": tr.result},
+					},
 				})
 			}
+			contents = append(contents, &genai.Content{Role: "user", Parts: resultParts})
 			if completed {
 				res := RunResult{
 					Status:       StatusCompleted,
@@ -206,12 +207,12 @@ func (r *Runner) Run(ctx context.Context, prompt string, onProgress func(Progres
 			if shouldStop {
 				break
 			}
-		}
-
-		if conv.IsComplete() {
+		} else if t.text != "" {
+			// No tool calls and tools were not required: a plain final
+			// answer completes the run.
 			res := RunResult{
 				Status:       StatusCompleted,
-				Result:       content,
+				Result:       t.text,
 				InputTokens:  inputTokens,
 				OutputTokens: outputTokens,
 				ToolCalls:    toolCallsCount,
@@ -231,97 +232,158 @@ func (r *Runner) Run(ctx context.Context, prompt string, onProgress func(Progres
 // toolResult holds a single tool execution outcome.
 type toolResult struct {
 	callID string
+	name   string
 	result string
 }
 
-func (r *Runner) executeToolCalls(ctx context.Context, calls []agent.ToolCall, registry *tools.Registry, onProgress func(ProgressUpdate)) ([]toolResult, bool, string, bool, error) {
+func (r *Runner) executeToolCalls(ctx context.Context, calls []*genai.FunctionCall, registry *tools.Registry, onProgress func(ProgressUpdate)) ([]toolResult, bool, string, bool, error) {
 	var results []toolResult
-	for _, tc := range calls {
+	for _, fc := range calls {
 		if r.shouldAbort() {
 			return results, false, "", true, fmt.Errorf("subagent aborted")
 		}
 
-		log.Infof("SubagentRunner: executing tool %s", tc.Name)
-		onProgress(ProgressUpdate{LatestTool: fmt.Sprintf("%s(...)", tc.Name)})
+		name := fc.Name
+		log.Infof("SubagentRunner: executing tool %s", name)
+		onProgress(ProgressUpdate{LatestTool: fmt.Sprintf("%s(...)", name)})
 
-		tool, err := registry.Get(tc.Name)
+		tool, err := registry.Get(name)
 		if err != nil {
 			results = append(results, toolResult{
-				callID: tc.ID,
-				result: fmt.Sprintf("Error: Tool '%s' not found: %v", tc.Name, err),
+				callID: fc.ID,
+				name:   name,
+				result: fmt.Sprintf("Error: Tool '%s' not found: %v", name, err),
 			})
 			continue
 		}
 
-		if tc.Name == types.ToolAskFollowupQuestion.String() {
+		if name == types.ToolAskFollowupQuestion.String() {
 			results = append(results, toolResult{
-				callID: tc.ID,
+				callID: fc.ID,
+				name:   name,
 				result: "Error: ask_followup_question is not available in subagent mode.",
 			})
 			continue
 		}
 
-		if tc.Name == types.ToolAttemptCompletion.String() {
+		if name == types.ToolAttemptCompletion.String() {
 			var input struct {
 				Result string `json:"result"`
 			}
-			if jsonErr := json.Unmarshal([]byte(tc.Input), &input); jsonErr == nil && input.Result != "" {
+			raw, _ := json.Marshal(fc.Args)
+			if jsonErr := json.Unmarshal(raw, &input); jsonErr == nil && input.Result != "" {
 				return results, true, input.Result, false, nil
 			}
 			results = append(results, toolResult{
-				callID: tc.ID,
+				callID: fc.ID,
+				name:   name,
 				result: "Error: attempt_completion requires a 'result' parameter.",
 			})
 			continue
 		}
 
-		result, execErr := tool.Execute(ctx, []byte(tc.Input))
+		raw, err := json.Marshal(fc.Args)
+		if err != nil {
+			raw = []byte("{}")
+		}
+		result, execErr := tool.Execute(ctx, raw)
 		if execErr != nil {
 			result = fmt.Sprintf("Error: %v", execErr)
 		}
-		results = append(results, toolResult{callID: tc.ID, result: result})
+		results = append(results, toolResult{callID: fc.ID, name: name, result: result})
 	}
 	return results, false, "", false, nil
 }
 
-func (r *Runner) processStream(ctx context.Context, streamChan <-chan agent.StreamChunk) (string, string, []agent.ToolCall, agent.TokenUsage, error) {
-	var content strings.Builder
-	var reasoning strings.Builder
-	var toolCalls []agent.ToolCall
-	var usage agent.TokenUsage
-
-	for chunk := range streamChan {
-		if chunk.Error != nil {
-			return "", "", nil, usage, chunk.Error
+// generateTurn runs one streaming model turn and accumulates text parts,
+// function calls and token usage.
+func (r *Runner) generateTurn(ctx context.Context, systemPrompt string, decls []*genai.FunctionDeclaration, contents []*genai.Content) (turn, error) {
+	var t turn
+	req := &genai.GenerateContentConfig{
+		SystemInstruction: genai.NewContentFromText(systemPrompt, "user"),
+	}
+	if len(decls) > 0 {
+		req.Tools = []*genai.Tool{{FunctionDeclarations: decls}}
+	}
+	llmReq := &model.LLMRequest{
+		Contents: contents,
+		Config:   req,
+	}
+	var text strings.Builder
+	var thinking strings.Builder
+	for resp, err := range r.builder.LLM.GenerateContent(ctx, llmReq, true) {
+		if err != nil {
+			return t, err
 		}
-		if chunk.Done {
-			break
+		if resp == nil {
+			continue
 		}
-		if chunk.Content != "" {
-			content.WriteString(chunk.Content)
+		if resp.Content != nil {
+			for _, part := range resp.Content.Parts {
+				if part == nil {
+					continue
+				}
+				if part.Text != "" {
+					if part.Thought {
+						thinking.WriteString(part.Text)
+					} else {
+						text.WriteString(part.Text)
+					}
+				}
+				if part.FunctionCall != nil {
+					fc := part.FunctionCall
+					if fc.ID == "" {
+						fc.ID = fmt.Sprintf("call_%d", len(t.calls)+1)
+					}
+					if fc.Args == nil {
+						fc.Args = map[string]any{}
+					}
+					t.calls = append(t.calls, fc)
+				}
+			}
 		}
-		if chunk.ReasoningContent != "" {
-			reasoning.WriteString(chunk.ReasoningContent)
-		}
-		if chunk.ToolCall != nil && !chunk.IsPartial {
-			toolCalls = append(toolCalls, *chunk.ToolCall)
-		}
-		if chunk.Usage.TotalTokens > 0 {
-			usage = chunk.Usage
+		if u := resp.UsageMetadata; u != nil {
+			t.inTok = int(u.PromptTokenCount)
+			t.outTok = int(u.CandidatesTokenCount)
 		}
 	}
-
-	return content.String(), reasoning.String(), toolCalls, usage, nil
+	t.text = text.String()
+	t.thinking = thinking.String()
+	return t, nil
 }
 
-// needsToolSet returns true if the tool list contains non-terminal tools.
-func needsToolSet(toolsDefs []agent.ToolDefinition) bool {
-	for _, t := range toolsDefs {
-		if t.Name != types.ToolAttemptCompletion.String() &&
-			t.Name != types.ToolAskFollowupQuestion.String() &&
-			t.Name != types.ToolPlanModeRespond.String() {
+// needsToolSet returns true if the declarations contain non-terminal tools.
+func needsToolSet(decls []*genai.FunctionDeclaration) bool {
+	for _, d := range decls {
+		if d.Name != types.ToolAttemptCompletion.String() &&
+			d.Name != types.ToolAskFollowupQuestion.String() &&
+			d.Name != types.ToolPlanModeRespond.String() {
 			return true
 		}
 	}
 	return false
+}
+
+// estimateContentsTokens gives a rough upper-bound token estimate for the
+// conversation (same conservative per-rune heuristic as types.EstimateTokens).
+func estimateContentsTokens(contents []*genai.Content) int {
+	var total int
+	for _, c := range contents {
+		if c == nil {
+			continue
+		}
+		for _, p := range c.Parts {
+			switch {
+			case p.Text != "":
+				total += types.EstimateTokens(p.Text)
+			case p.FunctionCall != nil:
+				raw, _ := json.Marshal(p.FunctionCall)
+				total += types.EstimateTokens(string(raw))
+			case p.FunctionResponse != nil:
+				raw, _ := json.Marshal(p.FunctionResponse)
+				total += types.EstimateTokens(string(raw))
+			}
+		}
+	}
+	return total
 }

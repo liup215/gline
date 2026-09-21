@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/liup215/gline/internal/adkagent"
-	"github.com/liup215/gline/internal/agent"
-	"github.com/liup215/gline/internal/api"
 	"github.com/liup215/gline/internal/config"
 	"github.com/liup215/gline/internal/log"
 	"github.com/liup215/gline/internal/mcp"
 	"github.com/liup215/gline/internal/memory"
+	"github.com/liup215/gline/internal/provider"
 	"github.com/liup215/gline/internal/sessionstore"
 	"github.com/liup215/gline/internal/skills"
 	"github.com/liup215/gline/internal/storage"
@@ -22,9 +22,10 @@ import (
 	"github.com/liup215/gline/internal/summarizer"
 	"github.com/liup215/gline/internal/tools"
 	"github.com/liup215/gline/internal/ui"
+	"google.golang.org/adk/v2/model"
 	"google.golang.org/adk/v2/session"
 	"google.golang.org/adk/v2/session/compaction"
-	"github.com/liup215/gline/pkg/types"
+	"google.golang.org/genai"
 )
 
 // BackendInstance is the global GUI backend. It is initialised by InitBackend.
@@ -110,14 +111,14 @@ func (b *Backend) initAgent() error {
 		providerName = "openai"
 	}
 
-	// Legacy provider interface — always built: the summarize_file /
-	// use_subagents tools still make sub-LLM calls through it.
-	legacyProvider, err := b.buildLegacyProvider(providerName)
+	// Sub-LLM backend — always built: the summarize_file / use_subagents
+	// tools make their own model calls through it.
+	subLLM, err := b.buildSubLLM(providerName)
 	if err != nil {
 		return err
 	}
 
-	memoryEngine := b.initMemoryEngine(legacyProvider)
+	memoryEngine := b.initMemoryEngine(subLLM)
 	customRules := loadCustomRules()
 
 	// Initialize and load skills FIRST so they are available for the use_skill tool
@@ -130,7 +131,7 @@ func (b *Backend) initAgent() error {
 	b.toolRegistry = registry
 
 	// Subagent builder for large-file summarizer, using the real registry.
-	subBuilder := subagent.NewBuilder(legacyProvider, registry, "", customRules, b.skillRegistry.GetMeta())
+	subBuilder := subagent.NewBuilder(subLLM, registry, "", customRules, b.skillRegistry.GetMeta())
 	sum := summarizer.NewSummarizer(subagent.NewSummarizerCaller(subBuilder), summarizer.DefaultOptions())
 
 	// Register summarization tool and remaining tools.
@@ -138,7 +139,7 @@ func (b *Backend) initAgent() error {
 	tools.RegisterSkillTool(registry, b.skillRegistry)
 
 	// Register use_subagents tool
-	subagent.RegisterTool(registry, legacyProvider, registry, "", customRules, b.skillRegistry.GetMeta())
+	subagent.RegisterTool(registry, subLLM, registry, "", customRules, b.skillRegistry.GetMeta())
 
 	adkAg, err := b.buildAdkAgent(providerName, registry, memoryEngine)
 	if err != nil {
@@ -204,7 +205,7 @@ func (b *Backend) resolveProviderSettings(name string) (guiProviderSettings, err
 		}
 		baseURL := s.BaseURL
 		if baseURL == "" {
-			baseURL = api.OpenCodeGoBaseURL
+			baseURL = "https://opencode.ai/zen/go/v1"
 		}
 		return guiProviderSettings{id: "opencode-go", model: model, apiKey: apiKey, baseURL: baseURL}, nil
 	case "openrouter":
@@ -218,34 +219,23 @@ func (b *Backend) resolveProviderSettings(name string) (guiProviderSettings, err
 	}
 }
 
-// buildLegacyProvider constructs the agent.Provider used for sub-LLM
-// tool calls (summarize_file / use_subagents).
-func (b *Backend) buildLegacyProvider(name string) (agent.Provider, error) {
+// buildSubLLM constructs the model.LLM used for sub-LLM tool calls
+// (summarize_file / use_subagents).
+func (b *Backend) buildSubLLM(name string) (model.LLM, error) {
 	s, err := b.resolveProviderSettings(name)
 	if err != nil {
 		return nil, err
 	}
-	var provider agent.Provider
-	switch s.id {
-	case "openai":
-		provider = api.NewOpenAIProvider(s.apiKey, s.model, s.baseURL)
-	case "opencode-go":
-		provider, err = api.NewGoLLMProvider(s.apiKey, s.model, s.baseURL, "opencode-go")
-		if err != nil {
-			return nil, fmt.Errorf("failed to create OpenCode Go provider: %w", err)
-		}
-	case "openrouter":
-		provider, err = api.NewGoLLMProvider(s.apiKey, s.model, s.baseURL, "openrouter")
-		if err != nil {
-			return nil, fmt.Errorf("failed to create OpenRouter provider: %w", err)
-		}
+	llm, err := provider.NewLLM(context.Background(), mapGUIProviderID(s.id), s.model, s.apiKey, s.baseURL, "", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create sub-LLM client for %s: %w", s.id, err)
 	}
-	return provider, nil
+	return llm, nil
 }
 
 // initMemoryEngine mirrors the CLI assembly: builds the unified memory
 // engine when enabled and an embedder is configured.
-func (b *Backend) initMemoryEngine(caller agent.Provider) *memory.UnifiedEngine {
+func (b *Backend) initMemoryEngine(caller model.LLM) *memory.UnifiedEngine {
 	cfg := b.cfg.Get()
 	memCfg := cfg.Memory
 	if !memCfg.Enabled || (memCfg.Embedding.Provider == "" && memCfg.Embedding.APIKey == "") {
@@ -272,19 +262,30 @@ func (b *Backend) initMemoryEngine(caller agent.Provider) *memory.UnifiedEngine 
 	}
 	if caller != nil {
 		engine.Caller = func(ctx context.Context, systemPrompt, userContent string) (string, error) {
-			req := &agent.MessageRequest{
-				Messages: []types.Message{
-					{Role: types.RoleUser, Content: userContent},
+			temp := float32(0.0)
+			req := &model.LLMRequest{
+				Contents: []*genai.Content{genai.NewContentFromText(userContent, "user")},
+				Config: &genai.GenerateContentConfig{
+					SystemInstruction: genai.NewContentFromText(systemPrompt, "user"),
+					Temperature:       &temp,
+					MaxOutputTokens:   2048,
 				},
-				SystemPrompt: systemPrompt,
-				MaxTokens:    2048,
-				Temperature:  0.0,
 			}
-			resp, err := caller.CreateMessage(ctx, req)
-			if err != nil {
-				return "", err
+			var out strings.Builder
+			for resp, err := range caller.GenerateContent(ctx, req, false) {
+				if err != nil {
+					return "", err
+				}
+				if resp == nil || resp.Content == nil {
+					continue
+				}
+				for _, part := range resp.Content.Parts {
+					if part != nil && part.Text != "" && !part.Thought {
+						out.WriteString(part.Text)
+					}
+				}
 			}
-			return resp.Content, nil
+			return out.String(), nil
 		}
 	}
 	log.Info("Memory engine initialised")

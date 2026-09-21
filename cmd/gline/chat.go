@@ -10,10 +10,10 @@ import (
 
 	"github.com/liup215/gline/internal/adkagent"
 	glineagent "github.com/liup215/gline/internal/agent"
-	"github.com/liup215/gline/internal/api"
 	"github.com/liup215/gline/internal/log"
 	"github.com/liup215/gline/internal/memory"
 	"github.com/liup215/gline/internal/prompts"
+	"github.com/liup215/gline/internal/provider"
 	"github.com/liup215/gline/internal/sessionstore"
 	"github.com/liup215/gline/internal/skills"
 	"github.com/liup215/gline/internal/storage"
@@ -75,7 +75,7 @@ func resolveProviderSettings() (*providerSettings, error) {
 		}
 		baseURL := settings.BaseURL
 		if baseURL == "" {
-			baseURL = api.OpenCodeGoBaseURL
+			baseURL = "https://opencode.ai/zen/go/v1"
 		}
 		return &providerSettings{name: "opencode-go", model: model, apiKey: apiKey, baseURL: baseURL}, nil
 
@@ -177,19 +177,19 @@ func initializeAgent() (ui.AgentRunner, storage.Store, error) {
 		return nil, nil, err
 	}
 
-	// Legacy provider interface — kept solely for sub-LLM tools
+	// Sub-LLM backend — kept solely for sub-LLM tools
 	// (summarize_file / use_subagents).
-	legacyProvider, err := api.NewGoLLMProvider(settings.apiKey, settings.model, settings.baseURL, settings.name)
+	subLLM, err := provider.NewLLM(context.Background(), mapProviderID(settings.name), settings.model, settings.apiKey, settings.baseURL, "", nil)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create %s provider: %w", settings.name, err)
+		return nil, nil, fmt.Errorf("failed to create %s sub-LLM client: %w", settings.name, err)
 	}
 	log.Infof("Using %s provider with model: %s", settings.name, settings.model)
 
 	customRules, _ := prompts.LoadCustomRules()
-	subBuilder := subagent.NewBuilder(legacyProvider, registry, "", customRules, skillReg.GetMeta())
+	subBuilder := subagent.NewBuilder(subLLM, registry, "", customRules, skillReg.GetMeta())
 	sum := summarizer.NewSummarizer(subagent.NewSummarizerCaller(subBuilder), summarizer.DefaultOptions())
 	_ = tools.RegisterSummarizeFileTool(registry, sum)
-	subagent.RegisterTool(registry, legacyProvider, registry, "", customRules, skillReg.GetMeta())
+	subagent.RegisterTool(registry, subLLM, registry, "", customRules, skillReg.GetMeta())
 	log.Infof("Initialized %d tools", registry.Count())
 
 	ctx := context.Background()
