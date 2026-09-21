@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-09-21 — 工具重命名：grep / glob / ls ✅（已部署）
+
+三个文件工具统一改为简短命名（对齐 Claude Code Glob/Grep 惯例，主流模型训练数据熟悉度高）：
+
+| 旧名 | 新名 | 后端 |
+|------|------|------|
+| search_files | **grep** | rg（内容搜索） |
+| find_files | **glob** | fd（文件名 glob） |
+| list_files | **ls** | ReadDir（目录列表，保留三个工具） |
+
+- Go 标识符同步：GrepTool/GlobTool/LsTool + ToolGrep/ToolGlob/ToolLs 常量；SearchFilesOutput 等内部管道类型未改
+- subagent AllowedTools 补上了 glob（此前漏了 find_files）；debug skill 提示词旧引用同步修正
+- 覆盖面：registry/init、prompts 规则与 Code Search Strategy、ui/view 别名（新增 ls→listed）、ui/tool registry、GUI format.ts、全部测试
+- 提交：rename 31 文件（含 gofmt 行尾规范化噪音，测试全绿验证无害）+ debug.yaml 修补
+
 ## 2026-09-21 — rg 搜索性能优化：流式 + 早停 + 计时 ✅（已部署）
 
 依据外部方案评价实施（方案 1/2/4，未采纳 3（改输出）和 5（手写 JSON 解析））:
