@@ -1,14 +1,25 @@
-﻿package main
+//go:build gui
+
+// gline-gui: standalone desktop GUI entry for gline.
+//
+// Build:   go build -tags gui -ldflags "-s -w -H=windowsgui" -o gline-gui.exe ./cmd/gline-gui/
+// Install: gline-gui.exe → C:\Users\<you>\bin\gline-gui.exe
+//
+// Launching this binary opens the GUI directly — no terminal window, no
+// Cobra, no TUI code compiled in.  System-tray behaviour is identical to
+// "gline --gui".
+package main
 
 import (
 	"embed"
-	_ "embed"
 	"log"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 
+	"github.com/liup215/gline/internal/config"
 	"github.com/liup215/gline/internal/gui"
+	glog "github.com/liup215/gline/internal/log"
 )
 
 //go:embed all:frontend/dist
@@ -17,14 +28,30 @@ var assets embed.FS
 //go:embed build/appicon.png
 var iconBytes []byte
 
-func runGUI() {
-	// Initialize configuration and logging
-	if err := InitConfig(); err != nil {
-		log.Fatalf("Failed to initialize config: %v", err)
-	}
+func main() {
+	initConfig()
+	runGUI()
+}
 
+func initConfig() {
+	cm := config.NewManager()
+	if err := cm.Load(); err != nil {
+		log.Fatalf("Failed to load config: %v", err)
+	}
+	cfg := cm.Get()
+	if err := glog.Init(glog.Config{
+		Level:   cfg.Log.Level,
+		File:    cfg.Log.File,
+		Console: false, // GUI binary — never write to stdout/stderr
+		Color:   true,
+	}); err != nil {
+		glog.Fatalf("Failed to initialise logger: %v", err)
+	}
+}
+
+func runGUI() {
 	if err := gui.InitBackend(); err != nil {
-		log.Fatalf("Failed to initialise backend: %v", err)
+		glog.Fatalf("Failed to initialise backend: %v", err)
 	}
 
 	chatService := &gui.ChatService{Backend: gui.BackendInstance}
@@ -60,13 +87,13 @@ func runGUI() {
 		URL:              "/",
 	})
 
-	// Intercept close button (X) to hide to system tray instead of quitting
+	// Close button hides to tray instead of quitting
 	window.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
 		window.Hide()
 		e.Cancel()
 	})
 
-	// --- System Tray Setup ---
+	// --- System tray ---
 	systemTray := app.SystemTray.New()
 	systemTray.SetIcon(iconBytes)
 	systemTray.AttachWindow(window)
@@ -80,28 +107,20 @@ func runGUI() {
 			window.Show().Focus()
 		}
 	})
-
-	// Dynamically update menu label when window is hidden/shown
 	window.RegisterHook(events.Common.WindowHide, func(e *application.WindowEvent) {
-		if toggleItem != nil {
-			toggleItem.SetLabel("Show gline")
-		}
+		toggleItem.SetLabel("Show gline")
 	})
 	window.RegisterHook(events.Common.WindowShow, func(e *application.WindowEvent) {
-		if toggleItem != nil {
-			toggleItem.SetLabel("Hide gline")
-		}
+		toggleItem.SetLabel("Hide gline")
 	})
-
 	trayMenu.AddSeparator()
 	trayMenu.Add("Quit").OnClick(func(ctx *application.Context) {
 		app.Quit()
 	})
-
 	systemTray.SetMenu(trayMenu)
-	// --- End System Tray Setup ---
+	// --- End system tray ---
 
 	if err := app.Run(); err != nil {
-		log.Fatal(err)
+		glog.Fatal(err.Error())
 	}
 }
