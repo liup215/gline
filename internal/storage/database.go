@@ -136,6 +136,28 @@ func migrate(db *sql.DB) error {
 		}
 	}
 
+	// Version 6: Add session_id column to tasks (ADK session mapping)
+	if v < 6 {
+		if err := applyV6(db); err != nil {
+			return err
+		}
+		if _, err := db.Exec("INSERT INTO migrations (version) VALUES (6)"); err != nil {
+			return fmt.Errorf("failed to record v6 migration: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// applyV6 adds the session_id column to tasks, linking each task to its
+// ADK session (internal/sessionstore) for history resume.
+func applyV6(db *sql.DB) error {
+	if _, err := db.Exec(`ALTER TABLE tasks ADD COLUMN session_id TEXT DEFAULT ''`); err != nil {
+		return fmt.Errorf("failed to add session_id column: %w", err)
+	}
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_tasks_session ON tasks(session_id)`); err != nil {
+		return fmt.Errorf("failed to create idx_tasks_session: %w", err)
+	}
 	return nil
 }
 

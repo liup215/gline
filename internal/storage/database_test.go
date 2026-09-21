@@ -299,3 +299,35 @@ func TestToTypesMessage(t *testing.T) {
 	assert.Len(t, msg.ToolCalls, 1)
 	assert.Equal(t, "read", msg.ToolCalls[0].Name)
 }
+
+// TestSQLiteStore_SessionIDMapping verifies the task→ADK-session mapping that
+// the ADK refactor relies on for history resume (Phase 1 deliverable).
+func TestSQLiteStore_SessionIDMapping(t *testing.T) {
+	s := newTestStore(t)
+
+	id, err := s.CreateTask("", "session mapping test", "act", "opencode", "mimo-v2.5", "")
+	require.NoError(t, err)
+
+	// Initially empty.
+	sid, err := s.GetTaskSessionID(id)
+	require.NoError(t, err)
+	assert.Empty(t, sid)
+
+	// Set and read back.
+	require.NoError(t, s.SetTaskSessionID(id, "sess-abc-123"))
+	sid, err = s.GetTaskSessionID(id)
+	require.NoError(t, err)
+	assert.Equal(t, "sess-abc-123", sid)
+
+	// Task record includes the session id.
+	task, err := s.GetTaskByID(id)
+	require.NoError(t, err)
+	require.NotNil(t, task)
+	assert.Equal(t, "sess-abc-123", task.SessionID)
+
+	// Listing includes it too.
+	tasks, err := s.ListTasks(10, 0)
+	require.NoError(t, err)
+	require.Len(t, tasks, 1)
+	assert.Equal(t, "sess-abc-123", tasks[0].SessionID)
+}

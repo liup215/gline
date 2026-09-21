@@ -79,6 +79,7 @@ type TaskRecord struct {
 	Model       string
 	Status      string
 	WorkingDir  string
+	SessionID   string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 	CompletedAt *time.Time

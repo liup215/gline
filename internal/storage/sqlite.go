@@ -233,6 +233,33 @@ func (s *SQLiteStore) FailToolCall(callID int64, err error) error {
 
 // === History queries ===
 
+// SetTaskSessionID records the ADK session id associated with a task.
+// The session event log (internal/sessionstore) is the conversation source of
+// truth; the task row only holds the mapping for history resume.
+func (s *SQLiteStore) SetTaskSessionID(taskID, sessionID string) error {
+	_, err := s.db.Exec(
+		"UPDATE tasks SET session_id = ?, updated_at = ? WHERE id = ?",
+		sessionID, now(), taskID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to set task session_id: %w", err)
+	}
+	return nil
+}
+
+// GetTaskSessionID returns the ADK session id for a task (empty if none).
+func (s *SQLiteStore) GetTaskSessionID(taskID string) (string, error) {
+	var sessionID string
+	err := s.db.QueryRow(`SELECT COALESCE(session_id, '') FROM tasks WHERE id = ?`, taskID).Scan(&sessionID)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to get task session_id: %w", err)
+	}
+	return sessionID, nil
+}
+
 // UpdateTaskWorkingDir updates the working directory for a task.
 func (s *SQLiteStore) UpdateTaskWorkingDir(taskID, workingDir string) error {
 	_, err := s.db.Exec(
@@ -255,7 +282,7 @@ func (s *SQLiteStore) ListTasks(limit, offset int) ([]TaskRecord, error) {
 	}
 
 	rows, err := s.db.Query(`
-		SELECT id, title, prompt, mode, provider, model, status, working_dir, created_at, updated_at, completed_at
+		SELECT id, title, prompt, mode, provider, model, status, working_dir, COALESCE(session_id, ''), created_at, updated_at, completed_at
 		FROM tasks
 		ORDER BY created_at DESC
 		LIMIT ? OFFSET ?
@@ -269,7 +296,7 @@ func (s *SQLiteStore) ListTasks(limit, offset int) ([]TaskRecord, error) {
 	for rows.Next() {
 		var t TaskRecord
 		var completedAt sql.NullTime
-		if err := rows.Scan(&t.ID, &t.Title, &t.Prompt, &t.Mode, &t.Provider, &t.Model, &t.Status, &t.WorkingDir, &t.CreatedAt, &t.UpdatedAt, &completedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.Title, &t.Prompt, &t.Mode, &t.Provider, &t.Model, &t.Status, &t.WorkingDir, &t.SessionID, &t.CreatedAt, &t.UpdatedAt, &completedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan task: %w", err)
 		}
 		if completedAt.Valid {
@@ -288,10 +315,10 @@ func (s *SQLiteStore) GetTaskByID(id string) (*TaskRecord, error) {
 	var t TaskRecord
 	var completedAt sql.NullTime
 	row := s.db.QueryRow(`
-		SELECT id, title, prompt, mode, provider, model, status, working_dir, created_at, updated_at, completed_at
+		SELECT id, title, prompt, mode, provider, model, status, working_dir, COALESCE(session_id, ''), created_at, updated_at, completed_at
 		FROM tasks WHERE id = ?
 	`, id)
-	err := row.Scan(&t.ID, &t.Title, &t.Prompt, &t.Mode, &t.Provider, &t.Model, &t.Status, &t.WorkingDir, &t.CreatedAt, &t.UpdatedAt, &completedAt)
+	err := row.Scan(&t.ID, &t.Title, &t.Prompt, &t.Mode, &t.Provider, &t.Model, &t.Status, &t.WorkingDir, &t.SessionID, &t.CreatedAt, &t.UpdatedAt, &completedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

@@ -2,6 +2,26 @@
 
 ## Current Focus
 
+### Agent Loop 重构规划（2026-09-19）— 采採 pi-go / ADK 架构
+
+**状态**: 方案已定稿，待实施
+
+**决策**: 放弃继续修补手写 agent loop，采採 pi-go 验证过的 Google ADK Go v2 架构重构 gline agent core。
+
+**方案文档**: `docs/agent-loop-refactor-plan.md`
+
+**要点**:
+- 引入 `google.golang.org/adk/v2 v2.4.0`（与 pi-go 同版本），ADK runner 拥有循环，session event 流是唯一事实来源 → 结构性消除 orphan tool call
+- 删除 go-llm，provider 从 pi-go 移植（opencode/openai/anthropic/openrouter；volcano 走 openai-compat baseURL）
+- session 存储用 ADK 官方 GORM SQLite service（`~/.gline/sessions.db`），gline SQLite 保留为任务索引
+- 工具保留业务实现 + functiontool 适配层；**移除 attempt_completion**（完成 = turn 结束）
+- Plan/Act/yolo 走 Before/After 回调；前端消费 `iter.Seq2[*session.Event, error]`
+- 7 个 Phase，每个 Phase 结束可发布可回滚，约 6.5 天
+
+**背景**: gline 手写循环（preDispatch 抢跑、partial 累加、streaming 竞态）长期靠补丁维持（sanitize/深拷贝/重试/验证）。pi-go（C:/Users/22569/Documents/20-Projects/pi-go）同栈 Windows + opencode/mimo-v2.5 验证可用，直接移植其架构与代码。
+
+**pi-go 侧本次已修复**（供移植基线）: bash 最小 timeout（15s/10s）、子进程环境白名单加 Windows 变量（USERPROFILE/APPDATA 等）、skills 加载 `~/.agents/skills`、Windows 禁用 os.Root 沙箱。
+
 ### TUI 优化与修复（2026-09-18 ~ 2026-09-19）
 
 **状态**: 大部分完成，性能优化待实施
