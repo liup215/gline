@@ -16,10 +16,10 @@ var (
 	// - MarginLeft(1): 1 char left margin
 	// This matches the input box exactly so they align visually
 	SlashMenuBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#7D56C4")).
-			Background(lipgloss.Color("#1a1a2e")).
-			Padding(0, 3)
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("#7D56C4")).
+				Background(lipgloss.Color("#1a1a2e")).
+				Padding(0, 3)
 
 	SlashMenuItemStyle = lipgloss.NewStyle().
 				Padding(0, 1)
@@ -31,8 +31,8 @@ var (
 				Bold(true)
 
 	SlashMenuDescriptionStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#888888")).
-				Italic(true)
+					Foreground(lipgloss.Color("#888888")).
+					Italic(true)
 
 	SlashMenuHintStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#666666")).

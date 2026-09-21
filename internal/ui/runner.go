@@ -3,8 +3,8 @@ package ui
 import (
 	"context"
 
-	glineagent "github.com/liup215/gline/internal/agent"
 	"github.com/liup215/gline/internal/adkagent"
+	glineagent "github.com/liup215/gline/internal/agent"
 	"github.com/liup215/gline/internal/memory"
 	"github.com/liup215/gline/pkg/types"
 )

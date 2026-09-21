@@ -1,4 +1,4 @@
-﻿package ui
+package ui
 
 import (
 	"strings"
@@ -9,11 +9,11 @@ import (
 
 // SlashMenuState tracks the current slash command menu state.
 type SlashMenuState struct {
-	Active    bool               // whether slash mode is active
-	Query     string             // current query after /
-	Selected  int                // selected item index in filtered list
-	Filtered  []*types.SlashCommand // filtered command list
-	Registry  *slash.Registry    // command registry
+	Active   bool                  // whether slash mode is active
+	Query    string                // current query after /
+	Selected int                   // selected item index in filtered list
+	Filtered []*types.SlashCommand // filtered command list
+	Registry *slash.Registry       // command registry
 }
 
 // NewSlashMenuState creates a new slash menu state with the given registry.

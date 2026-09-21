@@ -24,7 +24,7 @@ func TestNormalizeToolName(t *testing.T) {
 		{"replaceInFile", "edit"},
 		{"executeCommand", "run"},
 		{"read", "read"}, // already snake_case
-		{"ABC", "abc"},             // all caps → just lowercased (no lowercase→uppercase boundary)
+		{"ABC", "abc"},   // all caps → just lowercased (no lowercase→uppercase boundary)
 	}
 	for _, tt := range tests {
 		got := NormalizeToolName(tt.input)
@@ -122,7 +122,7 @@ func TestRenderStatusBar(t *testing.T) {
 		Provider:     "openai",
 		ModelName:    "gpt-4",
 		IsProcessing: true,
-		IsStreaming:   true,
+		IsStreaming:  true,
 		SpinnerView:  "⠋",
 		Width:        80,
 	}))
@@ -268,29 +268,29 @@ func TestFormatAttemptCompletionContent(t *testing.T) {
 		name, input, wantSub string
 	}{
 		{
-			name:     "string result",
-			input:    `{"result": "Task completed successfully"}`,
-			wantSub:  "Task completed successfully",
+			name:    "string result",
+			input:   `{"result": "Task completed successfully"}`,
+			wantSub: "Task completed successfully",
 		},
 		{
-			name:     "string content",
-			input:    `{"content": "Some content"}`,
-			wantSub:  "Some content",
+			name:    "string content",
+			input:   `{"content": "Some content"}`,
+			wantSub: "Some content",
 		},
 		{
-			name:     "object result renders as JSON code block",
-			input:    `{"result": {"key": "value"}}`,
-			wantSub:  "```json",
+			name:    "object result renders as JSON code block",
+			input:   `{"result": {"key": "value"}}`,
+			wantSub: "```json",
 		},
 		{
-			name:     "invalid JSON returns raw input",
-			input:    `not json`,
-			wantSub:  "not json",
+			name:    "invalid JSON returns raw input",
+			input:   `not json`,
+			wantSub: "not json",
 		},
 		{
-			name:     "empty object falls back to JSON code block",
-			input:    `{"other": "data"}`,
-			wantSub:  "```json",
+			name:    "empty object falls back to JSON code block",
+			input:   `{"other": "data"}`,
+			wantSub: "```json",
 		},
 	}
 	for _, tt := range tests {

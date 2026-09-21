@@ -53,8 +53,8 @@ type LayoutData struct {
 	InputView      string // pre-rendered textarea view
 	InputStatusBar string // status bar below input (model, mode, etc)
 	Help           string
-	Height         int    // total terminal height
-	InputHeight    int    // input box height
+	Height         int // total terminal height
+	InputHeight    int // input box height
 }
 
 // RenderLayout assembles all sections into the final TUI output.

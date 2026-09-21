@@ -28,10 +28,10 @@ func TestStatusViewModelRefresh(t *testing.T) {
 		agent.ModeAct,
 		"openai",
 		"gpt-4",
-		true,   // isProcessing
-		false,  // isStreaming
+		true,  // isProcessing
+		false, // isStreaming
 		"test_tool",
-		80,     // width
+		80, // width
 	)
 
 	if data.Mode != agent.ModeAct {

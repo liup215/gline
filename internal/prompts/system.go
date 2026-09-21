@@ -176,8 +176,13 @@ func GetToolDescriptions() []ToolDescription {
 		},
 		{
 			Name:        "search_files",
-			Description: "Search for regex pattern in files.",
-			InputSchema: `{"type":"object","properties":{"path":{"type":"string"},"regex":{"type":"string"}},"required":["path","regex"]}`,
+			Description: "Search file contents for a regex pattern (fast, ripgrep-backed).",
+			InputSchema: `{"type":"object","properties":{"path":{"type":"string"},"regex":{"type":"string"},"file_pattern":{"type":"string"}},"required":["path","regex"]}`,
+		},
+		{
+			Name:        "find_files",
+			Description: "Find files by name with a glob pattern (recursive, fast).",
+			InputSchema: `{"type":"object","properties":{"path":{"type":"string"},"pattern":{"type":"string"}},"required":["path"]}`,
 		},
 		{
 			Name:        "list_code_definition_names",

@@ -9,6 +9,7 @@ const (
 	ToolReplaceInFile        ToolName = "edit"
 	ToolExecuteCommand       ToolName = "run"
 	ToolSearchFiles          ToolName = "search_files"
+	ToolFindFiles            ToolName = "find_files"
 	ToolSummarizeFile        ToolName = "summarize_file"
 	ToolAttemptCompletion    ToolName = "attempt_completion"
 	ToolAskFollowupQuestion  ToolName = "ask_followup_question"

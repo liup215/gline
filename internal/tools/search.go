@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -185,7 +186,7 @@ func NewSearchFilesTool() *SearchFilesTool {
 	return &SearchFilesTool{
 		BaseTool: BaseTool{
 			name:        "search_files",
-			description: "Search for a regex pattern in files within a directory. Returns context-rich results with file paths, line numbers, and surrounding context.",
+			description: "Search for a regex pattern in files within a directory. Returns context-rich results with file paths, line numbers, and surrounding context. Powered by ripgrep (fast, respects .gitignore) when installed.",
 			inputSchema: schema,
 		},
 	}
@@ -215,14 +216,55 @@ func (t *SearchFilesTool) Execute(ctx context.Context, input json.RawMessage) (s
 	}
 	searchCacheMu.RUnlock()
 
+	// Fast path: ripgrep when installed — parallel traversal, SIMD matching
+	// and .gitignore awareness make it orders of magnitude faster than the
+	// pure-Go walk on large repositories. Falls back when rg is missing or
+	// fails to run; cancellation is propagated instead.
+	if out, ok, err := searchFilesRipgrep(ctx, path, req.Regex, req.FilePattern); err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return "", err
+		}
+		// rg broken: fall through to the pure-Go implementation.
+	} else if ok {
+		if len(out.Results) > maxSearchResults {
+			out.Results = out.Results[:maxSearchResults]
+			out.TotalMatches = maxSearchResults
+		}
+		storeSearchCache(cacheKey, out)
+		return formatSearchResults(out), nil
+	}
+
+	output, err := searchFilesGo(ctx, path, req.Regex, req.FilePattern)
+	if err != nil {
+		return "", err
+	}
+
+	// Store in cache.
+	storeSearchCache(cacheKey, output)
+
+	// Format output.
+	return formatSearchResults(output), nil
+}
+
+// storeSearchCache caches a search output under the given key.
+func storeSearchCache(key searchCacheKey, output *SearchFilesOutput) {
+	searchCacheMu.Lock()
+	clearExpiredSearchCache()
+	searchCache[key] = &searchCacheEntry{output: output, createdAt: time.Now()}
+	searchCacheMu.Unlock()
+}
+
+// searchFilesGo is the pure-Go fallback: walk the tree, read candidate files
+// and match with Go's regexp/bytes search using a worker pool.
+func searchFilesGo(ctx context.Context, path, regex, filePattern string) (*SearchFilesOutput, error) {
 	// Build appropriate searcher (literal fast path when possible).
 	var srh searcher
-	if isLiteralPattern(req.Regex) {
-		srh = &literalSearcher{pattern: []byte(req.Regex)}
+	if isLiteralPattern(regex) {
+		srh = &literalSearcher{pattern: []byte(regex)}
 	} else {
-		re, err := regexp.Compile(req.Regex)
+		re, err := regexp.Compile(regex)
 		if err != nil {
-			return "", fmt.Errorf("invalid regex pattern: %w", err)
+			return nil, fmt.Errorf("invalid regex pattern: %w", err)
 		}
 		srh = &regexSearcher{re: re}
 	}
@@ -231,9 +273,9 @@ func (t *SearchFilesTool) Execute(ctx context.Context, input json.RawMessage) (s
 	info, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return "", fmt.Errorf("path not found: %s", path)
+			return nil, fmt.Errorf("path not found: %s", path)
 		}
-		return "", fmt.Errorf("failed to stat path: %w", err)
+		return nil, fmt.Errorf("failed to stat path: %w", err)
 	}
 
 	// If path is a file, search just that file.
@@ -241,9 +283,9 @@ func (t *SearchFilesTool) Execute(ctx context.Context, input json.RawMessage) (s
 	if !info.IsDir() {
 		files = []string{path}
 	} else {
-		files, err = findFiles(path, req.FilePattern)
+		files, err = findFiles(path, filePattern)
 		if err != nil {
-			return "", fmt.Errorf("failed to find files: %w", err)
+			return nil, fmt.Errorf("failed to find files: %w", err)
 		}
 	}
 
@@ -255,15 +297,7 @@ func (t *SearchFilesTool) Execute(ctx context.Context, input json.RawMessage) (s
 		output.Results = output.Results[:maxSearchResults]
 		output.TotalMatches = maxSearchResults
 	}
-
-	// Store in cache.
-	searchCacheMu.Lock()
-	clearExpiredSearchCache()
-	searchCache[cacheKey] = &searchCacheEntry{output: output, createdAt: time.Now()}
-	searchCacheMu.Unlock()
-
-	// Format output.
-	return formatSearchResults(output), nil
+	return output, nil
 }
 
 // isLiteralPattern returns true if the pattern contains no regex metacharacters.

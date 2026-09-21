@@ -130,6 +130,7 @@ var ToolDescriptions = map[string]string{
 	"run":                   "executed this command",
 	"execute_command":       "executed this command",
 	"search_files":          "searched files",
+	"find_files":            "found files",
 	"attempt_completion":    "completed the task",
 	"ask_followup_question": "asked a question",
 	"plan_mode_respond":     "provided a plan response",

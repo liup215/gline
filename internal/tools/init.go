@@ -62,6 +62,13 @@ func InitDefaultRegistry(engine *memory.UnifiedEngine, sum *summarizer.Summarize
 	})
 
 	registry.Register(&ToolInfo{
+		Tool:                 NewFindFilesTool(),
+		Category:             CategorySearch,
+		AllowedModes:         []string{"plan", "act"},
+		RequiresConfirmation: false,
+	})
+
+	registry.Register(&ToolInfo{
 		Tool:                 NewListCodeDefinitionNamesTool(),
 		Category:             CategorySearch,
 		AllowedModes:         []string{"plan", "act"},
@@ -184,6 +191,7 @@ func GetDefaultTools() []Tool {
 		NewWriteFileTool(),
 		NewReplaceInFileTool(),
 		NewListFilesTool(),
+		NewFindFilesTool(),
 		NewSearchFilesTool(),
 		NewListCodeDefinitionNamesTool(),
 		NewExecuteCommandTool(),

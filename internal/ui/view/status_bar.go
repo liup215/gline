@@ -116,7 +116,7 @@ type StatusBarData struct {
 	Provider     string
 	ModelName    string
 	IsProcessing bool
-	IsStreaming   bool
+	IsStreaming  bool
 	CurrentTool  string
 	SpinnerView  string // pre-rendered spinner string from Bubbletea
 	Width        int
