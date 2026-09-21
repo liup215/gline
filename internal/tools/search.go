@@ -188,7 +188,8 @@ func NewGrepTool() *GrepTool {
 	return &GrepTool{
 		BaseTool: BaseTool{
 			name:        "grep",
-			description: "Search for a regex pattern in files within a directory. Returns context-rich results with file paths, line numbers, and surrounding context. Powered by ripgrep (fast, respects .gitignore) when installed.",
+			description: "Search for a regex pattern in files within a directory. Returns context-rich results with file paths, line numbers, and surrounding context. Powered by ripgrep (fast, respects .gitignore) when installed. " +
+				"Prefer this over reading whole files when looking for code. To find files by NAME, use glob instead.",
 			inputSchema: schema,
 		},
 	}

@@ -282,7 +282,10 @@ func (r *Runner) executeToolCalls(ctx context.Context, calls []*genai.FunctionCa
 			continue
 		}
 
-		raw, err := json.Marshal(fc.Args)
+		// Repair model-produced args (aliases, type coercion) the same way
+		// the main ADK loop does, so subagents benefit from identical leniency.
+		repaired := tools.RepairToolArgs(name, tool.InputSchema(), fc.Args)
+		raw, err := json.Marshal(repaired)
 		if err != nil {
 			raw = []byte("{}")
 		}

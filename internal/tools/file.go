@@ -90,7 +90,9 @@ func NewReadFileTool() *ReadFileTool {
 			description: "Read lines from a file. Supports ~ (home), relative, and absolute paths. " +
 				fmt.Sprintf("Reads %d lines by default starting at line_number; pass limit for more (max %d per read). ", readFileChunkLines, readFileMaxLines) +
 				"Output reports the line range, total line count and the next line_number to continue from. " +
-				"For large files, use grep first to find a relevant section, then read that chunk with line_number.",
+				"For large files, use grep first to find a relevant section, then read that chunk with line_number. " +
+				"If output is truncated, continue from the reported next line_number instead of re-reading the whole file. " +
+				"Do not use run (cat/head/tail) to read files.",
 			inputSchema: schema,
 		},
 	}
@@ -217,7 +219,8 @@ func NewWriteFileTool() *WriteFileTool {
 	return &WriteFileTool{
 		BaseTool: BaseTool{
 			name:        "write",
-			description: "Write content to a file at the specified path. If the file exists, it will be overwritten. Use this when creating new files or completely rewriting existing files.",
+			description: "Write content to a file at the specified path. If the file exists, it will be overwritten. Use this when creating new files or completely rewriting existing files. " +
+				"For small targeted changes to an existing file, use edit instead — a full overwrite risks losing content you have not read.",
 			inputSchema: PathAndContentSchema,
 		},
 	}
@@ -328,7 +331,8 @@ func NewReplaceInFileTool() *ReplaceInFileTool {
 	return &ReplaceInFileTool{
 		BaseTool: BaseTool{
 			name:        "edit",
-			description: "Replace specific content in a file using exact search/replace. Supports single blocks or an array of replacements for multiple edits. Use this for targeted modifications to existing files.",
+			description: "Replace content in a file by exact string match. search must match the file EXACTLY, including whitespace and indentation — read the file first and copy-paste the text to replace. " +
+				"Supports a single block or an array of replacements for multiple edits in one call. Use it for targeted modifications; use write for new files or full rewrites.",
 			inputSchema: schema,
 		},
 	}
@@ -683,7 +687,8 @@ func NewLsTool() *LsTool {
 	return &LsTool{
 		BaseTool: BaseTool{
 			name:        "ls",
-			description: "List files and directories at the specified path. Use this to explore the file system.",
+			description: "List the files and directories at the specified path, with names, types and sizes. Use it to explore a directory. " +
+				"To find files by name pattern anywhere below a directory, use glob; to search file contents, use grep.",
 			inputSchema: schema,
 		},
 	}

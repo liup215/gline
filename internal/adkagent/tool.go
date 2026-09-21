@@ -66,6 +66,9 @@ func (t *adkTool) Run(ctx agent.Context, args any) (map[string]any, error) {
 	if !ok || m == nil {
 		m = map[string]any{}
 	}
+	// Repair model-produced args before execution: parameter aliases
+	// (file_path → path) and type coercion ("3" → 3). See tools.RepairToolArgs.
+	m = tools.RepairToolArgs(t.Name(), t.inner.InputSchema(), m)
 	raw, err := json.Marshal(m)
 	if err != nil {
 		return nil, fmt.Errorf("tool %q: encoding args: %w", t.Name(), err)

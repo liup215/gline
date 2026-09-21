@@ -41,3 +41,41 @@ func TestExecuteCommandRequiresCommand(t *testing.T) {
 		t.Fatal("expected error for empty command")
 	}
 }
+
+func TestExecuteCommandDescriptionMatchesResolvedShell(t *testing.T) {
+	tool := NewExecuteCommandTool()
+	desc := tool.Description()
+	if desc == "" {
+		t.Fatal("empty description")
+	}
+	// The description must commit to one shell syntax (pi's lesson: the
+	// model writes for the shell the description names, never "either").
+	if strings.Contains(desc, "when available") || strings.Contains(desc, "falls back") {
+		t.Fatalf("description hedges shell choice instead of committing: %s", desc)
+	}
+	switch shell.Resolve().Name() {
+	case "bash":
+		if !strings.Contains(desc, "POSIX syntax works") {
+			t.Errorf("bash machine but description lacks POSIX guidance: %s", desc)
+		}
+	case "cmd":
+		if !strings.Contains(desc, "cmd.exe") {
+			t.Errorf("cmd machine but description lacks cmd guidance: %s", desc)
+		}
+	case "sh":
+		if !strings.Contains(desc, "under sh") {
+			t.Errorf("sh machine but description lacks sh guidance: %s", desc)
+		}
+	}
+	// Routing guidance must steer file work to the dedicated tools.
+	if !strings.Contains(desc, "use read") || !strings.Contains(desc, "grep/glob") {
+		t.Errorf("description lacks tool-routing guidance: %s", desc)
+	}
+}
+
+func TestExecuteCommandSchemaDropsRequiresApproval(t *testing.T) {
+	tool := NewExecuteCommandTool()
+	if strings.Contains(string(tool.InputSchema()), "requires_approval") {
+		t.Fatal("schema still advertises dead requires_approval parameter")
+	}
+}
