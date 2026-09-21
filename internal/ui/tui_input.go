@@ -169,6 +169,19 @@ func handleKeyMsg(m *Model, msg tea.KeyMsg) []tea.Cmd {
 			}
 		}
 
+	case tea.KeyUp:
+		// Recall the previous prompt when the input is single-line;
+		// multi-line content keeps native cursor movement.
+		if m.canBrowseHistory() {
+			m.prevInputHistory()
+		}
+
+	case tea.KeyDown:
+		// Recall the next prompt (or restore the draft past the newest).
+		if m.canBrowseHistory() {
+			m.nextInputHistory()
+		}
+
 	case tea.KeyCtrlL:
 		// Clear screen
 		m.conversation.Clear()
@@ -306,6 +319,8 @@ func submitUserMessage(m *Model) []tea.Cmd {
 	input := strings.TrimSpace(m.textarea.Value())
 	if input != "" && !m.isProcessing {
 		m.sendMessage(input)
+		m.addToInputHistory(input)
+		m.resetHistoryBrowsing()
 		// Clear the textarea value but keep the view rendered and at the
 		// configured height. Blur to indicate the input is temporarily
 		// disabled while the agent processes the message. Avoid calling

@@ -105,6 +105,11 @@ type Model struct {
 	historyDetail     *storage.TaskRecord
 	historyMessages   []storage.MessageRecord
 	historyConfirmID  string
+
+	// Input history recall (↑/↓ in the chat input; screen == ScreenChat)
+	inputHistory []string // previously submitted prompts (oldest first)
+	histIdx      int      // position while browsing (-1 = not browsing)
+	histDraft    string   // in-progress draft saved when browsing starts
 }
 
 // New creates a new TUI model
@@ -151,6 +156,7 @@ func New(agentInstance AgentRunner, store storage.Store) *Model {
 		ctx:                  context.Background(),
 		cancelCh:             make(chan context.CancelFunc, 1),
 		pendingReply:         nil,
+		histIdx:              -1,
 	}
 	m.slashMenu = NewSlashMenuState(slash.NewDefaultRegistry(conv, func(result slash.CommandResult, message string) {
 		handleSlashCommandResult(m, result, message)
@@ -251,7 +257,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Update slash menu query based on current textarea content.
 	// We detect slash mode by checking if the value starts with / and has no space.
-	if m.slashMenu != nil {
+	// Skip on the history screen: a lingering "/" in the textarea would
+	// silently re-activate slash mode and eat ↑/↓ meant for list navigation.
+	if m.slashMenu != nil && m.screen != ScreenHistory {
 		v := m.textarea.Value()
 		if !m.slashMenu.Active {
 			if strings.HasPrefix(v, "/") && !strings.Contains(strings.TrimPrefix(v, "/"), " ") {
@@ -604,6 +612,8 @@ func (m *Model) enterHistoryScreen() {
 	m.historyDetail = nil
 	m.historyMessages = nil
 	m.historyConfirmID = ""
+	m.resetHistoryBrowsing()
+	m.textarea.Reset()
 	m.screen = ScreenHistory
 }
 
@@ -705,6 +715,7 @@ func (m *Model) loadHistoryTask() {
 	m.isStreaming = false
 	m.currentTool = ""
 	m.activeAssistantIndex = -1
+	m.resetHistoryBrowsing()
 	m.textarea.Focus()
 	m.updateViewport()
 
