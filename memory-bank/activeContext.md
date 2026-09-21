@@ -2,9 +2,36 @@
 
 ## Current Focus
 
+### Agent Loop 重构 — Phase 4/5/5b 完成（2026-09-21）
+
+**状态**: Phase 0-5b 全部完成并提交，下一步 Phase 6（AutoCompact + facts + history resume + GUI 切换）
+
+**Phase 4 产出（`tool_adapter_test.go` + skills 进提示词）**:
+- MCP/use_skill/use_subagents 无需单独桥接：它们都已作为 `tools.Tool` 注册进 gline registry，`buildTools()` 自动包装进 ADK（MCP 工具名 `mcp_<server>_<tool>`，`IsAllowedInMode` 支持 `*` 通配）
+- `internal/mcp/testdata/echo_server/main.go` — 最小 stdio 行分隔 JSON-RPC MCP server（测试用）
+- 4 个适配测试：全 registry 工具走 ADK 适配（声明/遗留排除/PackTool）、PackTool 存工具本体、use_skill 走适配器（payload key `result`）、MCP 工具真子进程走完整 ADK 循环
+- `Options.Skills []types.SkillMeta` 渲染为动态系统指令里的 `# Skills` 段
+
+**Phase 5 产出（`internal/ui/runner.go` + `cmd/gline/chat.go` 重写）**:
+- **D26/D27**: UI 依赖窄接口 `AgentRunner`（RunWithCallback/Abort/SetMode/Mode/ProviderInfo/SessionID/NewSession）；`adkRunner`/`legacyRunner` 适配器（构造器 `AdkRunner()`/`LegacyRunner()`）；`taskManager`（SetTaskID/SetTaskTitle/ResetTask）走类型断言（仅 legacy 支持）
+- `Model.agentInstance AgentRunner`；store 装配期注入（`ui.Run(runner, store)`）；`/clear`+`/new` 走 `NewSession(ctx)`（ADK session 删除重建）；`/compact` 仅 legacy（ADK 压缩 Phase 6）；history 回放仅 legacy（ADK resume 靠 SessionID，Phase 6）
+- `adkagent.NewSession(ctx)` 删旧 session + 建新；`adkagent.ProviderInfo()`；`adkagent.Options.Tools` 生产传完整 registry
+- `cmd/gline/chat.go`: `resolveProviderSettings()`（config+env→settings）/`mapProviderID()`（**D28**: config `opencode-go` → provider 包 `opencode`）/`assembleSharedComponents()`/`newLegacyBundle()`（summarizer+subagent 仅 legacy 装配）；默认 ADK 装配，`GLINE_AGENT=legacy` 或 mock provider 回退旧循环（Phase 7 删）
+- `printCallback`：CLI 单消息模式的 stdout 流式回调（内容/工具起止/跟进问题默认取第一项）
+- Live 验证：`gline chat "Reply PONG"` 走新装配 PASS；run 工具真实执行 PASS；`GLINE_AGENT=legacy` 回退 PASS
+
+**Phase 5b 产出（`internal/adkagent/stuck.go`，从 pi-go 完整移植）**:
+- stuckDetector：相同调用 streak（10 次）+ 可变参数折叠（offset/limit/head_limit/start_line/end_line）+ 结果变化重置 + 长度 2/3 调用环（要求结果相同）+ args-aware/name-only 双错误 streak（10 次）+ 输出重复扫描（≥16 字节短语 ×6 次且字节多样性 ≥8）
+- bash_wait/bash_output 轮询处理保留但情性（gline 无后台轮询工具）
+- `bridge.deliver() → error`：文本→observeOutput、FunctionCall→observe、FunctionResponse→observeResult+observeError（isError 按 ADK `{"error": ...}` 包装）；stuck → `*stuckError`
+- `agent.go`：stuck → `cb.OnError` + cancel runCtx 终止运行；pi-go 的“告知模型后恢复”重喂循环留 Phase 6
+- 9 个检测器单测全绿
+
+**Phase 6 剩余**：AutoCompact（ADK compaction 或 AfterModelCallback+summarizer）；facts 提取钩子；`gline history` resume 走 SessionID；GUI ChatService 切 adkagent；stuck 恢复重喂；UsageMetadata 状态栏 token 显示（可选增强）
+
 ### Agent Loop 重构 — Phase 3 完成（2026-09-19）
 
-**状态**: Phase 0/1/2/3 已提交，下一步 Phase 4（MCP 桥接 + 工具适配测试）
+**状态**: Phase 0/1/2/3/4/5/5b 已提交，下一步 Phase 6
 
 **Phase 3 产出（commit 014b329，`internal/adkagent/`）**:
 - `agent.go` — `New/NewWithModel/RunWithCallback/SetMode/Abort/SessionID/Mode/SetYolo/IsRunning`；动态 `InstructionProvider`（每次模型调用读活模式 → Plan/Act 切换不重建 agent）；session 用 `session.InMemoryService()`（生产传 `sessionstore.Open`，Phase 5/6 接入）
@@ -16,7 +43,7 @@
 - 遗留工具排除表 `legacyToolNames`：attempt_completion/plan_mode_respond/use_mcp_tool/access_mcp_resource 不进 ADK 工具清单
 - `Options.Tools == nil` 时 fallback `tools.DefaultRegistry`（空的包级变量；生产必须显式传）
 
-**Phase 4 剩余**：MCP manager → ADK 工具桥接；use_skill/use_subagents 桥接；逐工具适配测试；skills 菜单进系统提示词
+**Phase 4 剩余**：MCP manager → ADK 工具桥接；use_skill/use_subagents 桥接；逐工具适配测试；skills 菜单进系统提示词（→ 已在 2026-09-21 的 Phase 4 完成）
 
 ### Agent Loop 重构规划（2026-09-19）— 采採 pi-go / ADK 架构
 

@@ -4,6 +4,36 @@
 
 ---
 
+## 2026-09-21 — Agent Loop 重构 Phase 4/5/5b ✅
+
+### 完成内容
+
+| 组件 | 文件 | 说明 |
+|------|------|------|
+| Phase 4 工具桥 | `internal/adkagent/tool_adapter_test.go` | MCP/use_skill/use_subagents 自动桥接验证；4 个适配测试全绿 |
+| MCP 测试服务 | `internal/mcp/testdata/echo_server/main.go` | 最小 stdio JSON-RPC server，真子进程 smoke |
+| Skills 菜单 | `internal/adkagent/agent.go` | Options.Skills 渲染为系统指令 `# Skills` 段 |
+| UI 接口化 | `internal/ui/runner.go` | AgentRunner 接口 + adkRunner/legacyRunner（**D26/D27**）|
+| 装配切换 | `cmd/gline/chat.go` | resolveProviderSettings/mapProviderID（**D28**）/双路径装配；默认 ADK，`GLINE_AGENT=legacy` 回退 |
+| CLI 单消息 | `cmd/gline/chat.go printCallback` | stdout 流式回调（内容/工具/跟进默认项）|
+| stuck 检测 | `internal/adkagent/stuck.go` | pi-go stuckDetector 完整移植（streak/可变参数折叠/环检测/双错误 streak/输出重复）|
+| bridge 接线 | `internal/adkagent/bridge.go` | deliver()→error；observe/observeResult/observeError/observeOutput 全接入 |
+
+### 关键决策（新增）
+- **D26**: UI 依赖窄接口 AgentRunner 而非具体 agent；新 session 走 NewSession(ctx) 而非 GetConversation().Clear()
+- **D27**: store 在装配期注入 TUI（ui.Run(runner, store)），不从 agent 取
+- **D28**: config provider 名 `opencode-go` 经 mapProviderID 映射为 provider 包的 `opencode`
+
+### 验证
+- ✅ go build/vet 全仓干净；18 包测试全绿（含 9 个 stuckDetector 单测）
+- ✅ Live：`gline chat` 新装配 PONG + run 工具执行 PASS；GLINE_AGENT=legacy 回退 PASS
+
+### 剩余 Phase
+- Phase 6: AutoCompact、facts 提取、history resume（SessionID）、GUI ChatService 切换、stuck 恢复重喂
+- Phase 7: 删 go-llm + 旧循环，重装 gline.exe
+
+---
+
 ## 2026-09-19 — Agent Loop 重构 Phase 3 ✅（014b329）
 
 ### 完成内容
@@ -25,8 +55,8 @@
 - **D25**: `tools.DefaultRegistry` 是空的包级变量；adkagent.Options.Tools 必须显式传
 
 ### 剩余 Phase
-- Phase 4: MCP/skills 桥接 + 逐工具适配测试
-- Phase 5: TUI/CLI/GUI 切到新 agent（sessionstore 接入）
+- Phase 4: MCP/skills 桥接 + 逐工具适配测试（→ 已完成，见 2026-09-21）
+- Phase 5: TUI/CLI/GUI 切到新 agent（sessionstore 接入）（→ TUI/CLI 已完成 2026-09-21；GUI + sessionstore 在 Phase 6）
 - Phase 6: AutoCompact/记忆挂接/history 续接
 - Phase 7: 删 go-llm + 旧循环，重装 gline.exe
 
