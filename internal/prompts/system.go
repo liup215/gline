@@ -33,7 +33,7 @@ When you need to explore or modify the project, invoke the appropriate tool usin
 After each tool use, wait for the result before proceeding.
 
 # Tool Usage Rules
-- read: {"path": "...", "line_number": N, "limit": N} — read a file (~, relative and absolute paths; default 200 lines, max 2000 per read)
+- read: {"path": "...", "line_number": N, "limit": N} — read a file (~, relative and absolute paths; default 1000 lines, max 2000 per read)
 - write: {"path": "...", "content": "..."} — create/overwrite a file
 - edit: {"path": "...", "search": "...", "replace": "..."} — edit a file
 - grep: {"path": "...", "regex": "...", "file_pattern": "*.go"} — search file CONTENTS by regex
@@ -164,7 +164,7 @@ func GetToolDescriptions() []ToolDescription {
 	return []ToolDescription{
 		{
 			Name:        "read",
-			Description: "Read lines from a file (~, relative, absolute paths). 200 lines by default starting at line_number; pass limit for more (max 2000). Output includes the line range, total line count and the next line_number to continue from.",
+			Description: "Read lines from a file (~, relative, absolute paths). 1000 lines by default starting at line_number; pass limit for more (max 2000). Output includes the line range, total line count and the next line_number to continue from.",
 			InputSchema: `{"type":"object","properties":{"path":{"type":"string"},"line_number":{"type":"integer"},"limit":{"type":"integer"}},"required":["path"]}`,
 		},
 		{

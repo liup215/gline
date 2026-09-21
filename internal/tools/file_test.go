@@ -150,7 +150,7 @@ func TestReadFileTool_DefaultChunk(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.txt")
 	var lines []string
-	for i := 1; i <= 250; i++ {
+	for i := 1; i <= 1500; i++ {
 		lines = append(lines, fmt.Sprintf("line%d", i))
 	}
 	content := strings.Join(lines, "\n")
@@ -163,16 +163,16 @@ func TestReadFileTool_DefaultChunk(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(result, "Lines 1-200") {
+	if !strings.Contains(result, "Lines 1-1000") {
 		t.Errorf("expected default chunk header, got: %s", result)
 	}
-	if !strings.Contains(result, "line1") || !strings.Contains(result, "line200") {
+	if !strings.Contains(result, "line1") || !strings.Contains(result, "line1000") {
 		t.Errorf("expected first and last line of chunk, got: %s", result)
 	}
-	if strings.Contains(result, "line201") {
-		t.Errorf("expected line 201 to be excluded, got: %s", result)
+	if strings.Contains(result, "line1001") {
+		t.Errorf("expected line 1001 to be excluded, got: %s", result)
 	}
-	if !strings.Contains(result, "line_number=201") {
+	if !strings.Contains(result, "line_number=1001") {
 		t.Errorf("expected continuation hint, got: %s", result)
 	}
 }
@@ -197,14 +197,14 @@ func TestReadFileTool_LineNumberChunk(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(result, "Lines 50-249") {
+	if !strings.Contains(result, "Lines 50-300") {
 		t.Errorf("expected chunk header, got: %s", result)
 	}
-	if !strings.Contains(result, "line50") || !strings.Contains(result, "line249") {
-		t.Errorf("expected lines 50 and 249 in output, got: %s", result)
+	if !strings.Contains(result, "line50") || !strings.Contains(result, "line300") {
+		t.Errorf("expected lines 50 and 300 in output, got: %s", result)
 	}
-	if strings.Contains(result, "line49") || strings.Contains(result, "line250") {
-		t.Errorf("expected lines 49 and 250 to be excluded, got: %s", result)
+	if strings.Contains(result, "line49") {
+		t.Errorf("expected line 49 to be excluded, got: %s", result)
 	}
 }
 

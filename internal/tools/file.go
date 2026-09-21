@@ -26,7 +26,7 @@ type ReadFileInput struct {
 
 // NewReadFileTool creates a new read_file tool
 const (
-	readFileChunkLines = 200       // default page size
+	readFileChunkLines = 1000      // default page size
 	readFileMaxLines   = 2000      // hard cap per read (raise via limit)
 	readFileMaxBytes   = 50 * 1024 // byte cap on returned content
 )
@@ -78,7 +78,7 @@ func NewReadFileTool() *ReadFileTool {
 			},
 			"limit": {
 				"type": "integer",
-				"description": "Optional number of lines to read (default 200, max 2000)."
+				"description": "Optional number of lines to read (default 1000, max 2000)."
 			}
 		},
 		"required": ["path"]
