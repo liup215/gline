@@ -16,6 +16,8 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"github.com/liup215/gline/internal/log"
 )
 
 // searchCacheKey uniquely identifies a search request.
@@ -234,10 +236,13 @@ func (t *SearchFilesTool) Execute(ctx context.Context, input json.RawMessage) (s
 		return formatSearchResults(out), nil
 	}
 
+	fallbackStart := time.Now()
 	output, err := searchFilesGo(ctx, path, req.Regex, req.FilePattern)
 	if err != nil {
 		return "", err
 	}
+	log.Debugf("go fallback search: %d matches in %s",
+		output.TotalMatches, time.Since(fallbackStart).Round(time.Millisecond))
 
 	// Store in cache.
 	storeSearchCache(cacheKey, output)

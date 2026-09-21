@@ -3,7 +3,9 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -156,5 +158,45 @@ func TestSearchFilesRipgrepLargeFileSkipped(t *testing.T) {
 	}
 	if !strings.Contains(output, "No matches") {
 		t.Errorf("expected no matches, got:\n%s", output)
+	}
+}
+
+func TestSearchFilesRipgrepEarlyStop(t *testing.T) {
+	if _, err := exec.LookPath("rg"); err != nil {
+		t.Skip("rg not installed")
+	}
+	dir := t.TempDir()
+	// 12 files x 60 matches = 720 submatches; the 500-result cap must stop
+	// the parse at a file boundary (after ~9 files) instead of consuming
+	// the whole stream.
+	var lines []string
+	for i := 0; i < 60; i++ {
+		lines = append(lines, fmt.Sprintf("needle%d here", i))
+	}
+	for f := 0; f < 12; f++ {
+		name := filepath.Join(dir, fmt.Sprintf("f%02d.txt", f))
+		if err := os.WriteFile(name, []byte(strings.Join(lines, "\n")), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	out, ok, err := searchFilesRipgrep(context.Background(), dir, "needle", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected rg fast path")
+	}
+	// At the searchFilesRipgrep level the cap is applied by the parser's
+	// early stop (Execute's post-cap is a no-op safety net): exactly 500.
+	if len(out.Results) != maxSearchResults {
+		t.Fatalf("expected exactly %d results from early stop, got %d", maxSearchResults, len(out.Results))
+	}
+	if out.TotalMatches != maxSearchResults {
+		t.Fatalf("expected TotalMatches clamped to %d, got %d", maxSearchResults, out.TotalMatches)
+	}
+	// Sanity: first result of a file is line 1 with context.
+	if out.Results[0].Line != 1 || out.Results[0].Context == "" {
+		t.Fatalf("unexpected first result: %+v", out.Results[0])
 	}
 }

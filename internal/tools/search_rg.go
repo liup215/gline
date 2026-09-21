@@ -14,10 +14,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
+
+	"github.com/liup215/gline/internal/log"
 )
 
 // rgSkipGlob mirrors the pure-Go fallback's hardcoded skipDirs for
@@ -60,22 +64,58 @@ func searchFilesRipgrep(ctx context.Context, path, pattern, filePattern string) 
 	hideConsole(cmd)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-	out, err := cmd.Output()
+	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		return nil, false, fmt.Errorf("rg pipe: %w", err)
+	}
+
+	start := time.Now()
+	if err := cmd.Start(); err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return nil, false, err
 		}
-		var ee *exec.ExitError
-		if errors.As(err, &ee) && ee.ExitCode() == 1 {
-			// rg exit code 1 = "no matches": a valid empty result.
-			return &SearchFilesOutput{Results: []SearchResult{}}, true, nil
-		}
-		// Anything else (missing binary, bad flag, disk error): let the
-		// caller fall back to the pure-Go implementation.
-		return nil, false, fmt.Errorf("rg failed: %w: %s", err, strings.TrimSpace(stderr.String()))
+		// Missing binary, bad flag, disk error: let the caller fall back to
+		// the pure-Go implementation.
+		return nil, false, fmt.Errorf("rg start failed: %w", err)
 	}
 
-	return parseRipgrepOutput(string(out)), true, nil
+	// Stream-parse rg's JSON while it runs. When the result cap is reached
+	// the parser calls onCap and we kill rg mid-scan instead of letting it
+	// finish the whole repository — on broad patterns (thousands of matches
+	// against a 500-result cap) this skips most of the scan and most of the
+	// parse, which dominates end-to-end latency.
+	killed := false
+	res := parseRipgrepStream(stdout, func() {
+		killed = true
+		_ = cmd.Process.Kill()
+	})
+	parseDur := time.Since(start)
+
+	waitErr := cmd.Wait()
+	totalDur := time.Since(start)
+
+	if killed {
+		log.Debugf("rg search early-stopped at %d results: total=%s parse=%s",
+			len(res.Results), totalDur.Round(time.Millisecond), parseDur.Round(time.Millisecond))
+		return res, true, nil
+	}
+	if waitErr != nil {
+		if errors.Is(waitErr, context.Canceled) || errors.Is(waitErr, context.DeadlineExceeded) {
+			return nil, false, waitErr
+		}
+		var ee *exec.ExitError
+		if errors.As(waitErr, &ee) && ee.ExitCode() == 1 {
+			// rg exit code 1 = "no matches": a valid empty result.
+			log.Debugf("rg search no matches: total=%s", totalDur.Round(time.Millisecond))
+			return &SearchFilesOutput{Results: []SearchResult{}}, true, nil
+		}
+		// Anything else: let the caller fall back to the pure-Go implementation.
+		return nil, false, fmt.Errorf("rg failed: %w: %s", waitErr, strings.TrimSpace(stderr.String()))
+	}
+
+	log.Debugf("rg search: %d matches/%d results in %s (parse %s)",
+		res.TotalMatches, len(res.Results), totalDur.Round(time.Millisecond), parseDur.Round(time.Millisecond))
+	return res, true, nil
 }
 
 // rgEvent is a single line of `rg --json` output.
@@ -113,10 +153,24 @@ type rgPending struct {
 	matches []rgMatchRef
 }
 
-// parseRipgrepOutput converts `rg --json` output into SearchFilesOutput.
-// rg emits begin -> (context|match)* -> end per file in order, so trailing
-// context is available by the time each file's end event flushes it.
+// parseRipgrepOutput converts a complete `rg --json` output string into
+// SearchFilesOutput. Thin wrapper kept for tests; the live path is
+// parseRipgrepStream.
 func parseRipgrepOutput(out string) *SearchFilesOutput {
+	return parseRipgrepStream(strings.NewReader(out), nil)
+}
+
+// parseRipgrepStream converts `rg --json` output read from r into
+// SearchFilesOutput, parsing line by line as the data arrives so parsing
+// overlaps rg's execution. rg emits begin -> (context|match)* -> end per
+// file in order, so trailing context is available by the time each file's
+// end event flushes it.
+//
+// Once len(Results) reaches maxSearchResults the parser truncates to the
+// cap and calls onCap exactly once, then stops reading — the caller is
+// expected to kill the rg process so it stops scanning the rest of the
+// repository. onCap may be nil (tests / complete output).
+func parseRipgrepStream(r io.Reader, onCap func()) *SearchFilesOutput {
 	res := &SearchFilesOutput{}
 	var cur *rgPending
 
@@ -133,7 +187,21 @@ func parseRipgrepOutput(out string) *SearchFilesOutput {
 		cur = nil
 	}
 
-	sc := bufio.NewScanner(strings.NewReader(out))
+	stop := func() bool {
+		if len(res.Results) < maxSearchResults {
+			return false
+		}
+		// Cap reached: present the same shape Execute's post-cap would
+		// (exactly maxSearchResults results, TotalMatches clamped to match).
+		res.Results = res.Results[:maxSearchResults]
+		res.TotalMatches = len(res.Results)
+		if onCap != nil {
+			onCap()
+		}
+		return true
+	}
+
+	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 256*1024), 16*1024*1024)
 	for sc.Scan() {
 		line := sc.Bytes()
@@ -173,6 +241,9 @@ func parseRipgrepOutput(out string) *SearchFilesOutput {
 			cur.lines[ev.Data.LineNumber] = trimEOL(ev.Data.Lines.Text)
 		case "end":
 			flush()
+			if stop() {
+				return res
+			}
 		}
 	}
 	flush() // input truncated without a final end event
