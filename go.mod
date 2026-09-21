@@ -4,6 +4,7 @@ go 1.27.0
 
 require (
 	github.com/JohannesKaufmann/html-to-markdown/v2 v2.5.2
+	github.com/anthropics/anthropic-sdk-go v1.71.0
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/glamour v0.9.1
@@ -11,6 +12,7 @@ require (
 	github.com/glebarez/sqlite v1.11.0
 	github.com/go-rod/rod v0.116.2
 	github.com/go-shiori/go-readability v0.0.0-20251205110129-5db1dc9836f0
+	github.com/openai/openai-go/v3 v3.56.0
 	github.com/pkieltyka/go-llm v0.3.0
 	github.com/rs/zerolog v1.35.1
 	github.com/spf13/cobra v1.10.2
@@ -38,7 +40,6 @@ require (
 	github.com/adrg/xdg v0.5.3 // indirect
 	github.com/alecthomas/chroma/v2 v2.20.0 // indirect
 	github.com/andybalholm/cascadia v1.3.4 // indirect
-	github.com/anthropics/anthropic-sdk-go v1.71.0 // indirect
 	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
@@ -78,6 +79,7 @@ require (
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
+	github.com/google/safehtml v0.1.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.20 // indirect
 	github.com/googleapis/gax-go/v2 v2.24.0 // indirect
@@ -105,7 +107,6 @@ require (
 	github.com/muesli/reflow v0.3.0 // indirect
 	github.com/muesli/termenv v0.16.0 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
-	github.com/openai/openai-go/v3 v3.56.0 // indirect
 	github.com/otiai10/gosseract/v2 v2.4.1 // indirect
 	github.com/pb33f/ordered-map/v2 v2.3.1 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
@@ -146,6 +147,7 @@ require (
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.70.0 // indirect
 	go.opentelemetry.io/otel v1.46.0 // indirect
+	go.opentelemetry.io/otel/log v0.22.0 // indirect
 	go.opentelemetry.io/otel/metric v1.46.0 // indirect
 	go.opentelemetry.io/otel/trace v1.46.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
