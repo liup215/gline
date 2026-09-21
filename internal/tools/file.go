@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 // ReadFileTool reads the contents of a file
@@ -19,10 +21,48 @@ type ReadFileTool struct {
 type ReadFileInput struct {
 	Path       string `json:"path"`
 	LineNumber int    `json:"line_number,omitempty"`
+	Limit      int    `json:"limit,omitempty"`
 }
 
 // NewReadFileTool creates a new read_file tool
-const readFileChunkLines = 200
+const (
+	readFileChunkLines = 200          // default page size
+	readFileMaxLines   = 2000         // hard cap per read (raise via limit)
+	readFileMaxBytes   = 50 * 1024    // byte cap on returned content
+)
+
+// imageExts marks extensions treated as image files: their bytes cannot be
+// returned as text, so the tool reports metadata instead of binary garbage.
+var imageExts = map[string]bool{
+	".png": true, ".jpg": true, ".jpeg": true, ".gif": true,
+	".webp": true, ".bmp": true, ".svg": true, ".ico": true,
+	".tiff": true, ".tif": true, ".heic": true,
+}
+
+// expandPath resolves a leading ~/ to the user's home directory.
+func expandPath(p string) string {
+	if p == "~" || strings.HasPrefix(p, "~/") || strings.HasPrefix(p, "~\\") {
+		if home, err := os.UserHomeDir(); err == nil {
+			if p == "~" {
+				return home
+			}
+			return filepath.Join(home, p[2:])
+		}
+	}
+	return p
+}
+
+// formatBytes renders a byte count for human-readable notices.
+func formatBytes(n int) string {
+	switch {
+	case n >= 1024*1024:
+		return fmt.Sprintf("%.1f MB", float64(n)/(1024*1024))
+	case n >= 1024:
+		return fmt.Sprintf("%.1f KB", float64(n)/1024)
+	default:
+		return fmt.Sprintf("%d B", n)
+	}
+}
 
 func NewReadFileTool() *ReadFileTool {
 	schema := json.RawMessage(`{
@@ -30,11 +70,15 @@ func NewReadFileTool() *ReadFileTool {
 		"properties": {
 			"path": {
 				"type": "string",
-				"description": "The path of the file to read"
+				"description": "The path of the file to read. Supports ~ (home), relative, and absolute paths."
 			},
 			"line_number": {
 				"type": "integer",
-				"description": "Optional 1-based starting line number. If omitted, reads the first 50 lines. If provided, reads 50 lines starting from this line number."
+				"description": "Optional 1-based starting line number. If omitted, reads from line 1."
+			},
+			"limit": {
+				"type": "integer",
+				"description": "Optional number of lines to read (default 200, max 2000)."
 			}
 		},
 		"required": ["path"]
@@ -42,8 +86,11 @@ func NewReadFileTool() *ReadFileTool {
 
 	return &ReadFileTool{
 		BaseTool: BaseTool{
-			name:        "read",
-			description: fmt.Sprintf("Read up to %d lines of a file at the specified path. If line_number is omitted, reads lines 1-%d. If line_number is provided, reads %d lines starting from that line. For large files, use search_files first to find a relevant section, then use line_number to read that chunk.", readFileChunkLines, readFileChunkLines, readFileChunkLines),
+			name: "read",
+			description: "Read lines from a file. Supports ~ (home), relative, and absolute paths. " +
+				fmt.Sprintf("Reads %d lines by default starting at line_number; pass limit for more (max %d per read). ", readFileChunkLines, readFileMaxLines) +
+				"Output reports the line range, total line count and the next line_number to continue from. " +
+				"For large files, use search_files first to find a relevant section, then read that chunk with line_number.",
 			inputSchema: schema,
 		},
 	}
@@ -60,20 +107,33 @@ func (t *ReadFileTool) Execute(ctx context.Context, input json.RawMessage) (stri
 		return "", fmt.Errorf("path is required")
 	}
 
-	// Clean the path
-	path := filepath.Clean(req.Path)
+	// Resolve the path: expand ~, then make absolute against the cwd so the
+	// output prefix is stable no matter where later tools run.
+	path := filepath.Clean(expandPath(req.Path))
+	if abs, err := filepath.Abs(path); err == nil {
+		path = abs
+	}
 
 	// Check if file exists
 	info, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return "", fmt.Errorf("file not found: %s", path)
+			return "", fmt.Errorf("file not found: %s (check the path, or use find_files/search_files to locate it)", path)
 		}
 		return "", fmt.Errorf("failed to stat file: %w", err)
 	}
 
 	if info.IsDir() {
-		return "", fmt.Errorf("path is a directory, not a file: %s", path)
+		return "", fmt.Errorf("path is a directory, not a file: %s (use list_files or find_files to explore it)", path)
+	}
+
+	// Image files: binary content cannot be returned as text — report
+	// metadata instead of returning base64 garbage that would flood context.
+	ext := strings.ToLower(filepath.Ext(path))
+	if imageExts[ext] {
+		return fmt.Sprintf("[Image file: %s (%s, %s). Image content cannot be displayed yet. "+
+			"If you need its pixels, process it via run (e.g. a script); otherwise ask the user to describe it.]",
+			path, strings.TrimPrefix(ext, "."), formatBytes(int(info.Size()))), nil
 	}
 
 	// Read file
@@ -82,31 +142,60 @@ func (t *ReadFileTool) Execute(ctx context.Context, input json.RawMessage) (stri
 		return "", fmt.Errorf("failed to read file: %w", err)
 	}
 
-	// Always read a 50-line chunk. If line_number is omitted or <= 0, start at line 1.
+	// Empty file: short-circuit before line math.
+	if len(content) == 0 {
+		return fmt.Sprintf("[Empty file: %s]", path), nil
+	}
+
+	// Single pass over the raw bytes for the total line count (no string copy).
+	lineCount := bytes.Count(content, []byte("\n")) + 1
+
+	// Page size: default chunk, raisable via limit up to the hard cap.
+	limit := req.Limit
+	if limit <= 0 {
+		limit = readFileChunkLines
+	}
+	if limit > readFileMaxLines {
+		limit = readFileMaxLines
+	}
+
 	startLine := req.LineNumber
 	if startLine <= 0 {
 		startLine = 1
 	}
-	endLine := startLine + readFileChunkLines - 1
+	if startLine > lineCount {
+		return "", fmt.Errorf("line_number %d is beyond end of file (%s has %d lines)", startLine, path, lineCount)
+	}
+	endLine := startLine + limit - 1
 
 	sliced, start, end, err := sliceLines(content, startLine, endLine)
 	if err != nil {
 		return "", fmt.Errorf("invalid line number: %w", err)
 	}
 
-	// Soft cap on chunk size to prevent enormous lines from exploding context.
-	const maxChunkSize = 100 * 1024
-	prefix := fmt.Sprintf("[Lines %d-%d of %s]\n", start, end, path)
-	if len(sliced) > maxChunkSize {
-		return fmt.Sprintf("%s%s...\n\n[Chunk truncated: %d bytes total, showing first %d bytes]",
-			prefix, string(sliced[:maxChunkSize]), len(sliced), maxChunkSize), nil
+	prefix := fmt.Sprintf("[Lines %d-%d of %s (total %d lines)]\n", start, end, path, lineCount)
+
+	// Byte cap on returned content so enormous lines cannot flood context.
+	// Cut at the last complete line within the cap; a single oversized line
+	// falls back to a raw cut trimmed to a valid UTF-8 boundary.
+	if len(sliced) > readFileMaxBytes {
+		cut := sliced[:readFileMaxBytes]
+		if idx := bytes.LastIndexByte(cut, '\n'); idx > 0 {
+			cut = cut[:idx+1]
+		} else {
+			for len(cut) > 0 && !utf8.Valid(cut) {
+				cut = cut[:len(cut)-1]
+			}
+		}
+		shownLines := start + bytes.Count(cut, []byte("\n")) - 1
+		return fmt.Sprintf("%s%s\n\n[Chunk truncated: %s byte limit reached (chunk was %s). Continue with line_number=%d.]",
+			prefix, string(cut), formatBytes(readFileMaxBytes), formatBytes(len(sliced)), shownLines+1), nil
 	}
 
-	// Large file guard: if this is not the full file, tell the user how to move forward.
-	lineCount := countLines(content)
+	// Large file guard: if this is not the full file, tell the model how to move forward.
 	if end < lineCount {
-		return fmt.Sprintf("%s%s\n\n[File continues: %d total lines. Use line_number=%d to read the next chunk.]",
-			prefix, string(sliced), lineCount, end+1), nil
+		return fmt.Sprintf("%s%s\n\n[File continues: showing lines %d-%d of %d (%d remaining). Use line_number=%d to read the next chunk, or raise limit (max %d).]",
+			prefix, string(sliced), start, end, lineCount, lineCount-end, end+1, readFileMaxLines), nil
 	}
 
 	return prefix + string(sliced), nil
@@ -564,10 +653,8 @@ func estimateTokensFromBytes(b []byte) int {
 	return len(b) / 2
 }
 
-// countLines returns the number of newline-separated lines.
-func countLines(content []byte) int {
-	return strings.Count(string(content), "\n") + 1
-}
+// countLines removed: read tool now counts lines in a single bytes.Count pass
+// over the raw content (no string copy).
 
 // ListFilesTool lists files and directories
 type ListFilesTool struct {

@@ -226,3 +226,101 @@ func TestReadFileTool_LargeChunkTruncated(t *testing.T) {
 		t.Errorf("expected chunk truncation message, got: %s", result)
 	}
 }
+
+func TestReadFileTool_LimitParam(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "l.txt")
+	var lines []string
+	for i := 1; i <= 3000; i++ {
+		lines = append(lines, fmt.Sprintf("line%d", i))
+	}
+	_ = os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0644)
+
+	tool := NewReadFileTool()
+
+	// limit=1000 reads 1000 lines starting at 1.
+	input, _ := json.Marshal(map[string]interface{}{"path": path, "limit": 1000})
+	result, err := tool.Execute(context.Background(), input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(result, "Lines 1-1000") || !strings.Contains(result, "line1000") {
+		t.Errorf("expected lines 1-1000 (header: %.60s), line1000 present: %v", result, strings.Contains(result, "line1000"))
+	}
+	if strings.Contains(result, "line1001\n") {
+		t.Errorf("expected line 1001 excluded")
+	}
+
+	// limit is clamped to 2000.
+	input, _ = json.Marshal(map[string]interface{}{"path": path, "limit": 99999})
+	result, err = tool.Execute(context.Background(), input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(result, "Lines 1-2000") {
+		t.Errorf("expected clamp to 2000 lines, got: %s", result[:60])
+	}
+
+	// line_number beyond EOF is a clear error with the total.
+	input, _ = json.Marshal(map[string]interface{}{"path": path, "line_number": 5000})
+	_, err = tool.Execute(context.Background(), input)
+	if err == nil || !strings.Contains(err.Error(), "5000") || !strings.Contains(err.Error(), "3000") {
+		t.Errorf("expected beyond-EOF error with totals, got: %v", err)
+	}
+}
+
+func TestReadFileTool_EmptyAndImage(t *testing.T) {
+	dir := t.TempDir()
+
+	empty := filepath.Join(dir, "empty.txt")
+	_ = os.WriteFile(empty, []byte{}, 0644)
+	tool := NewReadFileTool()
+	input, _ := json.Marshal(map[string]string{"path": empty})
+	result, err := tool.Execute(context.Background(), input)
+	if err != nil || !strings.Contains(result, "Empty file") {
+		t.Errorf("expected empty-file notice, got: %q, err=%v", result, err)
+	}
+
+	img := filepath.Join(dir, "pic.png")
+	_ = os.WriteFile(img, []byte{0x89, 'P', 'N', 'G', 0x00, 0x01}, 0644)
+	input, _ = json.Marshal(map[string]string{"path": img})
+	result, err = tool.Execute(context.Background(), input)
+	if err != nil || !strings.Contains(result, "Image file") || !strings.Contains(result, "png") {
+		t.Errorf("expected image metadata notice, got: %q, err=%v", result, err)
+	}
+	if strings.Contains(result, "\x89PNG") {
+		t.Errorf("binary content must not leak into output")
+	}
+}
+
+func TestReadFileTool_TildeExpansion(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	if expandPath("~") != home {
+		t.Errorf("expandPath(~) = %q, want %q", expandPath("~"), home)
+	}
+	if got := expandPath("~/foo/bar"); got != filepath.Join(home, "foo", "bar") {
+		t.Errorf("expandPath(~/foo/bar) = %q", got)
+	}
+	if got := expandPath("/tmp/x"); got != "/tmp/x" {
+		t.Errorf("non-tilde path must be untouched, got %q", got)
+	}
+}
+
+func TestReadFileTool_RelativePathResolvesAbs(t *testing.T) {
+	dir := t.TempDir()
+	// chdir into temp dir and use a bare relative filename.
+	old, _ := os.Getwd()
+	defer os.Chdir(old)
+	_ = os.Chdir(dir)
+
+	_ = os.WriteFile(filepath.Join(dir, "rel.txt"), []byte("hello"), 0644)
+	tool := NewReadFileTool()
+	input, _ := json.Marshal(map[string]string{"path": "rel.txt"})
+	result, err := tool.Execute(context.Background(), input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(result, filepath.Join(dir, "rel.txt")) {
+		t.Errorf("expected absolute path in prefix, got: %s", result)
+	}
+}
