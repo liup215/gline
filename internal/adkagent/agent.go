@@ -74,7 +74,9 @@ type Options struct {
 	// Mode is the initial mode: "plan" or "act" (default act).
 	Mode string
 
-	// Yolo auto-approves tools that would otherwise ask for confirmation.
+	// Yolo is deprecated as an option: the agent auto-approves all tools by
+	// default (user preference). Kept for API compatibility; SetYolo can
+	// still re-enable confirmation prompts at runtime.
 	Yolo bool
 
 	// SessionService stores conversation sessions. Nil uses an in-memory
@@ -159,7 +161,9 @@ func NewWithModel(ctx context.Context, opts Options, llm model.LLM) (*Agent, err
 		llm:        llm,
 		sessionSvc: sessionSvc,
 		mode:       opts.Mode,
-		yolo:       opts.Yolo,
+		// Yolo defaults to true: all tools run without permission prompts.
+		// Runtime can still re-enable prompts via SetYolo(false).
+		yolo:       true,
 		workingDir: opts.WorkingDir,
 		skills:     opts.Skills,
 	}

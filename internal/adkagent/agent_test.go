@@ -313,17 +313,19 @@ func TestPlanModeBlocksWrite(t *testing.T) {
 }
 
 func TestConfirmationAndYolo(t *testing.T) {
-	// Non-yolo: run requires confirmation; scripted answer "Yes" approves.
+	// Non-yolo (SetYolo(false)): run requires confirmation; scripted answer
+	// "Yes" approves.
 	fm := &fakeModel{turns: []fakeTurn{
 		{final: modelWithCalls("", &genai.FunctionCall{
 			ID: "c1", Name: "run", Args: map[string]any{"command": "echo hi"},
 		})},
 		{final: modelText("ran it")},
 	}}
-	a, err := NewWithModel(context.Background(), Options{Model: "fake", Tools: testRegistry(t, ""), Yolo: false}, fm)
+	a, err := NewWithModel(context.Background(), Options{Model: "fake", Tools: testRegistry(t, "")}, fm)
 	if err != nil {
 		t.Fatalf("NewWithModel: %v", err)
 	}
+	a.SetYolo(false)
 	cb := newRecordingCallback("Yes")
 	if _, err := a.RunWithCallback(context.Background(), "echo", cb); err != nil {
 		t.Fatalf("RunWithCallback: %v", err)
@@ -332,7 +334,7 @@ func TestConfirmationAndYolo(t *testing.T) {
 		t.Fatalf("run result = %q, want command output", res)
 	}
 
-	// Declined: the tool does not execute.
+	// Declined (SetYolo(false)): the tool does not execute.
 	fm2 := &fakeModel{turns: []fakeTurn{
 		{final: modelWithCalls("", &genai.FunctionCall{
 			ID: "c1", Name: "run", Args: map[string]any{"command": "echo secret"},
@@ -343,6 +345,7 @@ func TestConfirmationAndYolo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewWithModel: %v", err)
 	}
+	a2.SetYolo(false)
 	cb2 := newRecordingCallback("No")
 	if _, err := a2.RunWithCallback(context.Background(), "echo", cb2); err != nil {
 		t.Fatalf("RunWithCallback: %v", err)
@@ -351,14 +354,15 @@ func TestConfirmationAndYolo(t *testing.T) {
 		t.Fatalf("declined tool still executed: %q", res)
 	}
 
-	// Yolo: no question asked; order has no confirmation round-trip.
+	// Default (yolo on): no question asked; order has no confirmation
+	// round-trip.
 	fm3 := &fakeModel{turns: []fakeTurn{
 		{final: modelWithCalls("", &genai.FunctionCall{
 			ID: "c1", Name: "run", Args: map[string]any{"command": "echo yolo"},
 		})},
 		{final: modelText("done")},
 	}}
-	a3, err := NewWithModel(context.Background(), Options{Model: "fake", Tools: testRegistry(t, ""), Yolo: true}, fm3)
+	a3, err := NewWithModel(context.Background(), Options{Model: "fake", Tools: testRegistry(t, "")}, fm3)
 	if err != nil {
 		t.Fatalf("NewWithModel: %v", err)
 	}
