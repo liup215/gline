@@ -1,13 +1,13 @@
 package ui
 
 import (
-"context"
-"sync"
-"testing"
-"time"
+	"context"
+	"sync"
+	"testing"
+	"time"
 
-tea "github.com/charmbracelet/bubbletea"
-"github.com/liup215/gline/internal/ui/bridge"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/liup215/gline/internal/ui/bridge"
 )
 
 func TestCancelChConcurrentAccess(t *testing.T) {
@@ -72,86 +72,86 @@ func TestCancelChConcurrentAccess(t *testing.T) {
 }
 
 func TestEscInterruptAskFollowupQuestion(t *testing.T) {
-m := New(nil, nil)
-// ensure event channel and forwarding goroutine for tests to avoid blocking
-m.eventCh = make(chan bridge.AgentEvent, 64)
-m.done = make(chan struct{})
-go func() {
-for {
-select {
-case <-m.eventCh:
-// drop events
-case <-m.done:
-return
-}
-}
-}()
+	m := New(nil, nil)
+	// ensure event channel and forwarding goroutine for tests to avoid blocking
+	m.eventCh = make(chan bridge.AgentEvent, 64)
+	m.done = make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-m.eventCh:
+			// drop events
+			case <-m.done:
+				return
+			}
+		}
+	}()
 
-// prepare pendingReplies and simulate AskFollowupQuestion path
-m.pendingReplies = []*bridge.PendingAsk{{Ch: make(chan string, 1)}}
-m.isProcessing = true
+	// prepare pendingReplies and simulate AskFollowupQuestion path
+	m.pendingQuestions = []*pendingQuestion{{ask: &bridge.PendingAsk{Ch: make(chan string, 1)}, selected: -1}}
+	m.isProcessing = true
 
-// Start a goroutine to simulate the agent blocking on the reply channel.
-// The agent will unblock when the reply channel is closed by Esc handling.
-agentReply := m.pendingReplies[0].Ch
-agentUnblocked := make(chan bool, 1)
-go func() {
-_, ok := <-agentReply
-agentUnblocked <- ok // ok == false means channel was closed
-}()
+	// Start a goroutine to simulate the agent blocking on the reply channel.
+	// The agent will unblock when the reply channel is closed by Esc handling.
+	agentReply := m.pendingQuestions[0].ask.Ch
+	agentUnblocked := make(chan bool, 1)
+	go func() {
+		_, ok := <-agentReply
+		agentUnblocked <- ok // ok == false means channel was closed
+	}()
 
-// simulate user pressing Esc: directly call handler
-cmds := handleKeyMsg(m, teaKeyEsc())
-_ = cmds
+	// simulate user pressing Esc: directly call handler
+	cmds := handleKeyMsg(m, teaKeyEsc())
+	_ = cmds
 
-// ensure the agent goroutine was unblocked and saw a closed channel
-select {
-case ok := <-agentUnblocked:
-if ok {
-t.Fatalf("agent should have seen reply channel closed (ok=false), got ok=true")
-}
-case <-time.After(1 * time.Second):
-t.Fatalf("agent goroutine did not unblock after Esc")
-}
+	// ensure the agent goroutine was unblocked and saw a closed channel
+	select {
+	case ok := <-agentUnblocked:
+		if ok {
+			t.Fatalf("agent should have seen reply channel closed (ok=false), got ok=true")
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatalf("agent goroutine did not unblock after Esc")
+	}
 
-// ensure pendingReplies cleared
-if len(m.pendingReplies) != 0 {
-t.Fatalf("pendingReplies should be empty after Esc, got %d", len(m.pendingReplies))
-}
+	// ensure pendingReplies cleared
+	if len(m.pendingQuestions) != 0 {
+		t.Fatalf("pendingReplies should be empty after Esc, got %d", len(m.pendingQuestions))
+	}
 }
 
 func TestNoCancelFnDataRace(t *testing.T) {
-m := New(nil, nil)
-// ensure event channel and forwarding goroutine for tests to avoid blocking
-m.eventCh = make(chan bridge.AgentEvent, 64)
-m.done = make(chan struct{})
-go func() {
-for {
-select {
-case <-m.eventCh:
-// drop events
-case <-m.done:
-return
-}
-}
-}()
+	m := New(nil, nil)
+	// ensure event channel and forwarding goroutine for tests to avoid blocking
+	m.eventCh = make(chan bridge.AgentEvent, 64)
+	m.done = make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-m.eventCh:
+			// drop events
+			case <-m.done:
+				return
+			}
+		}
+	}()
 
-// Goroutine 1: send cancel
-go func() {
-_, cancel := context.WithCancel(context.Background())
-select {
-case m.cancelCh <- cancel:
-default:
-select {
-case old := <-m.cancelCh:
-if old != nil {
-old()
-}
-default:
-}
-m.cancelCh <- cancel
-}
-}()
+	// Goroutine 1: send cancel
+	go func() {
+		_, cancel := context.WithCancel(context.Background())
+		select {
+		case m.cancelCh <- cancel:
+		default:
+			select {
+			case old := <-m.cancelCh:
+				if old != nil {
+					old()
+				}
+			default:
+			}
+			m.cancelCh <- cancel
+		}
+	}()
 
 	// Goroutine 2: receive and call cancel
 	go func() {
@@ -170,5 +170,5 @@ m.cancelCh <- cancel
 
 // helper to construct a tea.KeyMsg for Esc without importing tea in tests
 func teaKeyEsc() tea.KeyMsg {
-return tea.KeyMsg{Type: tea.KeyEsc}
+	return tea.KeyMsg{Type: tea.KeyEsc}
 }

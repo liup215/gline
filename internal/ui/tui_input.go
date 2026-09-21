@@ -99,6 +99,19 @@ func handleKeyMsg(m *Model, msg tea.KeyMsg) []tea.Cmd {
 		return handleHistoryKeyMsg(m, msg)
 	}
 
+	// Interactive question picker: while an AskFollowupQuestion with options
+	// is pending, arrows/digits/Right drive option selection before any
+	// other input handling (so input history and Tab mode-toggle don't
+	// swallow the keys). Free-form questions (no options) fall through.
+	if len(m.pendingQuestions) > 0 {
+		if handled, qcmds := handleQuestionSelection(m, msg); handled {
+			// Stop Update from also forwarding this key to the textarea and
+			// viewport (it would type characters or scroll the conversation).
+			m.consumedPickerKey = true
+			return qcmds
+		}
+	}
+
 	switch msg.Type {
 	case tea.KeyCtrlC:
 		// Quit the program
@@ -124,11 +137,11 @@ func handleKeyMsg(m *Model, msg tea.KeyMsg) []tea.Cmd {
 			case m.cancelCh <- cancel:
 			default:
 			}
-			// Close all pending reply channels and clear the queue.
-			for _, p := range m.pendingReplies {
-				p.Abort()
+			// Close all pending questions and clear the queue.
+			for _, q := range m.pendingQuestions {
+				q.ask.Abort()
 			}
-			m.pendingReplies = nil
+			m.pendingQuestions = nil
 			// Notify user of interruption
 			m.addErrorMessage("✗ Interrupted by user (Esc)")
 			// Ensure processing flags updated; agent callback will also handle cleanup
@@ -162,7 +175,7 @@ func handleKeyMsg(m *Model, msg tea.KeyMsg) []tea.Cmd {
 		} else {
 			// If the UI is awaiting replies for AskFollowupQuestion (tool
 			// approvals etc.), deliver the answer to the oldest pending one.
-			if len(m.pendingReplies) > 0 {
+			if len(m.pendingQuestions) > 0 {
 				m.consumedEnter = true
 				cmds = append(cmds, submitPendingReply(m)...)
 			} else {
@@ -304,23 +317,33 @@ func executeSlashCommand(m *Model, input string) []tea.Cmd {
 
 func submitPendingReply(m *Model) []tea.Cmd {
 	var cmds []tea.Cmd
+	if len(m.pendingQuestions) == 0 {
+		return cmds
+	}
+	q := m.pendingQuestions[0]
 	answer := strings.TrimSpace(m.textarea.Value())
-	if answer != "" && len(m.pendingReplies) > 0 {
-		// Non-blocking send to avoid blocking or panic if channel closed.
-		m.pendingReplies[0].Ask(answer)
+	if answer == "" && q.selected >= 0 && q.selected < len(q.options) {
+		// Empty input: send the currently highlighted option verbatim.
+		answer = q.options[q.selected]
 	}
+	if answer == "" {
+		// Nothing typed and no selectable option: keep the question pending
+		// instead of popping it and orphaning the waiting tool goroutine.
+		return cmds
+	}
+	// Non-blocking send through the close-once wrapper (safe if the question
+	// was concurrently aborted).
+	q.ask.Ask(answer)
 	// Pop the answered question; remaining queued approvals stay active.
-	if len(m.pendingReplies) > 0 {
-		m.pendingReplies = m.pendingReplies[1:]
-	}
+	m.pendingQuestions = m.pendingQuestions[1:]
 	// Clear the input box and keep the UI ready for the next answer (or a
 	// new message). While more approvals are queued, stay focused so the user
 	// can type the next answer right away; once the queue is empty, blur to
 	// mirror submitUserMessage so the Enter key that submitted this answer
 	// cannot leak into the textarea as a newline.
 	m.textarea.Reset()
-	if len(m.pendingReplies) > 0 {
-		m.textarea.Placeholder = pendingReplyPlaceholder(len(m.pendingReplies))
+	if len(m.pendingQuestions) > 0 {
+		m.textarea.Placeholder = pendingReplyPlaceholder(len(m.pendingQuestions))
 		m.textarea.Focus()
 	} else {
 		m.textarea.Placeholder = "Type your message..."
@@ -329,6 +352,65 @@ func submitPendingReply(m *Model) []tea.Cmd {
 	cmds = append(cmds, textarea.Blink)
 	m.updateViewport()
 	return cmds
+}
+
+// handleQuestionSelection drives the interactive option picker for the oldest
+// pending AskFollowupQuestion. It reports whether the key was consumed; keys
+// it does not handle fall through to normal input handling (so free-text
+// typing and, for option-less questions, history browsing still work).
+func handleQuestionSelection(m *Model, msg tea.KeyMsg) (bool, []tea.Cmd) {
+	q := m.pendingQuestions[0]
+	if len(q.options) == 0 {
+		return false, nil // free-form question: no picker
+	}
+	switch {
+	case msg.Type == tea.KeyUp:
+		q.selected = (q.selected - 1 + len(q.options)) % len(q.options)
+	case msg.Type == tea.KeyDown || msg.Type == tea.KeyTab:
+		q.selected = (q.selected + 1) % len(q.options)
+	case msg.Type == tea.KeyRight:
+		// Load the selected option into the input box so the user can edit
+		// it and append free-form text before sending.
+		appendOptionToInput(m, q.options[q.selected])
+		return true, nil // no re-render needed; input box shows the edit
+	case msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && msg.Runes[0] >= '1' && msg.Runes[0] <= '9':
+		n := int(msg.Runes[0] - '1')
+		if n >= len(q.options) {
+			return false, nil // digit beyond the option list: type it as text
+		}
+		q.selected = n
+	default:
+		return false, nil
+	}
+	refreshQuestionSelection(m, q)
+	return true, nil
+}
+
+// refreshQuestionSelection re-renders the active question message so the
+// highlighted option marker follows the keyboard selection.
+func refreshQuestionSelection(m *Model, q *pendingQuestion) {
+	if msg := m.conversation.GetMessage(q.msgIndex); msg != nil {
+		sel := q.selected
+		msg.SelectedOption = &sel
+	}
+	m.convVM.MarkMessageDirty(q.msgIndex)
+	m.updateViewport()
+}
+
+// appendOptionToInput puts the option text at the end of the input box
+// (separated by a space) without duplicating it, positioning the cursor at
+// the end so the user can keep typing free-form text after it.
+func appendOptionToInput(m *Model, opt string) {
+	cur := strings.TrimRight(m.textarea.Value(), " ")
+	switch {
+	case cur == "":
+		m.textarea.SetValue(opt + " ")
+	case cur == opt || strings.HasSuffix(cur, " "+opt):
+		m.textarea.SetValue(cur + " ")
+	default:
+		m.textarea.SetValue(cur + " " + opt + " ")
+	}
+	m.textarea.SetCursor(len(m.textarea.Value()))
 }
 
 func submitUserMessage(m *Model) []tea.Cmd {
@@ -352,12 +434,13 @@ func submitUserMessage(m *Model) []tea.Cmd {
 	return cmds
 }
 
-// pendingReplyPlaceholder describes the approval queue in the input box:
-// with parallel tool calls several approvals can be waiting at once, so
-// the user can see how many are left to answer.
+// pendingReplyPlaceholder describes the interactive question picker in the
+// input box. With parallel tool calls several approvals can be waiting at
+// once, so the user can also see how many are left to answer.
 func pendingReplyPlaceholder(remaining int) string {
+	hint := "↑/↓ choose · Enter send · → edit, or type your own answer"
 	if remaining > 1 {
-		return fmt.Sprintf("Type option number or your answer... (%d approvals pending)", remaining)
+		hint += fmt.Sprintf(" (%d pending)", remaining)
 	}
-	return "Type option number or your answer..."
+	return hint
 }

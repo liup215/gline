@@ -81,8 +81,8 @@ var (
 			MarginTop(0)
 
 	InputTitleStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#AAAAAA")).
-				Italic(true)
+			Foreground(lipgloss.Color("#AAAAAA")).
+			Italic(true)
 
 	QuestionStyle = lipgloss.NewStyle().
 			Bold(true).
@@ -104,6 +104,13 @@ var (
 			Padding(0, 2).
 			MarginLeft(4)
 
+	OptionSelectedStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#FFFFFF")).
+				Background(lipgloss.Color("#5C5CFF")).
+				Bold(true).
+				Padding(0, 2).
+				MarginLeft(4)
+
 	OptionHintStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#666666")).
 			Italic(true).
@@ -114,14 +121,14 @@ var (
 
 // ToolDescriptions maps tool names to short human-friendly descriptions.
 var ToolDescriptions = map[string]string{
-	"read":             "read this file",
-	"read_file":        "read this file",
-	"write":            "created a new file",
-	"write_to_file":    "created a new file",
-	"edit":             "edited this file",
-	"replace_in_file":  "edited this file",
-	"run":              "executed this command",
-	"execute_command":  "executed this command",
+	"read":                  "read this file",
+	"read_file":             "read this file",
+	"write":                 "created a new file",
+	"write_to_file":         "created a new file",
+	"edit":                  "edited this file",
+	"replace_in_file":       "edited this file",
+	"run":                   "executed this command",
+	"execute_command":       "executed this command",
 	"search_files":          "searched files",
 	"attempt_completion":    "completed the task",
 	"ask_followup_question": "asked a question",

@@ -465,11 +465,13 @@ func TestUpdateCallsUpdateViewportOnAskQuestionEvent(t *testing.T) {
 	if !strings.Contains(view, "What is your choice?") {
 		t.Errorf("expected question in view, got: %q", view)
 	}
-	if !strings.Contains(view, "1. A") {
-		t.Errorf("expected option '1. A' in view, got: %q", view)
-	}
 	if !strings.Contains(view, "2. B") {
-		t.Errorf("expected option '2. B' in view, got: %q", view)
+		t.Errorf("expected unselected option '2. B' in view, got: %q", view)
+	}
+	// The first option is the default selection: it renders with the "❯"
+	// picker marker instead of a number.
+	if !strings.Contains(view, "❯ A") {
+		t.Errorf("expected selected option '❯ A' in view, got: %q", view)
 	}
 }
 

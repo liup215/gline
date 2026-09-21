@@ -1,12 +1,14 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/liup215/gline/internal/ui/bridge"
+	"github.com/liup215/gline/pkg/types"
 )
 
 // newApprovalTestModel builds a Model wired for key-handling tests: the event
@@ -64,8 +66,8 @@ func TestParallelApprovalsQueueFIFO(t *testing.T) {
 	deliverQuestion(m, replyA, "Approve run? {\"command\":\"ls\"}")
 	deliverQuestion(m, replyB, "Approve run? {\"command\":\"pwd\"}")
 
-	if len(m.pendingReplies) != 2 {
-		t.Fatalf("expected 2 pending replies, got %d", len(m.pendingReplies))
+	if len(m.pendingQuestions) != 2 {
+		t.Fatalf("expected 2 pending replies, got %d", len(m.pendingQuestions))
 	}
 	if m.textarea.Placeholder == "" || len(m.textarea.Placeholder) == 0 {
 		t.Fatalf("expected placeholder describing pending approvals")
@@ -86,8 +88,8 @@ func TestParallelApprovalsQueueFIFO(t *testing.T) {
 		t.Fatalf("second approval answered too early: %q", got)
 	default:
 	}
-	if len(m.pendingReplies) != 1 {
-		t.Fatalf("expected 1 remaining pending reply, got %d", len(m.pendingReplies))
+	if len(m.pendingQuestions) != 1 {
+		t.Fatalf("expected 1 remaining pending reply, got %d", len(m.pendingQuestions))
 	}
 
 	// Second Enter answers the remaining question.
@@ -100,8 +102,8 @@ func TestParallelApprovalsQueueFIFO(t *testing.T) {
 	default:
 		t.Fatalf("second reply channel was not answered")
 	}
-	if len(m.pendingReplies) != 0 {
-		t.Fatalf("expected empty pending queue, got %d", len(m.pendingReplies))
+	if len(m.pendingQuestions) != 0 {
+		t.Fatalf("expected empty pending queue, got %d", len(m.pendingQuestions))
 	}
 }
 
@@ -138,8 +140,8 @@ func TestEscClosesAllPendingReplies(t *testing.T) {
 
 	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 
-	if len(m.pendingReplies) != 0 {
-		t.Fatalf("pending queue should be cleared after Esc, got %d", len(m.pendingReplies))
+	if len(m.pendingQuestions) != 0 {
+		t.Fatalf("pending queue should be cleared after Esc, got %d", len(m.pendingQuestions))
 	}
 	for i, p := range []*bridge.PendingAsk{replyA, replyB} {
 		select {
@@ -181,5 +183,173 @@ func TestEscWithAgentAbortUnblocksWaitingTool(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatalf("asker did not unblock after Esc")
+	}
+}
+
+// deliverQuestionWithOpts feeds an AskQuestionEvent with custom options.
+func deliverQuestionWithOpts(m *Model, reply *bridge.PendingAsk, question string, opts []string) {
+	m.Update(bridge.AskQuestionEvent{
+		Question: question,
+		Options:  opts,
+		Reply:    reply,
+	})
+}
+
+func selectedOf(m *Model) *int {
+	for i := m.conversation.MessageCount() - 1; i >= 0; i-- {
+		if msg := m.conversation.GetMessage(i); msg != nil && msg.MsgType == types.TypeQuestion {
+			return msg.SelectedOption
+		}
+	}
+	return nil
+}
+
+func pressKey(m *Model, t tea.KeyType) {
+	m.Update(tea.KeyMsg{Type: t})
+}
+
+func pressRune(m *Model, r rune) {
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+}
+
+func TestQuestionOptionSelectionArrowAndEnter(t *testing.T) {
+	m := newApprovalTestModel(t)
+	reply := newPendingAsk()
+	deliverQuestionWithOpts(m, reply, "Deploy to prod?", []string{"Yes", "No", "Ask me later"})
+
+	// Default selection is the first option.
+	if sel := selectedOf(m); sel == nil || *sel != 0 {
+		t.Fatalf("default selection should be 0, got %v", sel)
+	}
+
+	// Down moves to option 2; Enter with empty input sends it verbatim.
+	pressKey(m, tea.KeyDown)
+	if sel := selectedOf(m); sel == nil || *sel != 1 {
+		t.Fatalf("selection after Down should be 1, got %v", sel)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	select {
+	case got := <-reply.Ch:
+		if got != "No" {
+			t.Fatalf("Enter should send selected option, got %q", got)
+		}
+	default:
+		t.Fatalf("Enter did not answer the pending question")
+	}
+}
+
+func TestQuestionOptionSelectionWrapsAndDigits(t *testing.T) {
+	m := newApprovalTestModel(t)
+	reply := newPendingAsk()
+	deliverQuestionWithOpts(m, reply, "Pick one", []string{"Alpha", "Beta"})
+
+	// Up from 0 wraps to the last option.
+	pressKey(m, tea.KeyUp)
+	if sel := selectedOf(m); sel == nil || *sel != 1 {
+		t.Fatalf("Up should wrap to last option, got %v", sel)
+	}
+
+	// Digit '1' selects the first option directly.
+	pressRune(m, '1')
+	if sel := selectedOf(m); sel == nil || *sel != 0 {
+		t.Fatalf("digit 1 should select option 0, got %v", sel)
+	}
+
+	// Digit '9' is beyond the list: falls through as free text.
+	pressRune(m, '9')
+	if sel := selectedOf(m); sel == nil || *sel != 0 {
+		t.Fatalf("digit 9 must not change selection, got %v", sel)
+	}
+	if got := m.textarea.Value(); got != "9" {
+		t.Fatalf("digit 9 should be typed into the input, got %q", got)
+	}
+}
+
+func TestTypedAnswerOverridesSelection(t *testing.T) {
+	m := newApprovalTestModel(t)
+	reply := newPendingAsk()
+	deliverQuestion(m, reply, "Approve run? {\"command\":\"ls\"}")
+
+	// Selection sits on option 0 ("Yes"), but typed text wins on Enter.
+	typeAndEnter(m, "custom answer")
+	select {
+	case got := <-reply.Ch:
+		if got != "custom answer" {
+			t.Fatalf("typed text should win, got %q", got)
+		}
+	default:
+		t.Fatalf("question was not answered")
+	}
+}
+
+func TestRightArrowAppendsOptionForEditing(t *testing.T) {
+	m := newApprovalTestModel(t)
+	reply := newPendingAsk()
+	deliverQuestionWithOpts(m, reply, "Proceed?", []string{"Yes", "No"})
+
+	// Right loads the selected option into the input box for editing.
+	pressKey(m, tea.KeyRight)
+	if got := m.textarea.Value(); got != "Yes " {
+		t.Fatalf("Right should load selected option, got %q", got)
+	}
+
+	// User appends free-form text; Enter sends the edited answer.
+	typeAndEnter(m, "but skip tests")
+	select {
+	case got := <-reply.Ch:
+		if got != "Yes but skip tests" {
+			t.Fatalf("expected option + appended text, got %q", got)
+		}
+	default:
+		t.Fatalf("question was not answered")
+	}
+}
+
+func TestEmptyEnterOnFreeFormQuestionStaysPending(t *testing.T) {
+	m := newApprovalTestModel(t)
+	reply := newPendingAsk()
+	// No options: nothing to select, empty Enter must not pop the question
+	// (which would orphan the waiting tool goroutine).
+	deliverQuestionWithOpts(m, reply, "What should I name it?", nil)
+
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if len(m.pendingQuestions) != 1 {
+		t.Fatalf("empty Enter on option-less question must keep it pending")
+	}
+	select {
+	case <-reply.Ch:
+		t.Fatalf("empty Enter must not answer the question")
+	default:
+	}
+
+	typeAndEnter(m, "my-feature")
+	select {
+	case got := <-reply.Ch:
+		if got != "my-feature" {
+			t.Fatalf("typed answer expected, got %q", got)
+		}
+	default:
+		t.Fatalf("question was not answered by typed text")
+	}
+}
+
+func TestQuestionRenderShowsSelectionMarker(t *testing.T) {
+	m := newApprovalTestModel(t)
+	reply := newPendingAsk()
+	deliverQuestionWithOpts(m, reply, "Proceed?", []string{"Yes", "No"})
+
+	m.Update(tea.KeyMsg{Type: tea.KeyDown}) // move to "No"
+	strip := func(s string) string {
+		var b strings.Builder
+		for _, r := range s {
+			if r >= 32 || r == '\n' {
+				b.WriteRune(r)
+			}
+		}
+		return b.String()
+	}
+	view := strip(m.View())
+	if !strings.Contains(view, "❯ No") {
+		t.Fatalf("view should highlight selected option 'No', got: %s", view)
 	}
 }

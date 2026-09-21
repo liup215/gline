@@ -73,15 +73,23 @@ type Model struct {
 	eventCh chan bridge.AgentEvent
 	done    chan struct{} // signals the forwarding goroutine to stop
 
-	// Pending reply channels for AskFollowupQuestion (tool approvals,
-	// followup prompts). FIFO: multiple tools may ask concurrently when the
-	// model emits parallel tool calls; each question is answered in order.
-	pendingReplies []*bridge.PendingAsk
+	// Pending AskFollowupQuestion prompts (tool approvals, followup
+	// questions). FIFO: multiple tools may ask concurrently when the model
+	// emits parallel tool calls; each question is answered in order. The
+	// oldest one is interactive: arrows/digits pick an option, Enter sends
+	// it (or the typed text), Right loads the option into the input for
+	// editing.
+	pendingQuestions []*pendingQuestion
 
 	// consumedEnter marks an Enter key already handled by the pending-reply
 	// path, so Update() skips forwarding it to the textarea (which would
 	// otherwise insert a stray newline into the just-cleared input).
 	consumedEnter bool
+
+	// consumedPickerKey marks a key already handled by the question option
+	// picker (arrows/digits/Tab/Right), so Update() skips forwarding it to
+	// the textarea and viewport entirely.
+	consumedPickerKey bool
 
 	// ViewModel derives rendered display state from the conversation.
 	convVM *viewmodel.ConversationViewModel
@@ -121,6 +129,16 @@ type Model struct {
 }
 
 // New creates a new TUI model
+// pendingQuestion is one unanswered AskFollowupQuestion with its rendered
+// options and the current keyboard selection. Parallel questions queue FIFO;
+// only the oldest one is active and selectable.
+type pendingQuestion struct {
+	ask      *bridge.PendingAsk
+	options  []string
+	selected int // highlighted option index; -1 when there are no options
+	msgIndex int // conversation index of the question message (for re-render)
+}
+
 func New(agentInstance AgentRunner, store storage.Store) *Model {
 	// Create textarea for input
 	ta := textarea.New()
@@ -202,7 +220,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case bridge.AskQuestionEvent:
-		// Display the follow-up question and options, set pending reply channel
+		// Display the follow-up question with an interactive option picker
+		// and queue the reply channel so Enter will send the answer back to
+		// the waiting tool; parallel approvals are answered one by one.
 		idx := m.conversation.AppendMessage(model.Message{
 			Role:      types.RoleSystem,
 			Content:   "❓ " + msg.Question,
@@ -212,11 +232,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Timestamp: time.Now(),
 		})
 		m.convVM.MarkMessageDirty(idx)
-		// Queue the reply channel so Enter will send the answer back to the
-		// waiting tool; parallel approvals are answered one by one.
-		m.pendingReplies = append(m.pendingReplies, msg.Reply)
+		q := &pendingQuestion{ask: msg.Reply, options: msg.Options, msgIndex: idx, selected: -1}
+		if len(msg.Options) > 0 {
+			q.selected = 0 // default highlight: first option
+			sel := q.selected
+			if qm := m.conversation.GetMessage(idx); qm != nil {
+				qm.SelectedOption = &sel
+			}
+			m.convVM.MarkMessageDirty(idx)
+		}
+		m.pendingQuestions = append(m.pendingQuestions, q)
 		m.textarea.Reset()
-		m.textarea.Placeholder = pendingReplyPlaceholder(len(m.pendingReplies))
+		m.textarea.Placeholder = pendingReplyPlaceholder(len(m.pendingQuestions))
 		m.textarea.Focus()
 		cmds = append(cmds, textarea.Blink)
 		needsRefresh = true
@@ -261,7 +288,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Update textarea. Skip the key handleKeyMsg already consumed (e.g. the
 	// Enter that submitted a pending reply) so it does not also insert a
 	// newline into the just-cleared input box.
-	if keyMsg, ok := msg.(tea.KeyMsg); ok && m.consumedEnter && keyMsg.Type == tea.KeyEnter {
+	if _, ok := msg.(tea.KeyMsg); ok && m.consumedPickerKey {
+		// Question-picker keys were fully handled by handleQuestionSelection
+		// (including the viewport re-render); forwarding them would scroll
+		// the conversation viewport (Up/Down) or type characters (digits).
+		m.consumedPickerKey = false
+	} else if keyMsg, ok := msg.(tea.KeyMsg); ok && m.consumedEnter && keyMsg.Type == tea.KeyEnter {
 		m.consumedEnter = false
 	} else {
 		newTextarea, textareaCmd := m.textarea.Update(msg)
@@ -565,7 +597,8 @@ func Run(agentInstance AgentRunner, store storage.Store) error {
 //   - Input box border (top + bottom): 2 lines
 //   - InputStatusBar: 1 line
 //   - Help: 1 line
-//   Total fixed overhead: 5 lines
+//     Total fixed overhead: 5 lines
+//
 // Variable elements:
 //   - inputH: textarea content height (10% of total, min 3, max 5)
 //   - toolH: tool area height (10% of total, min 2, max 6, currently unused in layout)

@@ -175,6 +175,26 @@ func (vm *ConversationViewModel) renderUserMessage(msg model.Message, width int)
 	return b.String()
 }
 
+// renderQuestionOptions renders an AskFollowupQuestion's options with the
+// interactive picker affordances: the currently selected option gets a "❯"
+// marker and highlight, and the hint line documents the keybindings.
+func renderQuestionOptions(b *strings.Builder, msg model.Message) {
+	if len(msg.Options) == 0 {
+		return
+	}
+	for i, opt := range msg.Options {
+		if msg.SelectedOption != nil && *msg.SelectedOption == i {
+			b.WriteString(view.OptionSelectedStyle.Render("❯ " + opt))
+		} else {
+			num := view.OptionNumStyle.Render(fmt.Sprintf("%d.", i+1))
+			b.WriteString(view.OptionStyle.Render(fmt.Sprintf("%s %s", num, opt)))
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString(view.OptionHintStyle.Render("↑/↓ choose · Enter send · → edit, or type your own answer"))
+	b.WriteString("\n")
+}
+
 // renderAssistantMessage renders a single assistant message to its full string.
 func (vm *ConversationViewModel) renderAssistantMessage(msgs []model.Message, idx int, width int, isActiveStreaming bool) string {
 	var b strings.Builder
@@ -200,15 +220,7 @@ func (vm *ConversationViewModel) renderSystemMessage(msg model.Message) string {
 		b.WriteString(view.QuestionIconStyle.Render("❓ "))
 		b.WriteString(view.QuestionStyle.Render(strings.TrimPrefix(content, "❓ ")))
 		b.WriteString("\n")
-		if len(msg.Options) > 0 {
-			for i, opt := range msg.Options {
-				num := view.OptionNumStyle.Render(fmt.Sprintf("%d.", i+1))
-				b.WriteString(view.OptionStyle.Render(fmt.Sprintf("%s %s", num, opt)))
-				b.WriteString("\n")
-			}
-			b.WriteString(view.OptionHintStyle.Render("Enter option number or type your answer"))
-			b.WriteString("\n")
-		}
+		renderQuestionOptions(&b, msg)
 		b.WriteString("\n")
 		return b.String()
 
@@ -257,15 +269,7 @@ func (vm *ConversationViewModel) renderSystemMessage(msg model.Message) string {
 		b.WriteString(view.QuestionIconStyle.Render("❓ "))
 		b.WriteString(view.QuestionStyle.Render(strings.TrimPrefix(content, "❓ ")))
 		b.WriteString("\n")
-		if len(msg.Options) > 0 {
-			for i, opt := range msg.Options {
-				num := view.OptionNumStyle.Render(fmt.Sprintf("%d.", i+1))
-				b.WriteString(view.OptionStyle.Render(fmt.Sprintf("%s %s", num, opt)))
-				b.WriteString("\n")
-			}
-			b.WriteString(view.OptionHintStyle.Render("Enter option number or type your answer"))
-			b.WriteString("\n")
-		}
+		renderQuestionOptions(&b, msg)
 		b.WriteString("\n")
 	} else if strings.HasPrefix(content, "🔧") {
 		if strings.Contains(content, "Running") || strings.Contains(content, "running") || strings.Contains(content, "started") {
