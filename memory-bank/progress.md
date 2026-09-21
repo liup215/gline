@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-09-21 — rg 搜索性能优化：流式 + 早停 + 计时 ✅（已部署）
+
+依据外部方案评价实施（方案 1/2/4，未采纳 3（改输出）和 5（手写 JSON 解析））:
+
+| 项 | 实现 | 说明 |
+|----|------|------|
+| 早停（最大杠杆） | parseRipgrepStream + onCap 回调 kill | 达到 500 上限即 `cmd.Process.Kill()`，rg 停止扫剩余仓库；宽泛 pattern 下跳过大部分扫描+解析 |
+| 流式解析 | cmd.Output() → StdoutPipe | 解析与 rg 执行重叠；消除 string(out) 二次拷贝 |
+| cap 语义不变 | stop() 内截断到 500 + TotalMatches 钳制 | Execute 的后置 cap 保留为安全网；显示仍 "Found 500 matches" |
+| 取消语义不变（D66） | killed 标志区分内部 kill vs ctx 取消 | 父 ctx 取消/超时仍传播，不回退 |
+| Debug 计时 | rg 路径 total vs parse 拆分；Go 回退路径计时 | total-parse ≈ 进程启动/杀软开销，用于归因 |
+
+**外部方案评价结论**: 流式+减事件量方向对，但漏了早停这个真正杠杆；"1.8MB 内存拷贝"论据不成立（<1ms）；-C 1/--max-columns 200 属输出变更需改测试，暂缓。
+
+**测试**: 新增 TestSearchFilesRipgrepEarlyStop（12 文件×60 match=720，断言恰 500 + TotalMatches 钳制）；全套 -race 绿，已部署。
+
 ## 2026-09-21 — read 工具对齐 Pi 基准优化 ✅（已部署）
 
 依据 Pi vs gline read 差距表优化（internal/tools/file.go）:
