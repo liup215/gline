@@ -2,6 +2,16 @@
 
 ## Current Focus
 
+### TUI 修复：输入历史回溯 + history 屏幕导航加固 ✅（2026-09-21，7d55a33）
+
+**问题**: 当前 TUI（internal/ui）丢失了旧 inputModel 的输入历史回溯 —— 聊天输入框按 ↑/↓ 无法调出历史 prompt；另外 /history 屏幕存在隐患：textarea 残留 "/" 时 slash 菜单会在 history 屏幕后台静默重新激活，吃掉本应导航任务列表的 ↑/↓。
+
+**修复（commit 7d55a33）**:
+- 新增 `internal/ui/input_history.go`：`inputHistory`/`histIdx`/`histDraft` 状态 + `addToInputHistory`（去连续重复、跳过空、上限 100）/`prevInputHistory`（↑ 回溯，进入时存草稿）/`nextInputHistory`（↓ 向新，越过最新恢复草稿）/`resetHistoryBrowsing`
+- 接入点：聊天路径 KeyUp/KeyDown（仅单行时接管，多行保留原生光标移动）；`submitUserMessage` 提交后记录并重置浏览位；`loadHistoryTask` 回主屏时重置
+- history 屏幕加固：`enterHistoryScreen` 重置 textarea；Update() 的 slash 自动检测在 `screen == ScreenHistory` 时跳过
+- 测试：`input_history_test.go` 6 项（箭头回溯/草稿恢复/多行不接管/去重+提交重置/history 屏箭头导航/slash 模式不误激活），全部通过；17 包绿；已重装 `C:\Users\22569\bin\gline.exe`
+
 ### Agent Loop 重构 — Phase 0-7b 全部完成（2026-09-21，最新提交 f12be63）
 
 **状态**: legacy 手写循环彻底删除（7a，d8f195a，+170/−2573），sub-LLM 工具迁 internal/provider 并删掉整个 internal/api 包与 go-llm 依赖（7b，f12be63，+244/−2021）。ADK-only 引擎达成，已重装 `C:\Users\22569\bin\gline.exe`。
