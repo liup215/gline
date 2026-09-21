@@ -2,6 +2,14 @@
 
 ## 架构概述
 
+> **2026-09-21 更新（Agent Loop 重构 Phase 0-7b 完成）**: Agent 引擎只剩一个 — ADK-backed
+> `internal/adkagent`（Google ADK v2.4.0）。legacy 手写循环（internal/agent BaseAgent）、
+> `internal/api` 包与 go-llm 依赖已全部删除。`internal/agent` 仅存共享类型
+> （Mode/StreamCallback/StreamChunk/Provider 接口）；sub-LLM 工具（use_subagents/
+> summarize_file）由 `internal/subagent` 直接用 `model.LLM`（internal/provider）驱动。
+> UI 侧经 `internal/ui/runner.go` 的 `AgentRunner` 窄接口 + 能力断言接入；GUI ChatService
+> 从 storage 转录读会话状态。图示中的 "LLM Providers (legacy)" 与双引擎分支不再存在。
+
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │              gline (TUI 默认 + GUI 可选 + CLI 子命令)            │

@@ -4,6 +4,36 @@
 
 ---
 
+## 2026-09-21 — Agent Loop 重构 Phase 7a+7b ✅（d8f195a + f12be63）
+
+**legacy 循环彻底删除，ADK-only 引擎达成；go-llm 依赖完全移除。**
+
+### Phase 7a（d8f195a，+170/−2573）
+
+| 改动 | 文件 | 说明 |
+|------|------|------|
+| internal/agent 瘦身 | `internal/agent/agent.go` | 只留 Mode/ModePlan/ModeAct + 包文档；删 Agent 接口/BaseAgent/手写循环全部（−1200 行）；删 agent_golden_test.go、agent_test.go；provider.go（Provider 接口+流式类型）保留 |
+| runner 精简 | `internal/ui/runner.go` | 删 legacyRunner/LegacyRunner 与孤儿接口（ConversationProvider/Compactor/RulesReloader）；AdkRunner 工厂 + 编译期能力断言 |
+| TUI | `internal/ui/tui.go` | /compact 恒提示自动压缩；删 history legacy 回放 |
+| GUI | `internal/gui/backend.go`, `chat_service.go` | initAgent ADK-only（GLINE_AGENT=legacy 删）；buildLegacyProvider → (agent.Provider, error)；LoadTask 仅 ADK resume；ChatService 四方法 ADK-only；测试重写为 fake AgentRunner |
+| CLI | `cmd/gline/chat.go` | initializeAgent ADK-only；mock 报错删；summarize_file+use_subagents 移到共享注册路径（修复 CLI ADK 路径缺工具缺口 D41） |
+| mock 删除 | `internal/api/mock.go` | 无引用 |
+
+### Phase 7b（f12be63，+244/−2021）
+
+| 改动 | 文件 | 说明 |
+|------|------|------|
+| subagent 迁移 | `internal/subagent/builder.go`, `runner.go` | Builder.Provider(agent.Provider) → Builder.LLM(model.LLM)；主循环改 genai.Content 会话 + GenerateContent 流式迭代；工具声明 genai.FunctionDeclaration；结果包 FunctionResponse {"result":...}；Token 治理改粗估上限（>200k 失败不截断） |
+| 装配 | `cmd/gline/chat.go`, `internal/gui/backend.go` | sub-LLM 改 provider.NewLLM(...)（opencode-go→opencode 映射不变）；GUI memory Caller 迁 model.LLM 非流式；api.OpenCodeGoBaseURL 内联 |
+| **internal/api 全删** | `internal/api/*` | go_llm/openai/opencode/registry 全部删除；agent/summarizer_caller.go 删（无引用） |
+| 依赖 | `go.mod`, `go.sum` | go-llm（github.com/pkieltyka/go-llm）完全移除，零残留 |
+
+**验证**: 17 包全绿、vet 干净、CLI PONG-7B-OK、**subagent 端到端真机（use_subagents → SUBAGENT-7B-OK）**、GUI smoke、GLINE_LIVE_SMOKE 三项全过、已重装 `C:\Users\22569\bin\gline.exe`
+
+**Agent Loop 重构至此全部完成（Phase 0-7b）。** 遗留待办：长会话压测脚本（>100 轮无 orphan）。
+
+---
+
 ## 2026-09-21 — Agent Loop 重构 Phase 6a ✅（c4148a2）
 
 | 改动 | 文件 | 说明 |

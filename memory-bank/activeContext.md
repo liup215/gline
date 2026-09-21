@@ -2,6 +2,24 @@
 
 ## Current Focus
 
+### Agent Loop 重构 — Phase 0-7b 全部完成（2026-09-21，最新提交 f12be63）
+
+**状态**: legacy 手写循环彻底删除（7a，d8f195a，+170/−2573），sub-LLM 工具迁 internal/provider 并删掉整个 internal/api 包与 go-llm 依赖（7b，f12be63，+244/−2021）。ADK-only 引擎达成，已重装 `C:\Users\22569\bin\gline.exe`。
+
+**最终架构要点**:
+- `internal/agent` = 共享类型（Mode/StreamCallback/StreamChunk/Provider 接口/TokenUsage 等），无引擎逻辑
+- `internal/adkagent` = 唯一 agent 引擎（Google ADK v2.4.0：llmagent + runner + session/compaction 尾部保留 + stuck recovery + 转录双写 + facts）
+- `internal/subagent` = use_subagents/summarize_file 的 sub-LLM 循环，直接用 `model.LLM`（internal/provider，genai.Content 会话 + GenerateContent 流式）
+- `internal/ui/runner.go` = AgentRunner 窄接口 + AdkRunner 适配 + 能力接口（WorkingDirSetter/TaskIDProvider/TaskResetter/SkillsSetter/MemoryProvider/ResumeSessionResumer），全编译期断言
+- `internal/api` 已不存在；go-llm（github.com/pkieltyka/go-llm）零残留
+- GUI ChatService/Backend 全部走 AgentRunner 能力断言；GetConversationState 从 storage 转录读
+
+**验证基线**: 17 包全绿、vet 干净、live：PONG-7B-OK、use_subagents 端到端 SUBAGENT-7B-OK、GUI smoke、GLINE_LIVE_SMOKE 三项（OneShot/ToolRun/HistoryResume）
+
+**下一步候选**:
+- 长会话压测脚本（>100 轮工具调用无 orphan、无内存涨）—— Phase 6 唯一遗留待办
+- Go 工具层使用 model.LLM 直调的其他机会（如未来新 sub-LLM 特性直接用 internal/provider，无中间层）
+
 ### Agent Loop 重构 — Phase 6a 完成（2026-09-21，commit c4148a2）
 
 **状态**: 持久会话 + 任务记账 + 转录双写 + history resume + stuck recovery 全部完成并装机（C:\Users\22569\bin\gline.exe）。剩余 Phase 6b：GUI 切换（chat_service 深耦合 legacy，推迟）、AutoCompact、facts 提取、UsageMetadata 状态栏。
