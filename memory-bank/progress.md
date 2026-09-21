@@ -1,5 +1,15 @@
 # Progress
 
+## 2026-09-21 — 并行工具审批阻塞修复 ✅ (1269749)
+
+| 项 | 内容 |
+|------|------|
+| 问题 | 两条并行命令的 "Approve run" 卡死输入框（Enter 只换行） |
+| 根因 | ADK `platform.RunTasks` 并发执行工具调用；TUI 单槽 `pendingReply` 被第二个问题覆盖 → 首个 asker 永久阻塞 → run 不结束 → Enter 全部失效 |
+| 修复 | `PendingAsk`（once 守卫）+ TUI FIFO 队列 + bridge `AbortPendingQuestions` + adkagent Abort/teardown 解堵 + GUI 同款 bug 修复 |
+| 测试 | bridge 3 项 + ui 4 项新增；17 包 `-race` 绿 |
+| 部署 | `C:\Users\22569\bin\gline.exe` 已重装 |
+
 ## 项目状态概览
 
 ---
