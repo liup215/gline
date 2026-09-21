@@ -35,13 +35,6 @@ type providerSettings struct {
 	baseURL string
 }
 
-// legacyAgentBundle is everything the legacy agent path needs.
-type legacyAgentBundle struct {
-	provider glineagent.Provider
-	store    storage.Store
-	registry *tools.Registry
-}
-
 // resolveProviderSettings maps config + env to a providerSettings.
 // Returns an error for unknown providers or missing credentials.
 func resolveProviderSettings() (*providerSettings, error) {
@@ -121,9 +114,9 @@ func resolveProviderSettings() (*providerSettings, error) {
 }
 
 // initializeAgent assembles the agent used by the TUI and the chat CLI.
-// Default is the ADK-backed agent (internal/adkagent). GLINE_AGENT=legacy
-// (or provider "mock") selects the legacy hand-written loop, which stays
-// until Phase 7 removes it.
+// The ADK-backed agent (internal/adkagent) is the only engine; the legacy
+// hand-written loop was removed in Phase 7. A legacy-style provider is
+// still built for the sub-LLM tools (summarize_file, use_subagents).
 // defaultCompactionConfig enables ADK tail-retention compaction: once the
 // prompt grows past TokenThreshold, everything but the most recent
 // EventRetentionSize events is summarized before the next model call.
@@ -174,39 +167,31 @@ func initializeAgent() (ui.AgentRunner, storage.Store, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	useLegacy := settings.name == "mock" || os.Getenv("GLINE_AGENT") == "legacy"
+	if settings.name == "mock" {
+		return nil, nil, fmt.Errorf("mock provider is no longer supported (legacy agent loop removed); configure a real provider")
+	}
 
-	// Shared tool-registry assembly (identical for both engines).
+	// Shared tool-registry assembly.
 	registry, store, skillReg, err := assembleSharedComponents()
 	if err != nil {
 		return nil, nil, err
 	}
+
+	// Legacy provider interface — kept solely for sub-LLM tools
+	// (summarize_file / use_subagents).
+	legacyProvider, err := api.NewGoLLMProvider(settings.apiKey, settings.model, settings.baseURL, settings.name)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create %s provider: %w", settings.name, err)
+	}
+	log.Infof("Using %s provider with model: %s", settings.name, settings.model)
+
+	customRules, _ := prompts.LoadCustomRules()
+	subBuilder := subagent.NewBuilder(legacyProvider, registry, "", customRules, skillReg.GetMeta())
+	sum := summarizer.NewSummarizer(subagent.NewSummarizerCaller(subBuilder), summarizer.DefaultOptions())
+	_ = tools.RegisterSummarizeFileTool(registry, sum)
+	subagent.RegisterTool(registry, legacyProvider, registry, "", customRules, skillReg.GetMeta())
 	log.Infof("Initialized %d tools", registry.Count())
 
-	if useLegacy {
-		bundle, err := newLegacyBundle(settings, registry, store, skillReg)
-		if err != nil {
-			return nil, nil, err
-		}
-		opts := glineagent.Options{
-			Provider:     bundle.provider,
-			ToolRegistry: registry,
-			Mode:         glineagent.ModeAct,
-			CustomRules:  "",
-			Store:        bundle.store,
-		}
-		base, err := glineagent.New(opts)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to create legacy agent: %w", err)
-		}
-		log.Info("Using legacy agent loop (GLINE_AGENT=legacy)")
-		return ui.LegacyRunner(base), bundle.store, nil
-	}
-
-	// ADK-backed agent (default).
-	if settings.name == "mock" {
-		return nil, nil, fmt.Errorf("mock provider only works with GLINE_AGENT=legacy")
-	}
 	ctx := context.Background()
 	// Persistent ADK sessions (~/.gline/sessions.db). Falling back to the
 	// in-memory service keeps the app usable; only history resume is lost.
@@ -246,7 +231,7 @@ func mapProviderID(name string) string {
 }
 
 // assembleSharedComponents builds the tool registry, storage, skills and
-// subagent wiring used by both agent engines.
+// subagent wiring used by the agent engine.
 func assembleSharedComponents() (*tools.Registry, storage.Store, *skills.Registry, error) {
 	// Load custom rules from global and workspace directories
 	_, _ = prompts.LoadCustomRules()
@@ -267,37 +252,6 @@ func assembleSharedComponents() (*tools.Registry, storage.Store, *skills.Registr
 
 	tools.RegisterSkillTool(registry, skillReg)
 	return registry, store, skillReg, nil
-}
-
-// newLegacyBundle wires the summarizer/subagent stack for the legacy loop.
-func newLegacyBundle(settings *providerSettings, registry *tools.Registry, store storage.Store, skillReg *skills.Registry) (*legacyAgentBundle, error) {
-	if settings.name == "mock" {
-		scenario := os.Getenv("GLINE_MOCK_SCENARIO")
-		if scenario == "" {
-			scenario = "tool_call"
-		}
-		log.Infof("Using Mock provider with scenario: %s", scenario)
-		return &legacyAgentBundle{
-			provider: api.NewMockProvider(api.MockScenario(scenario), 0, 0),
-			store:    store,
-			registry: registry,
-		}, nil
-	}
-
-	provider, err := api.NewGoLLMProvider(settings.apiKey, settings.model, settings.baseURL, settings.name)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create %s provider: %w", settings.name, err)
-	}
-	log.Infof("Using %s provider with model: %s", settings.name, settings.model)
-
-	// Legacy-only: summarizer + subagent tools (circular-dependency-safe order).
-	customRules, _ := prompts.LoadCustomRules()
-	subBuilder := subagent.NewBuilder(provider, registry, "", customRules, skillReg.GetMeta())
-	sum := summarizer.NewSummarizer(subagent.NewSummarizerCaller(subBuilder), summarizer.DefaultOptions())
-	_ = tools.RegisterSummarizeFileTool(registry, sum)
-	subagent.RegisterTool(registry, provider, registry, "", customRules, skillReg.GetMeta())
-
-	return &legacyAgentBundle{provider: provider, store: store, registry: registry}, nil
 }
 
 // printCallback streams agent events to stdout for non-interactive use.

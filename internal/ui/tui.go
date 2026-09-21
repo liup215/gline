@@ -4,7 +4,6 @@ package ui
 import (
 "context"
 "encoding/json"
-"fmt"
 "sync"
 "time"
   
@@ -448,19 +447,8 @@ func handleSlashCommandResult(m *Model, result slash.CommandResult, message stri
 		m.convVM.MarkMessageDirty(idx)
 		m.updateViewport()
 	case slash.ResultCompact:
-		// Legacy agents trim their in-memory conversation to the token budget.
-		// ADK-backed agents manage compaction internally (Phase 6).
-		if m.agentInstance != nil {
-			if lr, ok := m.agentInstance.(legacyRunner); ok {
-				conv := lr.GetConversation()
-				before := conv.MessageCount()
-				conv.TrimToMaxTokens()
-				after := conv.MessageCount()
-				message = fmt.Sprintf("Context compacted: %d messages removed, %d remaining.", before-after, after)
-			} else {
-				message = "Context compaction is handled automatically."
-			}
-		}
+		// The ADK agent compacts automatically (tail retention).
+		message = "Context compaction is handled automatically."
 		idx := m.conversation.AppendMessage(model.Message{
 			Role:      types.RoleSystem,
 			Content:   message,
@@ -645,8 +633,7 @@ func (m *Model) loadHistoryTask() {
 	m.convVM.InvalidateCache()
 	if m.agentInstance != nil {
 		// Resume the recorded ADK session when the task has one; otherwise
-		// start fresh. Legacy agents always start a new in-memory session
-		// and get the transcript replayed below.
+		// start fresh.
 		resumed := false
 		if task.SessionID != "" {
 			if rr, ok := m.agentInstance.(interface {
@@ -694,25 +681,6 @@ func (m *Model) loadHistoryTask() {
 			Strategy:  types.StrategyPlain,
 			Timestamp: msg.CreatedAt,
 		})
-	}
-
-	// Legacy agents replay the transcript into their in-memory conversation.
-	if lr, ok := m.agentInstance.(legacyRunner); ok {
-		for _, msg := range msgs {
-			role := types.Role(msg.Role)
-			var toolCalls []types.ToolCall
-			if msg.ToolCalls != "" {
-				_ = json.Unmarshal([]byte(msg.ToolCalls), &toolCalls)
-			}
-			lr.GetConversation().AddMessage(types.Message{
-				Role:             role,
-				Content:          msg.Content,
-				ReasoningContent: msg.ReasoningContent,
-				ToolCalls:        toolCalls,
-				ToolCallID:       msg.ToolCallID,
-				Timestamp:        msg.CreatedAt,
-			})
-		}
 	}
 
 	// Sync task identity

@@ -159,6 +159,24 @@ cmd/gline (TUI 默认 / --gui / 子命令)
 - ⏳ 长会话压测脚本（>100 轮工具调用无 orphan、无内存涨）——待办
 
 ### Phase 7 — 切换与清理（0.5 天）
+
+**Phase 7a — 删除 legacy 循环（ADK-only）✅（2026-09-21）**
+
+- ✅ `internal/agent/agent.go` 重写：仅保留 `Mode`/`ModePlan`/`ModeAct` + 包文档；删除 `Agent` 接口、`BaseAgent`、`Options`、`New`、`RunWithCallback/processStream/processResponse`、`preDispatch*`、`executeToolCallsParallel`、`enforceTokenBudget`、`AutoCompact/Compact`、`convertTools`、`filterPlanModeTools` 等全部手写循环代码（-1200 行）；删除 `agent_golden_test.go`、`agent_test.go`；`provider.go`（Provider 接口 + 流式类型）与 `summarizer_caller.go` 保留
+- ✅ `internal/ui/runner.go`：删除 `legacyRunner` 与 `LegacyRunner()`；孤儿接口 `ConversationProvider`/`Compactor`/`RulesReloader` 删除；`AdkRunner()` 工厂 + 全部能力接口编译期断言
+- ✅ `internal/ui/tui.go`：`/compact` 恒提示自动压缩；`loadTaskMessages` 删除 legacy 转录回放块
+- ✅ `internal/gui/backend.go`：`initAgent` 移除 `GLINE_AGENT=legacy` 分支；`buildLegacyProvider` 简化为 `(agent.Provider, error)`（仅供 sub-LLM 工具）；`LoadTask` 删除 legacy 回放分支
+- ✅ `internal/gui/chat_service.go`：`GetStatus`/`GetConversationState`/`CompactConversation`/`reloadRules` 全部 ADK-only；`ChatServiceTest` 重写为 fake AgentRunner（6 个用例）
+- ✅ `cmd/gline/chat.go`：`initializeAgent` ADK-only；mock provider 报错删除；**summarize_file + use_subagents 移到共享注册路径**（修复 CLI ADK 路径缺失这两个工具的缺口）；删除 `legacyAgentBundle`
+- ✅ 删除 `internal/api/mock.go`（无引用）；go-llm 仍保留（Phase 7b）
+- ✅ 验证：18 包全绿、vet 干净、CLI live smoke（PONG-7A-OK）、GUI smoke（ADK 日志）、GLINE_LIVE_SMOKE 3 项（OneShot/ToolRun/HistoryResume）全过、已重装 `C:\Users\22569\bin\gline.exe`
+
+**Phase 7b — port sub-LLM 工具并删除 go-llm（待办）**
+
+- 将 `internal/subagent` runner 与 `summarizer` 的 sub-LLM 调用从 `agent.Provider.CreateMessageStream/CreateMessage` 迁到 `internal/provider` iter 事件流
+- 迁移后删除 `internal/api/go_llm.go` 与 go-llm 依赖
+
+**原 Phase 7 描述**：
 - 删除 `internal/api/go_llm.go`、旧 `RunWithCallback/processStream/preDispatch/executeToolCallsParallel`、go-llm 依赖
 - 全量回归 + 重装 `C:\Users\22569\bin\gline.exe`
 - memory bank 更新（systemPatterns/progress/activeContext）

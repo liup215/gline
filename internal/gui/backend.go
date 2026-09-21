@@ -109,16 +109,13 @@ func (b *Backend) initAgent() error {
 	if providerName == "" {
 		providerName = "openai"
 	}
-	useLegacy := os.Getenv("GLINE_AGENT") == "legacy"
 
-	// Legacy provider interface — always built: the ADK path's
-	// summarize_file / use_subagents tools still make sub-LLM calls
-	// through it.
-	legacyProvider, maxTokens, err := b.buildLegacyProvider(providerName)
+	// Legacy provider interface — always built: the summarize_file /
+	// use_subagents tools still make sub-LLM calls through it.
+	legacyProvider, err := b.buildLegacyProvider(providerName)
 	if err != nil {
 		return err
 	}
-	_ = maxTokens
 
 	memoryEngine := b.initMemoryEngine(legacyProvider)
 	customRules := loadCustomRules()
@@ -143,32 +140,13 @@ func (b *Backend) initAgent() error {
 	// Register use_subagents tool
 	subagent.RegisterTool(registry, legacyProvider, registry, "", customRules, b.skillRegistry.GetMeta())
 
-	if useLegacy {
-		ag, err := agent.New(agent.Options{
-			Provider:       legacyProvider,
-			ToolRegistry:   registry,
-			Mode:           agent.ModeAct,
-			AutoApprove:    false,
-			CustomRules:    customRules,
-			Store:          b.store,
-			MaxTokens:      maxTokens,
-			MemoryEngine:   memoryEngine,
-			Skills:         b.skillRegistry.GetMeta(),
-		})
-		if err != nil {
-			return err
-		}
-		b.ag = ui.LegacyRunner(ag)
-		log.Info("GUI using legacy agent loop (GLINE_AGENT=legacy)")
-	} else {
-		adkAg, err := b.buildAdkAgent(providerName, registry, memoryEngine)
-		if err != nil {
-			return err
-		}
-		b.ag = ui.AdkRunner(adkAg)
-		provName, modelName := adkAg.ProviderInfo()
-		log.Infof("GUI using ADK agent with provider %s model %s", provName, modelName)
+	adkAg, err := b.buildAdkAgent(providerName, registry, memoryEngine)
+	if err != nil {
+		return err
 	}
+	b.ag = ui.AdkRunner(adkAg)
+	provName, modelName := adkAg.ProviderInfo()
+	log.Infof("GUI using ADK agent with provider %s model %s", provName, modelName)
 
 	// Initialize MCP Manager if configured
 	if len(cfg.MCP.Servers) > 0 {
@@ -240,34 +218,29 @@ func (b *Backend) resolveProviderSettings(name string) (guiProviderSettings, err
 	}
 }
 
-// buildLegacyProvider constructs the legacy agent.Provider for the
-// configured provider. Used by the legacy loop and by the ADK path's
-// sub-LLM tools (summarize_file, use_subagents).
-func (b *Backend) buildLegacyProvider(name string) (agent.Provider, int, error) {
+// buildLegacyProvider constructs the agent.Provider used for sub-LLM
+// tool calls (summarize_file / use_subagents).
+func (b *Backend) buildLegacyProvider(name string) (agent.Provider, error) {
 	s, err := b.resolveProviderSettings(name)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
-	cfg := b.cfg.Get()
-	var maxTokens int
 	var provider agent.Provider
 	switch s.id {
 	case "openai":
-		maxTokens = cfg.Provider.OpenAI.MaxContextTokens
 		provider = api.NewOpenAIProvider(s.apiKey, s.model, s.baseURL)
 	case "opencode-go":
-		maxTokens = cfg.Provider.OpenCodeGo.MaxContextTokens
 		provider, err = api.NewGoLLMProvider(s.apiKey, s.model, s.baseURL, "opencode-go")
 		if err != nil {
-			return nil, 0, fmt.Errorf("failed to create OpenCode Go provider: %w", err)
+			return nil, fmt.Errorf("failed to create OpenCode Go provider: %w", err)
 		}
 	case "openrouter":
 		provider, err = api.NewGoLLMProvider(s.apiKey, s.model, s.baseURL, "openrouter")
 		if err != nil {
-			return nil, 0, fmt.Errorf("failed to create OpenRouter provider: %w", err)
+			return nil, fmt.Errorf("failed to create OpenRouter provider: %w", err)
 		}
 	}
-	return provider, maxTokens, nil
+	return provider, nil
 }
 
 // initMemoryEngine mirrors the CLI assembly: builds the unified memory
@@ -500,16 +473,15 @@ func (b *Backend) DeleteTask(taskID string) error {
 	return b.store.DeleteTask(taskID)
 }
 
-// LoadTask restores the agent's state for an existing task. Legacy agents
-// replay the stored messages into the in-memory conversation; ADK agents
+// LoadTask restores the agent's state for an existing task. ADK agents
 // resume the recorded ADK session when one exists (falling back to task-id
 // reattachment for pre-sessionstore tasks).
 func (b *Backend) LoadTask(taskID string) (*storage.TaskRecord, error) {
 	if b.ag == nil {
 		return nil, fmt.Errorf("agent not initialised")
 	}
-	// Load task metadata and messages from storage
-	task, msgs, err := b.store.GetTaskSummary(taskID)
+	// Load task metadata from storage
+	task, _, err := b.store.GetTaskSummary(taskID)
 	if err != nil {
 		return nil, fmt.Errorf("load task summary: %w", err)
 	}
@@ -523,24 +495,6 @@ func (b *Backend) LoadTask(taskID string) (*storage.TaskRecord, error) {
 		}
 	}
 
-	if base, ok := b.ag.(ui.ConversationProvider); ok {
-		// Legacy path: replay transcript into the conversation.
-		if tm, ok := b.ag.(interface{ SetTaskID(string) }); ok {
-			tm.SetTaskID(taskID)
-		}
-		base.GetConversation().Clear()
-		for _, m := range msgs {
-			msg, err := m.ToTypesMessage()
-			if err != nil {
-				log.Warnf("failed to convert message record: %v", err)
-				continue
-			}
-			base.GetConversation().AddMessage(msg)
-		}
-		return task, nil
-	}
-
-	// ADK path: resume the recorded session when available.
 	if resumer, ok := b.ag.(ui.ResumeSessionResumer); ok && task != nil && task.SessionID != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()

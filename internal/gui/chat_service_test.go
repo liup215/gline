@@ -3,20 +3,44 @@ package gui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/liup215/gline/internal/agent"
-	"github.com/liup215/gline/internal/api"
 	"github.com/liup215/gline/internal/config"
-	"github.com/liup215/gline/internal/tools"
-	"github.com/liup215/gline/internal/ui"
+	"github.com/liup215/gline/internal/memory"
 	"github.com/liup215/gline/pkg/types"
 )
 
-// newLegacyChatService builds a ChatService wired to a legacy BaseAgent
-// (offline provider; no LLM calls are made) to verify the capability-based
-// agent routing in the service layer.
-func newLegacyChatService(t *testing.T) *ChatService {
+// fakeAgent implements ui.AgentRunner plus the capability interfaces the
+// ChatService asserts, recording calls so tests can verify routing.
+type fakeAgent struct {
+	mode        string
+	workingDir  string
+	taskID      string
+	resetCount  int
+	newSessions int
+}
+
+func (f *fakeAgent) RunWithCallback(ctx context.Context, prompt string, cb agent.StreamCallback) error {
+	return nil
+}
+func (f *fakeAgent) Abort()                                     {}
+func (f *fakeAgent) SetMode(mode string)                        { f.mode = mode }
+func (f *fakeAgent) Mode() string                               { return f.mode }
+func (f *fakeAgent) ProviderInfo() (string, string)             { return "fake", "fake-model" }
+func (f *fakeAgent) SessionID() string                          { return "" }
+func (f *fakeAgent) NewSession(ctx context.Context) error       { f.newSessions++; return nil }
+func (f *fakeAgent) SetWorkingDir(dir string)                   { f.workingDir = dir }
+func (f *fakeAgent) GetTaskID() string                          { return f.taskID }
+func (f *fakeAgent) ResetTask()                                 { f.resetCount++ }
+func (f *fakeAgent) SetSkills(meta []types.SkillMeta)           {}
+func (f *fakeAgent) MemoryEngine() *memory.UnifiedEngine        { return nil }
+func (f *fakeAgent) ResumeSession(ctx context.Context, s string) error {
+	return errors.New("not implemented")
+}
+
+func newChatService(t *testing.T) *ChatService {
 	t.Helper()
 	// Isolate config loading from the real user profile.
 	t.Setenv("USERPROFILE", t.TempDir())
@@ -25,22 +49,11 @@ func newLegacyChatService(t *testing.T) *ChatService {
 	if err := cfg.Load(); err != nil {
 		t.Fatalf("config load: %v", err)
 	}
-	prov := api.NewOpenAIProvider("test-key", "gpt-4o-mini", "")
-	registry := tools.InitDefaultRegistry(nil, nil)
-	base, err := agent.New(agent.Options{
-		Provider:     prov,
-		ToolRegistry: registry,
-		Mode:         agent.ModeAct,
-		AutoApprove:  true,
-	})
-	if err != nil {
-		t.Fatalf("agent.New: %v", err)
-	}
-	return &ChatService{Backend: &Backend{ag: ui.LegacyRunner(base), cfg: cfg}}
+	return &ChatService{Backend: &Backend{ag: &fakeAgent{mode: "act"}, cfg: cfg}}
 }
 
-func TestChatServiceModeRoutingLegacy(t *testing.T) {
-	c := newLegacyChatService(t)
+func TestChatServiceModeRouting(t *testing.T) {
+	c := newChatService(t)
 	if got := c.GetMode(); got != "act" {
 		t.Fatalf("initial mode = %q, want act", got)
 	}
@@ -55,21 +68,27 @@ func TestChatServiceModeRoutingLegacy(t *testing.T) {
 	}
 }
 
-func TestChatServiceStartNewConversationLegacy(t *testing.T) {
-	c := newLegacyChatService(t)
-	conv := c.Backend.ag.(ui.ConversationProvider).GetConversation()
-	conv.AddMessage(types.Message{Role: "user", Content: "hello"})
+func TestChatServiceStartNewConversation(t *testing.T) {
+	c := newChatService(t)
+	ag := c.Backend.ag.(*fakeAgent)
+	ag.workingDir = "/tmp/old"
 	c.StartNewConversation()
-	if msgs := conv.GetMessages(); len(msgs) != 0 {
-		t.Fatalf("conversation not cleared: %d messages", len(msgs))
+	if ag.resetCount != 1 {
+		t.Fatalf("ResetTask called %d times, want 1", ag.resetCount)
+	}
+	if ag.newSessions != 1 {
+		t.Fatalf("NewSession called %d times, want 1", ag.newSessions)
+	}
+	if ag.workingDir != "" {
+		t.Fatalf("workingDir = %q, want empty", ag.workingDir)
 	}
 	if c.workingDir != "" {
-		t.Fatalf("workingDir = %q, want empty", c.workingDir)
+		t.Fatalf("service workingDir = %q, want empty", c.workingDir)
 	}
 }
 
-func TestChatServiceGetStatusAndConversationStateLegacy(t *testing.T) {
-	c := newLegacyChatService(t)
+func TestChatServiceGetStatusAndConversationState(t *testing.T) {
+	c := newChatService(t)
 	status, err := c.GetStatus()
 	if err != nil {
 		t.Fatalf("GetStatus: %v", err)
@@ -85,18 +104,35 @@ func TestChatServiceGetStatusAndConversationStateLegacy(t *testing.T) {
 	if err := json.Unmarshal([]byte(state), &views); err != nil {
 		t.Fatalf("GetConversationState not valid JSON: %v (%q)", err, state)
 	}
-}
-
-func TestChatServiceCompactConversationLegacy(t *testing.T) {
-	c := newLegacyChatService(t)
-	if _, err := c.CompactConversation(); err != nil {
-		t.Fatalf("CompactConversation: %v", err)
+	if len(views) != 0 {
+		t.Fatalf("expected empty transcript without a task, got %d entries", len(views))
 	}
 }
 
-func TestChatServiceNewSessionIsImplemented(t *testing.T) {
-	c := newLegacyChatService(t)
-	if err := c.Backend.ag.NewSession(context.Background()); err != nil {
-		t.Fatalf("NewSession: %v", err)
+func TestChatServiceCompactConversationIsNoop(t *testing.T) {
+	c := newChatService(t)
+	ok, err := c.CompactConversation()
+	if err != nil || !ok {
+		t.Fatalf("CompactConversation = (%v, %v), want (true, nil)", ok, err)
+	}
+}
+
+func TestChatServiceReloadRulesDegrades(t *testing.T) {
+	c := newChatService(t)
+	if _, _, err := c.ReloadRules(); err == nil {
+		t.Fatal("ReloadRules should report unavailability on the ADK agent")
+	}
+}
+
+func TestChatServiceClearConversation(t *testing.T) {
+	c := newChatService(t)
+	ag := c.Backend.ag.(*fakeAgent)
+	ag.workingDir = "/tmp/keep"
+	c.ClearConversation()
+	if ag.resetCount != 1 {
+		t.Fatalf("ResetTask called %d times, want 1", ag.resetCount)
+	}
+	if ag.workingDir != "/tmp/keep" {
+		t.Fatalf("workingDir = %q, want preserved", ag.workingDir)
 	}
 }

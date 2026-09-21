@@ -98,22 +98,10 @@ type ChatService struct {
 	agentDone   chan struct{} // closed when the agent goroutine exits
 }
 
-// reloadRules reloads custom rule files into the agent prompt. Only the
-// legacy loop supports live reloading; the ADK agent bakes rules into the
-// system instruction at startup.
+// reloadRules reports that live rule reloading is unavailable: the ADK
+// agent bakes custom rules into the system instruction at startup.
 func (c *ChatService) reloadRules() (int, string, error) {
-	if c.Backend.ag == nil {
-		return 0, "", fmt.Errorf("agent not initialised")
-	}
-	rr, ok := c.Backend.ag.(ui.RulesReloader)
-	if !ok {
-		return 0, "", fmt.Errorf("rule reload requires the legacy agent (GLINE_AGENT=legacy); restart to pick up rule changes")
-	}
-	_, infos, err := rr.ReloadCustomRules()
-	if err != nil {
-		return 0, "", err
-	}
-	return len(infos), prompts.FormatRulesInfo(infos), nil
+	return 0, "", fmt.Errorf("live rule reload is unavailable; restart to pick up rule changes")
 }
 
 // InitSlashRegistry initialises the slash command registry for this service.
@@ -692,16 +680,9 @@ func (c *ChatService) SetMode(mode string) error {
 	}
 }
 
-// CompactConversation triggers manual compaction of the conversation history.
-// The ADK agent compacts automatically (tail retention), so this reports
-// success for it.
+// CompactConversation is a no-op on the ADK agent, which compacts
+// automatically (tail retention). Reported as success.
 func (c *ChatService) CompactConversation() (bool, error) {
-	if c.Backend.ag == nil {
-		return false, fmt.Errorf("agent not initialised")
-	}
-	if comp, ok := c.Backend.ag.(ui.Compactor); ok {
-		return comp.Compact(), nil
-	}
 	return true, nil
 }
 
@@ -749,16 +730,6 @@ func (c *ChatService) GetStatus() (map[string]string, error) {
 		if mode == "" {
 			mode = "act"
 		}
-		// Legacy agent exposes a live token count from its conversation; the
-		// ADK agent reports "0" here (compaction is automatic).
-		if cp, ok := c.Backend.ag.(ui.ConversationProvider); ok {
-			if conv := cp.GetConversation(); conv != nil {
-				currentTokens = fmt.Sprintf("%d", conv.GetTotalTokens())
-				if maxTokens == 0 {
-					maxTokensStr = fmt.Sprintf("%d", conv.MaxTokens)
-				}
-			}
-		}
 	}
 	return map[string]string{
 		"provider":      provider,
@@ -770,7 +741,8 @@ func (c *ChatService) GetStatus() (map[string]string, error) {
 	}, nil
 }
 
-// GetConversationState returns the current messages in JSON form.
+// GetConversationState returns the current messages in JSON form, read
+// from the persisted transcript of the current task.
 // Messages are truncated to avoid exceeding Wails IPC payload limits.
 func (c *ChatService) GetConversationState() string {
 	if c.Backend.ag == nil {
@@ -789,37 +761,25 @@ func (c *ChatService) GetConversationState() string {
 		return append(views, msgView{Role: role, Content: content})
 	}
 	var views []msgView
-	if cp, ok := c.Backend.ag.(ui.ConversationProvider); ok {
-		msgs := cp.GetConversation().GetMessages()
+	taskID := ""
+	if tp, ok := c.Backend.ag.(ui.TaskIDProvider); ok {
+		taskID = tp.GetTaskID()
+	}
+	if taskID != "" && c.Backend.store != nil {
+		msgs, err := c.Backend.store.GetMessages(taskID)
+		if err != nil {
+			log.Warnf("GetMessages(%s) failed: %v", taskID, err)
+		}
 		start := 0
 		if len(msgs) > maxMsgs {
 			start = len(msgs) - maxMsgs
 		}
 		for i := start; i < len(msgs); i++ {
-			views = appendView(views, string(msgs[i].Role), msgs[i].Content)
-		}
-	} else {
-		// ADK agent: read the persisted transcript for the current task.
-		taskID := ""
-		if tp, ok := c.Backend.ag.(ui.TaskIDProvider); ok {
-			taskID = tp.GetTaskID()
-		}
-		if taskID != "" {
-			msgs, err := c.Backend.store.GetMessages(taskID)
-			if err != nil {
-				log.Warnf("GetMessages(%s) failed: %v", taskID, err)
+			role := msgs[i].Role
+			if role == "tool" {
+				continue // tool noise is not shown in the restored transcript
 			}
-			start := 0
-			if len(msgs) > maxMsgs {
-				start = len(msgs) - maxMsgs
-			}
-			for i := start; i < len(msgs); i++ {
-				role := msgs[i].Role
-				if role == "tool" {
-					continue // tool noise is not shown in the restored transcript
-				}
-				views = appendView(views, role, msgs[i].Content)
-			}
+			views = appendView(views, role, msgs[i].Content)
 		}
 	}
 	data, _ := json.Marshal(views)
