@@ -67,12 +67,13 @@ func InitDefaultRegistry(engine *memory.UnifiedEngine, sum *summarizer.Summarize
 		RequiresConfirmation: false,
 	})
 
-	// Command execution - act mode only
+	// Command execution - act mode only; runs directly without an approval
+	// prompt (user preference: no confirmation for running commands).
 	registry.Register(&ToolInfo{
 		Tool:                 NewExecuteCommandTool(),
 		Category:             CategoryCommand,
 		AllowedModes:         []string{"act"},
-		RequiresConfirmation: true,
+		RequiresConfirmation: false,
 	})
 
 	// User interaction - allowed in both modes
