@@ -59,6 +59,13 @@ type Store interface {
 	// GetTaskByID returns a single task with its metadata.
 	GetTaskByID(id string) (*TaskRecord, error)
 
+	// SetTaskSessionID records the ADK session id associated with a task,
+	// enabling history resume through the session store.
+	SetTaskSessionID(taskID, sessionID string) error
+
+	// GetTaskSessionID returns the ADK session id for a task (empty if none).
+	GetTaskSessionID(taskID string) (string, error)
+
 	// GetTaskSummary returns a task with its messages.
 	GetTaskSummary(id string) (*TaskRecord, []MessageRecord, error)
 

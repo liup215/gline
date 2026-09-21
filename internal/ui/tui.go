@@ -644,9 +644,24 @@ func (m *Model) loadHistoryTask() {
 	m.conversation.Clear()
 	m.convVM.InvalidateCache()
 	if m.agentInstance != nil {
-		// Start a fresh agent session; replaying the stored transcript into
-		// the new ADK session is Phase 6 (history resume via SessionID).
-		_ = m.agentInstance.NewSession(m.ctx)
+		// Resume the recorded ADK session when the task has one; otherwise
+		// start fresh. Legacy agents always start a new in-memory session
+		// and get the transcript replayed below.
+		resumed := false
+		if task.SessionID != "" {
+			if rr, ok := m.agentInstance.(interface {
+				ResumeSession(context.Context, string) error
+			}); ok {
+				rerr := rr.ResumeSession(m.ctx, task.SessionID)
+				if rerr != nil {
+					m.addErrorMessage("Failed to resume session: " + rerr.Error())
+				}
+				resumed = rerr == nil
+			}
+		}
+		if !resumed {
+			_ = m.agentInstance.NewSession(m.ctx)
+		}
 	}
 
 	// Load messages from storage

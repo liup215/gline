@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"database/sql"
-	_ "modernc.org/sqlite"
+	_ "github.com/glebarez/go-sqlite"
 )
 
 // DefaultDBPath returns the default SQLite database file path.

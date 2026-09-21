@@ -34,8 +34,9 @@ const DefaultUserID = "local"
 type Options struct {
 	// Path is the SQLite database file. Empty means DefaultPath().
 	Path string
-	// Quiet suppresses GORM SQL logging (default true).
-	Quiet bool
+	// Verbose enables GORM SQL logging (off by default; the ADK service
+	// logs red "record not found" lines that are expected, not errors).
+	Verbose bool
 }
 
 // Store wraps the ADK session.Service backed by a pure-Go SQLite database
@@ -75,7 +76,7 @@ func Open(opts Options) (*Store, error) {
 	}
 
 	cfg := &gorm.Config{}
-	if opts.Quiet {
+	if !opts.Verbose {
 		cfg.Logger = logger.Discard
 	}
 	db, err := gorm.Open(sqlite.Open(path), cfg)

@@ -126,5 +126,8 @@ func functionResponseText(resp map[string]any) string {
 	if r, ok := resp["result"].(string); ok {
 		return r
 	}
+	if e, ok := resp["error"].(string); ok {
+		return e
+	}
 	return fmt.Sprintf("%v", resp)
 }

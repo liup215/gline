@@ -13,12 +13,14 @@ import (
 	"github.com/liup215/gline/internal/api"
 	"github.com/liup215/gline/internal/log"
 	"github.com/liup215/gline/internal/prompts"
+	"github.com/liup215/gline/internal/sessionstore"
 	"github.com/liup215/gline/internal/skills"
 	"github.com/liup215/gline/internal/storage"
 	"github.com/liup215/gline/internal/subagent"
 	"github.com/liup215/gline/internal/summarizer"
 	"github.com/liup215/gline/internal/tools"
 	"github.com/liup215/gline/internal/ui"
+	"google.golang.org/adk/v2/session"
 )
 
 // providerSettings carries the resolved provider configuration. The legacy
@@ -160,13 +162,23 @@ func initializeAgent() (ui.AgentRunner, storage.Store, error) {
 		return nil, nil, fmt.Errorf("mock provider only works with GLINE_AGENT=legacy")
 	}
 	ctx := context.Background()
+	// Persistent ADK sessions (~/.gline/sessions.db). Falling back to the
+	// in-memory service keeps the app usable; only history resume is lost.
+	var sessionService session.Service
+	if ss, err := sessionstore.Open(sessionstore.Options{}); err != nil {
+		log.Warnf("session store unavailable, falling back to in-memory sessions: %v", err)
+	} else {
+		sessionService = ss.Service()
+	}
 	agentInstance, err := adkagent.New(ctx, adkagent.Options{
-		Provider: mapProviderID(settings.name),
-		Model:    settings.model,
-		APIKey:   settings.apiKey,
-		BaseURL:  settings.baseURL,
-		Tools:    registry,
-		Mode:     string(glineagent.ModeAct),
+		Provider:       mapProviderID(settings.name),
+		Model:          settings.model,
+		APIKey:         settings.apiKey,
+		BaseURL:        settings.baseURL,
+		Tools:          registry,
+		Mode:           string(glineagent.ModeAct),
+		SessionService: sessionService,
+		Store:          store,
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create agent: %w", err)

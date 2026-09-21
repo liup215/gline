@@ -2,6 +2,7 @@ package adkagent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -15,7 +16,9 @@ import (
 	"google.golang.org/genai"
 
 	glineagent "github.com/liup215/gline/internal/agent" // StreamCallback interface
+	"github.com/liup215/gline/internal/log"
 	"github.com/liup215/gline/internal/provider"
+	"github.com/liup215/gline/internal/storage"
 	"github.com/liup215/gline/internal/tools"
 	"github.com/liup215/gline/pkg/types"
 )
@@ -78,6 +81,12 @@ type Options struct {
 
 	// SessionID resumes an existing session when non-empty.
 	SessionID string
+
+	// Store is the gline task index (SQLite). When set, the agent creates
+	// a task on the first turn, stores the session ID mapping, and persists
+	// the transcript so history browsing keeps working. Nil skips all task
+	// bookkeeping (tests).
+	Store storage.Store
 }
 
 // Agent drives the ADK-backed agent loop. It owns one root LLMAgent, one
@@ -97,6 +106,9 @@ type Agent struct {
 	cb      glineagent.StreamCallback // active callback during a run
 	cancel  context.CancelFunc
 	running bool
+
+	taskID    string // task index row (empty until the first turn creates one)
+	taskTitle string
 }
 
 // New builds the LLM client, wraps the gline tool registry for ADK, creates
@@ -291,6 +303,10 @@ func (a *Agent) NewSession(ctx context.Context) error {
 	}
 	a.mu.Lock()
 	a.sessionID = resp.Session.ID()
+	// A new conversation is a new task: forget the previous index row so
+	// the next turn creates a fresh one linked to the new session.
+	a.taskID = ""
+	a.taskTitle = ""
 	a.mu.Unlock()
 	return nil
 }
@@ -334,6 +350,52 @@ func (a *Agent) IsRunning() bool {
 	return a.running
 }
 
+// SetTaskID attaches an existing task index row to this conversation
+// (history resume). Implements the TUI's taskManager contract.
+func (a *Agent) SetTaskID(id string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.taskID = id
+}
+
+// SetTaskTitle names the task record created on the next first turn.
+func (a *Agent) SetTaskTitle(title string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.taskTitle = title
+}
+
+// ResetTask forgets the current task so the next turn creates a fresh one.
+func (a *Agent) ResetTask() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.taskID = ""
+	a.taskTitle = ""
+}
+
+// TaskID returns the current task index row, if any.
+func (a *Agent) TaskID() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.taskID
+}
+
+// ResumeSession points the agent at an existing ADK session (history
+// resume). The runner keeps using the same session service, so the next
+// turn continues with the full prior conversation as context.
+func (a *Agent) ResumeSession(ctx context.Context, sessionID string) error {
+	resp, err := a.sessionSvc.Get(ctx, &session.GetRequest{
+		AppName: AppName, UserID: UserID, SessionID: sessionID,
+	})
+	if err != nil {
+		return fmt.Errorf("resuming session %s: %w", sessionID, err)
+	}
+	a.mu.Lock()
+	a.sessionID = resp.Session.ID()
+	a.mu.Unlock()
+	return nil
+}
+
 // Abort cancels the active run, if any. The runner surfaces cancellation as
 // a context error through the event stream.
 func (a *Agent) Abort() {
@@ -368,6 +430,9 @@ func (a *Agent) requestApproval(toolName string, args map[string]any) bool {
 // RunWithCallback sends one user turn through the ADK loop, mapping events
 // onto cb. It blocks until the run completes (all model turns and tool
 // executions), returns the ADK session ID, and reports errors through cb.
+// When the loop detector calls the turn dead (*stuckError), the reason is
+// handed back to the model as a fresh instruction and the turn re-runs, up to
+// maxStuckRecoveries times (pi-go's tell-the-model-and-resume pattern).
 func (a *Agent) RunWithCallback(ctx context.Context, prompt string, cb glineagent.StreamCallback) (string, error) {
 	a.mu.Lock()
 	if a.running {
@@ -388,8 +453,69 @@ func (a *Agent) RunWithCallback(ctx context.Context, prompt string, cb glineagen
 		a.mu.Unlock()
 	}()
 
+	for attempt := 0; ; attempt++ {
+		acc := &transcriptAccumulator{}
+		err := a.streamTurn(runCtx, prompt, cb, acc)
+		defer a.persistTranscript(acc)
+		var stuck *stuckError
+		if !errors.As(err, &stuck) {
+			if err == nil {
+				cb.OnComplete()
+				a.finishTask("completed")
+			} else {
+				a.finishTask("failed")
+			}
+			return a.sessionID, err
+		}
+		if attempt >= maxStuckRecoveries {
+			gaveUp := fmt.Errorf("%w (gave up after %d recovery attempt(s))", err, attempt)
+			cb.OnError(gaveUp)
+			return a.sessionID, gaveUp
+		}
+		log.Infof("agent loop stuck (%s); telling the model and resuming (attempt %d of %d)",
+			stuck.detail, attempt+1, maxStuckRecoveries)
+		prompt = recoverStuckPrompt(stuck.detail)
+	}
+}
+
+// maxStuckRecoveries is how many times a stuck turn is handed back to the
+// model with the detector's reason before the run is ended for real. Each
+// recovery costs a full model round-trip, so the bound stays small.
+const maxStuckRecoveries = 2
+
+// streamTurn runs one user turn through the runner and feeds every event into
+// the bridge and the transcript accumulator. It returns a *stuckError when the
+// loop detector fires; any other error has already been surfaced through cb,
+// and nil means a clean finish.
+func (a *Agent) streamTurn(runCtx context.Context, prompt string, cb glineagent.StreamCallback, acc *transcriptAccumulator) error {
+	// Per-turn cancellation: a stuck verdict kills this turn's event stream
+	// without tearing down the run context a recovery attempt needs.
+	turnCtx, turnCancel := context.WithCancel(runCtx)
+	defer turnCancel()
+
+	// The user prompt opens this turn's transcript (the ADK runner stores it
+	// in the session but never yields it as an event).
+	acc.addUserPrompt(prompt)
+
+	// Task bookkeeping: create the index row on the first turn of the
+	// conversation, mirroring the legacy agent's behaviour.
+	if a.opts.Store != nil && a.taskID == "" {
+		prov, mdl := a.ProviderInfo()
+		id, err := a.opts.Store.CreateTask(a.taskTitle, prompt, a.Mode(), prov, mdl, a.opts.WorkingDir)
+		if err != nil {
+			log.Warnf("failed to create task record: %v", err)
+		} else {
+			a.taskID = id
+			cb.OnTaskCreated(id)
+			// Link the task to the ADK session for history resume.
+			if err := a.opts.Store.SetTaskSessionID(id, a.sessionID); err != nil {
+				log.Warnf("failed to link task to session: %v", err)
+			}
+		}
+	}
+
 	msg := genai.NewContentFromText(prompt, genai.RoleUser)
-	events := a.runner.Run(runCtx, UserID, a.sessionID, msg, agent.RunConfig{
+	events := a.runner.Run(turnCtx, UserID, a.sessionID, msg, agent.RunConfig{
 		StreamingMode: agent.StreamingModeSSE,
 	})
 
@@ -400,24 +526,44 @@ func (a *Agent) RunWithCallback(ctx context.Context, prompt string, cb glineagen
 				err = fmt.Errorf("aborted: %w", runCtx.Err())
 			}
 			cb.OnError(err)
-			return a.sessionID, err
+			return err
 		}
 		if ev == nil {
 			continue
 		}
+		acc.addEvent(ev)
 		// Provider-level failures ride events with a nil Go error.
 		if evErr := EventError(ev); evErr != nil {
 			cb.OnError(evErr)
-			return a.sessionID, evErr
+			return evErr
 		}
 		evErr := bridge.deliver(ev)
 		if evErr != nil {
-			// Loop detector fired: surface the reason and stop the run.
-			cb.OnError(evErr)
-			cancel()
-			return a.sessionID, evErr
+			// Loop detector fired: stop this turn's stream; the caller
+			// decides between recovery and giving up.
+			turnCancel()
+			return evErr
 		}
 	}
-	cb.OnComplete()
-	return a.sessionID, nil
+	return nil
+}
+
+// recoverStuckPrompt is the instruction handed to the model after the loop
+// detector called the previous turn dead. It names the reason and forbids
+// continuing the dead pattern (ported from pi-go).
+func recoverStuckPrompt(detail string) string {
+	return fmt.Sprintf(
+		`Your previous turn was stopped automatically: %s.
+
+That is a loop, not progress, and repeating it will stop the turn again. Do not
+continue where you left off and do not restate what you already said.
+
+Change approach:
+- If you were repeating text, say the point once and move on.
+- If you were repeating a tool call, the call is not going to start working —
+  use a different tool, different arguments, or reason from what you already have.
+- If you are genuinely blocked, say so plainly and stop, rather than filling
+  the turn.
+
+Continue the original task from here.`, detail)
 }
