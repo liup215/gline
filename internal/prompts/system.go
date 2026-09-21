@@ -36,8 +36,16 @@ After each tool use, wait for the result before proceeding.
 - read: {"path": "...", "line_number": N} — read a file
 - write: {"path": "...", "content": "..."} — create/overwrite a file
 - edit: {"path": "...", "search": "...", "replace": "..."} — edit a file
+- search_files: {"path": "...", "regex": "...", "file_pattern": "*.go"} — search file CONTENTS by regex
+- find_files: {"path": "...", "pattern": "*.go"} — find files by name glob
 - run: {"command": "..."} — execute a command
 - attempt_completion: {"result": "..."} — ONLY has a 'result' field. Never add other fields like path or command.
+
+# Code Search Strategy
+- find_files locates files by name; search_files greps content by regex. Both are fast (ripgrep/fd-backed) and respect .gitignore, skipping hidden/vendor dirs.
+- Prefer these over shelling out to grep/rg/find via run — they return structured, line-numbered results you can feed directly into read.
+- Typical exploration flow: find_files → read the relevant files → edit.
+- search_files caps at 500 matches; narrow with file_pattern or a more specific regex if flooded.
 
 End your work with attempt_completion when the task is complete.
 
