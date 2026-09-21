@@ -2,6 +2,24 @@
 
 ## Current Focus
 
+### Agent Loop 重构 — Phase 6a 完成（2026-09-21，commit c4148a2）
+
+**状态**: 持久会话 + 任务记账 + 转录双写 + history resume + stuck recovery 全部完成并装机（C:\Users\22569\bin\gline.exe）。剩余 Phase 6b：GUI 切换（chat_service 深耦合 legacy，推迟）、AutoCompact、facts 提取、UsageMetadata 状态栏。
+
+**本批产出**:
+- **Stuck recovery re-feed**: `RunWithCallback` 重构为恢复循环（`for attempt := 0; ; attempt++` + `streamTurn(runCtx, prompt, cb, acc)`）；每轮 `turnCtx` 独立取消（stuck 判定只杀当轮事件流，runCtx 保留给恢复轮）；stuckError 时发 `recoverStuckPrompt`（pi-go 原样移植）重喂，最多 2 次恢复后 `gave up` 报错；cb.OnComplete 仅在干净结束时调
+- **Task bookkeeping**: `Options.Store storage.Store`（nil 跳过）；首轮 `CreateTask(title, prompt, mode, provider, model, workdir)` + `OnTaskCreated(id)` + `SetTaskSessionID` 链接；结束 `finishTask("completed"/"failed")`；`NewSession` 同时重置 taskID/taskTitle（新对话=新任务）；`SetTaskID/SetTaskTitle/ResetTask/TaskID` 实现 taskManager 契约
+- **Transcript 双写**（`persist.go`）: `transcriptAccumulator` 只吃 `ev.Partial == false` 的最终事件；model 文本+FunctionCall 合并为一条 assistant 消息（thinking → ReasoningContent）；FunctionResponse → role=tool 消息（`functionResponseText` 增 error 解包）；**用户 prompt 由 `acc.addUserPrompt(prompt)` 直接记录**（ADK v2.4.0 runner appendMessageToSession 丢弃用户 event 不 yield）；`persistTranscript` 在 RunWithCallback defer 落库（失败仅告警）
+- **ResumeSession**: `ResumeSession(ctx, sessionID)` 校验后切 sessionID；TUI history 选中任务走 `GetTaskSessionID → ResumeSession`（类型断言，legacy 回退 transcript 回放 + NewSession）
+- **生产接入**（`cmd/gline/chat.go`）: `initializeAgent` 打开 `sessionstore.Open(sessionstore.Options{})`（~/.gline/sessions.db），失败降级 InMemoryService 并告警；`Options.Store` 传 gline 主存储
+- **驱动冲突修复**: gline storage/memory 用 modernc.org/sqlite、glebarez 用 fork 版，二者都注册驱动名 `sqlite` → 同一二进制 `sql: Register called twice` panic；**统一改用 glebarez/go-sqlite**（storage/database.go + memory 三处）
+- **sessionstore 默认静默**: `Quiet` 语义反了（注释说默认 true 实际零值 false）→ 改 `Verbose bool`（默认丢弃 GORM 日志，包括预期的红字 record not found）
+- **`defer ss.Close()` 坑**: initializeAgent 返回即关库 → 后续 session 查询 `database is closed`；删除（进程生命周期持有）
+
+**验证**: 全仓 18 包测试绿；live smoke：PONG CLI、TestLiveOpenCodeOneShot/ToolRun/**HistoryResume**（新 agent ResumeSession 后复述暗号 ZEBRA-7734 ✅）；tasks 表 session_id 链接 + messages 表 user/assistant/tool 转录完整
+
+**教训**: ADK runner 不 yield 用户输入 event（v2.4.0 `ctx, _, err = appendMessageToSession(...)` 丢弃）；多 sqlite 驱动同名的包不能共存于一个二进制；GORM Discard logger 只抑制传入的 db 实例
+
 ### Agent Loop 重构 — Phase 4/5/5b 完成（2026-09-21）
 
 **状态**: Phase 0-5b 全部完成并提交，下一步 Phase 6（AutoCompact + facts + history resume + GUI 切换）

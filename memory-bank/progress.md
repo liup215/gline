@@ -4,6 +4,24 @@
 
 ---
 
+## 2026-09-21 — Agent Loop 重构 Phase 6a ✅（c4148a2）
+
+| 改动 | 文件 | 说明 |
+|------|------|------|
+| Stuck recovery re-feed | `internal/adkagent/agent.go`, `stuck_recovery_test.go` | streamTurn + 每轮 turnCtx；stuck 后 recoverStuckPrompt 重喂（max 2） |
+| Task bookkeeping | `internal/adkagent/agent.go` | Options.Store；首轮 CreateTask + SetTaskSessionID + OnTaskCreated；finishTask completed/failed；NewSession 重置 task |
+| Transcript 双写 | `internal/adkagent/persist.go`(+test) | 最终事件→storage 消息；user prompt 直接记（ADK 不 yield 用户 event）；error 解包 |
+| ResumeSession | `internal/adkagent/agent.go`, `internal/ui/tui.go` | TUI history 选中→GetTaskSessionID→ResumeSession；legacy 回退回放 |
+| 生产 sessionstore | `cmd/gline/chat.go` | ~/.gline/sessions.db；失败降级 InMemory；Options.Store 注入 |
+| 驱动统一 | `go.mod`, `internal/storage/database.go`, `internal/memory/*` | modernc 与 glebarez 双注册 "sqlite" panic → 全改 glebarez/go-sqlite |
+| GORM 日志默认静默 | `internal/sessionstore/sessionstore.go` | Quiet→Verbose（零值默认 Discard） |
+
+**验证**: 18 包绿；live：OneShot/ToolRun/HistoryResume（ZEBRA-7734 复述 ✅）；tasks.session_id + messages 转录落库
+
+**剩余 Phase 6b**: GUI 切换（深耦合 legacy，推迟）、AutoCompact（/compact 仅 legacy）、facts 提取 hook、UsageMetadata 状态栏。Phase 7 删 legacy。
+
+---
+
 ## 2026-09-21 — Agent Loop 重构 Phase 4/5/5b ✅
 
 ### 完成内容
