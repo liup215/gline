@@ -62,6 +62,10 @@ type Options struct {
 	// WorkingDir is shown in the system instruction (optional).
 	WorkingDir string
 
+	// Skills lists available skills for the SKILLS section of the system
+	// instruction (optional). The model activates one via use_skill.
+	Skills []types.SkillMeta
+
 	// Mode is the initial mode: "plan" or "act" (default act).
 	Mode string
 
@@ -242,6 +246,15 @@ You are in Act Mode. Execute tasks by reading, writing, and modifying files.
 	}
 	if a.opts.WorkingDir != "" {
 		fmt.Fprintf(&b, "\nCurrent working directory: %s\n", a.opts.WorkingDir)
+	}
+	if len(a.opts.Skills) > 0 {
+		b.WriteString("\n# Skills\n\n")
+		b.WriteString(`Specialized instructions are available as skills. When the user's request matches one, activate it with the use_skill tool (once per task), then follow its instructions.
+
+`)
+		for _, s := range a.opts.Skills {
+			fmt.Fprintf(&b, "- %s: %s\n", s.Name, s.Description)
+		}
 	}
 	return b.String()
 }

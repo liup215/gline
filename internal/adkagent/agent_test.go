@@ -17,12 +17,13 @@ import (
 
 	glineagent "github.com/liup215/gline/internal/agent"
 	"github.com/liup215/gline/internal/tools"
+	"github.com/liup215/gline/pkg/types"
 )
 
 // fakeModel replays scripted turns through the real ADK runner.
 type fakeTurn struct {
-	deltas []string            // partial text chunks (streamed)
-	final  *genai.Content      // the aggregate turn content (may hold FunctionCalls)
+	deltas []string       // partial text chunks (streamed)
+	final  *genai.Content // the aggregate turn content (may hold FunctionCalls)
 }
 
 type fakeModel struct {
@@ -109,9 +110,9 @@ func (r *recordingCallback) OnContent(delta string) {
 	r.mu.Unlock()
 	r.rec("content")
 }
-func (r *recordingCallback) OnReasoning(delta string)        { r.rec("reasoning") }
-func (r *recordingCallback) OnStreamStart()                  { r.rec("stream_start") }
-func (r *recordingCallback) OnStreamEnd()                    { r.rec("stream_end") }
+func (r *recordingCallback) OnReasoning(delta string) { r.rec("reasoning") }
+func (r *recordingCallback) OnStreamStart()           { r.rec("stream_start") }
+func (r *recordingCallback) OnStreamEnd()             { r.rec("stream_end") }
 func (r *recordingCallback) OnError(err error) {
 	r.mu.Lock()
 	r.errs = append(r.errs, err)
@@ -181,7 +182,6 @@ func testRegistry(t *testing.T, dir string) *tools.Registry {
 	return r
 }
 
-
 func TestGoldenNoOrphanToolResults(t *testing.T) {
 	fm := &fakeModel{turns: []fakeTurn{
 		{deltas: []string{"Let me "}, final: modelWithCalls("Let me check.", &genai.FunctionCall{
@@ -244,7 +244,7 @@ func TestGoldenCallbackOrdering(t *testing.T) {
 
 	want := []string{
 		"stream_start", "content", "content", // deltas
-		"stream_end",   // aggregate closes text slot
+		"stream_end", // aggregate closes text slot
 		"tool_start:read",
 		"tool_complete:read",
 		"stream_start", "content", // second turn text
@@ -461,4 +461,20 @@ func systemInstructionOf(req *model.LLMRequest) string {
 		}
 	}
 	return fmt.Sprint(texts)
+}
+
+func TestSystemInstructionIncludesSkills(t *testing.T) {
+	a := &Agent{opts: Options{
+		Model:  "fake",
+		Skills: []types.SkillMeta{{Name: "pdf-master", Description: "Handle PDFs"}},
+	}}
+	si := a.SystemInstruction()
+	if !strings.Contains(si, "Skills") || !strings.Contains(si, "pdf-master") || !strings.Contains(si, "Handle PDFs") {
+		t.Fatalf("skills section missing:\n%s", si)
+	}
+	// No skills: no section at all.
+	a2 := &Agent{opts: Options{Model: "fake"}}
+	if strings.Contains(a2.SystemInstruction(), "Skills") {
+		t.Fatal("SKILLS section rendered with empty skill list")
+	}
 }
