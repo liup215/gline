@@ -129,7 +129,7 @@ func startInteractiveMode() {
 	log.Info("Starting gline in interactive mode")
 
 	// Initialize agent
-	agentInstance, err := initializeAgent()
+	runner, store, err := initializeAgent()
 	if err != nil {
 		log.Errorf("Failed to initialize agent: %v", err)
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -141,7 +141,7 @@ func startInteractiveMode() {
 	}
 
 	// Start TUI chat
-	runTUIChat(agentInstance)
+	runTUIChat(runner, store)
 }
 
 // chatCmd represents the chat command
@@ -165,7 +165,7 @@ Or start an interactive TUI chat session (default):
 		}
 
 		// Initialize agent
-		agentInstance, err := initializeAgent()
+		runner, store, err := initializeAgent()
 		if err != nil {
 			log.Errorf("Failed to initialize agent: %v", err)
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -174,11 +174,11 @@ Or start an interactive TUI chat session (default):
 
 		if message != "" {
 			// Single message mode - non-interactive
-			runSingleMessage(agentInstance, message)
+			runSingleMessage(runner, message)
 		} else {
 			// Interactive TUI mode (default)
 			log.Info("Starting TUI chat mode")
-			runTUIChat(agentInstance)
+			runTUIChat(runner, store)
 		}
 	},
 }

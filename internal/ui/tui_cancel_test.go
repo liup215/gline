@@ -11,7 +11,7 @@ tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestCancelChConcurrentAccess(t *testing.T) {
-	m := New(nil)
+	m := New(nil, nil)
 	// ensure event channel and forwarding goroutine for tests to avoid blocking
 	m.eventCh = make(chan bridge.AgentEvent, 64)
 	m.done = make(chan struct{})
@@ -72,7 +72,7 @@ func TestCancelChConcurrentAccess(t *testing.T) {
 }
 
 func TestEscInterruptAskFollowupQuestion(t *testing.T) {
-m := New(nil)
+m := New(nil, nil)
 // ensure event channel and forwarding goroutine for tests to avoid blocking
 m.eventCh = make(chan bridge.AgentEvent, 64)
 m.done = make(chan struct{})
@@ -121,7 +121,7 @@ t.Fatalf("pendingReply should be nil after Esc, got non-nil")
 }
 
 func TestNoCancelFnDataRace(t *testing.T) {
-m := New(nil)
+m := New(nil, nil)
 // ensure event channel and forwarding goroutine for tests to avoid blocking
 m.eventCh = make(chan bridge.AgentEvent, 64)
 m.done = make(chan struct{})

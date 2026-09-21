@@ -266,6 +266,35 @@ func (a *Agent) SessionID() string {
 	return a.sessionID
 }
 
+// ProviderInfo reports the provider and model names for status display.
+func (a *Agent) ProviderInfo() (providerName, modelName string) {
+	return a.opts.Provider, a.opts.Model
+}
+
+// NewSession drops the current conversation context: the old ADK session is
+// deleted and a fresh one is created, so the next run starts clean. Used by
+// /clear and /new-task.
+func (a *Agent) NewSession(ctx context.Context) error {
+	a.mu.Lock()
+	old := a.sessionID
+	a.mu.Unlock()
+	if old != "" {
+		_ = a.sessionSvc.Delete(ctx, &session.DeleteRequest{
+			AppName: AppName, UserID: UserID, SessionID: old,
+		})
+	}
+	resp, err := a.sessionSvc.Create(ctx, &session.CreateRequest{
+		AppName: AppName, UserID: UserID,
+	})
+	if err != nil {
+		return fmt.Errorf("creating session: %w", err)
+	}
+	a.mu.Lock()
+	a.sessionID = resp.Session.ID()
+	a.mu.Unlock()
+	return nil
+}
+
 // Mode returns the current Plan/Act mode.
 func (a *Agent) Mode() string {
 	a.mu.Lock()

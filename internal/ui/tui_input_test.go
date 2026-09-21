@@ -13,7 +13,7 @@ import (
 // ============================================================================
 
 func TestHandleKeyMsgCtrlC(t *testing.T) {
-	m := New(nil)
+	m := New(nil, nil)
 	m.width = 100
 	m.height = 30
 
@@ -33,7 +33,7 @@ func TestHandleKeyMsgCtrlC(t *testing.T) {
 }
 
 func TestHandleKeyMsgTabToggleMode(t *testing.T) {
-	m := New(nil)
+	m := New(nil, nil)
 	m.width = 100
 	m.height = 30
 
@@ -56,7 +56,7 @@ func TestHandleKeyMsgTabToggleMode(t *testing.T) {
 }
 
 func TestHandleKeyMsgCtrlLClear(t *testing.T) {
-	m := New(nil)
+	m := New(nil, nil)
 	m.width = 100
 	m.height = 30
 
@@ -85,7 +85,7 @@ func TestHandleKeyMsgCtrlLClear(t *testing.T) {
 }
 
 func TestHandleKeyMsgEnterWithEmptyInput(t *testing.T) {
-	m := New(nil)
+	m := New(nil, nil)
 	m.width = 100
 	m.height = 30
 
@@ -99,7 +99,7 @@ func TestHandleKeyMsgEnterWithEmptyInput(t *testing.T) {
 }
 
 func TestHandleKeyMsgAltEnterNewLine(t *testing.T) {
-	m := New(nil)
+	m := New(nil, nil)
 	m.width = 100
 	m.height = 30
 
@@ -121,7 +121,7 @@ func TestHandleKeyMsgAltEnterNewLine(t *testing.T) {
 // ============================================================================
 
 func TestHandleWindowSizeUpdatesDimensions(t *testing.T) {
-	m := New(nil)
+	m := New(nil, nil)
 	m.width = 80
 	m.height = 24
 
@@ -142,7 +142,7 @@ func TestHandleWindowSizeUpdatesDimensions(t *testing.T) {
 }
 
 func TestHandleWindowSizeCalculatesLayout(t *testing.T) {
-	m := New(nil)
+	m := New(nil, nil)
 	m.width = 80
 	m.height = 24
 
@@ -163,7 +163,7 @@ func TestHandleWindowSizeCalculatesLayout(t *testing.T) {
 }
 
 func TestHandleWindowSizeSmallWindow(t *testing.T) {
-	m := New(nil)
+	m := New(nil, nil)
 	m.width = 80
 	m.height = 24
 
@@ -178,7 +178,7 @@ func TestHandleWindowSizeSmallWindow(t *testing.T) {
 }
 
 func TestHandleWindowSizeUpdatesTextarea(t *testing.T) {
-	m := New(nil)
+	m := New(nil, nil)
 	m.width = 80
 	m.height = 24
 
@@ -193,7 +193,7 @@ func TestHandleWindowSizeUpdatesTextarea(t *testing.T) {
 }
 
 func TestHandleWindowSizeZeroWidth(t *testing.T) {
-	m := New(nil)
+	m := New(nil, nil)
 
 	// Simulate zero width window
 	msg := tea.WindowSizeMsg{Width: 0, Height: 40}

@@ -57,7 +57,7 @@ type Model struct {
  activeAssistantIndex int
  
  // Agent components
- agentInstance *agent.BaseAgent
+ agentInstance AgentRunner
  ctx           context.Context
     // Backwards-compatible cancel channel (kept for tests). Prefer agentCtx/agentCancel.
     // Buffered size 1 to mimic previous single-value container behavior.
@@ -109,7 +109,7 @@ type Model struct {
 }
 
 // New creates a new TUI model
-func New(agentInstance *agent.BaseAgent) *Model {
+func New(agentInstance AgentRunner, store storage.Store) *Model {
 	// Create textarea for input
 	ta := textarea.New()
 	ta.Placeholder = "Type your message..."
@@ -129,16 +129,14 @@ func New(agentInstance *agent.BaseAgent) *Model {
 	// Get provider and model info from agent
 	var providerName, modelName string
 	if agentInstance != nil {
-		if provider := agentInstance.GetProvider(); provider != nil {
-			providerName = provider.GetProviderName()
-			modelName = provider.GetModel()
-		}
+		providerName, modelName = agentInstance.ProviderInfo()
 	}
 
 	conv := model.NewConversation()
 	conv.Provider = providerName
 	conv.ModelName = modelName
 
+	// Store is passed in at assembly time (task history sidebar).
 	m := &Model{
 		textarea:             ta,
 		viewport:             vp,
@@ -150,6 +148,7 @@ func New(agentInstance *agent.BaseAgent) *Model {
 		toolAreaHeight:       3,
 		activeAssistantIndex: -1,
 		agentInstance:        agentInstance,
+		store:                store,
 		ctx:                  context.Background(),
 		cancelCh:             make(chan context.CancelFunc, 1),
 		pendingReply:         nil,
@@ -157,13 +156,6 @@ func New(agentInstance *agent.BaseAgent) *Model {
 	m.slashMenu = NewSlashMenuState(slash.NewDefaultRegistry(conv, func(result slash.CommandResult, message string) {
 		handleSlashCommandResult(m, result, message)
 	}))
-
-	// Inject store from agent for history functionality
-	if agentInstance != nil {
-		if s := agentInstance.GetStore(); s != nil {
-			m.store = s
-		}
-	}
 
 	return m
 }
@@ -405,9 +397,7 @@ func handleSlashCommandResult(m *Model, result slash.CommandResult, message stri
 		m.conversation.Clear()
 		m.convVM.InvalidateCache()
 		if m.agentInstance != nil {
-			if conv := m.agentInstance.GetConversation(); conv != nil {
-				conv.Clear()
-			}
+			_ = m.agentInstance.NewSession(m.ctx)
 		}
 		m.isProcessing = false
 		m.isStreaming = false
@@ -434,15 +424,15 @@ func handleSlashCommandResult(m *Model, result slash.CommandResult, message stri
 		m.conversation.Clear()
 		m.convVM.InvalidateCache()
 		if m.agentInstance != nil {
-			if conv := m.agentInstance.GetConversation(); conv != nil {
-				conv.Clear()
-			}
+			_ = m.agentInstance.NewSession(m.ctx)
 			// Extract title from message ("Starting new task: Title" or "Starting new task")
 			title := strings.TrimPrefix(message, "Starting new task")
 			title = strings.TrimPrefix(title, ": ")
 			title = strings.TrimSpace(title)
-			m.agentInstance.SetTaskTitle(title)
-			m.agentInstance.ResetTask()
+			if ts, ok := m.agentInstance.(taskManager); ok {
+				ts.SetTaskTitle(title)
+				ts.ResetTask()
+			}
 		}
 		m.isProcessing = false
 		m.isStreaming = false
@@ -458,13 +448,17 @@ func handleSlashCommandResult(m *Model, result slash.CommandResult, message stri
 		m.convVM.MarkMessageDirty(idx)
 		m.updateViewport()
 	case slash.ResultCompact:
-		// Trim the agent conversation to fit within token budget.
+		// Legacy agents trim their in-memory conversation to the token budget.
+		// ADK-backed agents manage compaction internally (Phase 6).
 		if m.agentInstance != nil {
-			if conv := m.agentInstance.GetConversation(); conv != nil {
+			if lr, ok := m.agentInstance.(legacyRunner); ok {
+				conv := lr.GetConversation()
 				before := conv.MessageCount()
 				conv.TrimToMaxTokens()
 				after := conv.MessageCount()
 				message = fmt.Sprintf("Context compacted: %d messages removed, %d remaining.", before-after, after)
+			} else {
+				message = "Context compaction is handled automatically."
 			}
 		}
 		idx := m.conversation.AppendMessage(model.Message{
@@ -525,8 +519,8 @@ func (m *Model) addErrorMessage(content string) {
 // Run starts the TUI with a Bridge-based event forwarding architecture.
 // A buffered channel carries events from TUIBridge (Agent side) to the
 // Bubbletea Program; a goroutine relays them via program.Send.
-func Run(agentInstance *agent.BaseAgent) error {
-	m := New(agentInstance)
+func Run(agentInstance AgentRunner, store storage.Store) error {
+	m := New(agentInstance, store)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 
 	// Create the event channel and wire it into the Model
@@ -650,9 +644,9 @@ func (m *Model) loadHistoryTask() {
 	m.conversation.Clear()
 	m.convVM.InvalidateCache()
 	if m.agentInstance != nil {
-		if conv := m.agentInstance.GetConversation(); conv != nil {
-			conv.Clear()
-		}
+		// Start a fresh agent session; replaying the stored transcript into
+		// the new ADK session is Phase 6 (history resume via SessionID).
+		_ = m.agentInstance.NewSession(m.ctx)
 	}
 
 	// Load messages from storage
@@ -685,24 +679,33 @@ func (m *Model) loadHistoryTask() {
 			Strategy:  types.StrategyPlain,
 			Timestamp: msg.CreatedAt,
 		})
+	}
 
-		// Build agent message
-		if m.agentInstance != nil {
-			m.agentInstance.GetConversation().AddMessage(types.Message{
+	// Legacy agents replay the transcript into their in-memory conversation.
+	if lr, ok := m.agentInstance.(legacyRunner); ok {
+		for _, msg := range msgs {
+			role := types.Role(msg.Role)
+			var toolCalls []types.ToolCall
+			if msg.ToolCalls != "" {
+				_ = json.Unmarshal([]byte(msg.ToolCalls), &toolCalls)
+			}
+			lr.GetConversation().AddMessage(types.Message{
 				Role:             role,
 				Content:          msg.Content,
 				ReasoningContent: msg.ReasoningContent,
-				ToolCalls:         toolCalls,
-				ToolCallID:        msg.ToolCallID,
-				Timestamp:         msg.CreatedAt,
+				ToolCalls:        toolCalls,
+				ToolCallID:       msg.ToolCallID,
+				Timestamp:        msg.CreatedAt,
 			})
 		}
 	}
 
 	// Sync task identity
 	if m.agentInstance != nil {
-		m.agentInstance.SetTaskID(task.ID)
-		m.agentInstance.SetTaskTitle(task.Title)
+		if ts, ok := m.agentInstance.(taskManager); ok {
+			ts.SetTaskID(task.ID)
+			ts.SetTaskTitle(task.Title)
+		}
 	}
 
 	// Set mode
@@ -711,7 +714,7 @@ func (m *Model) loadHistoryTask() {
 		m.conversation.Mode = agent.ModePlan
 	}
 	if m.agentInstance != nil {
-		m.agentInstance.SetMode(m.conversation.Mode)
+		m.agentInstance.SetMode(string(m.conversation.Mode))
 	}
 
 	m.screen = ScreenChat

@@ -18,7 +18,7 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestHandleAgentContentReturnsNeedsRefresh(t *testing.T) {
-	m := New(nil)
+	m := New(nil, nil)
 	m.width = 100
 	m.height = 30
 
@@ -43,7 +43,7 @@ func TestHandleAgentContentReturnsNeedsRefresh(t *testing.T) {
 }
 
 func TestHandleAgentContentCreatesAssistantSlotWhenMissing(t *testing.T) {
-	m := New(nil)
+	m := New(nil, nil)
 	m.width = 100
 	m.height = 30
 
@@ -63,7 +63,7 @@ func TestHandleAgentContentCreatesAssistantSlotWhenMissing(t *testing.T) {
 }
 
 func TestHandleAgentContentAppendsDelta(t *testing.T) {
-	m := New(nil)
+	m := New(nil, nil)
 	m.width = 100
 	m.height = 30
 
@@ -82,7 +82,7 @@ func TestHandleAgentContentAppendsDelta(t *testing.T) {
 }
 
 func TestHandleAgentToolStartReturnsNeedsRefresh(t *testing.T) {
-	m := New(nil)
+	m := New(nil, nil)
 	m.width = 100
 	m.height = 30
 
@@ -109,7 +109,7 @@ func TestHandleAgentToolStartReturnsNeedsRefresh(t *testing.T) {
 }
 
 func TestHandleAgentToolStartAttemptCompletion(t *testing.T) {
-	m := New(nil)
+	m := New(nil, nil)
 	m.width = 100
 	m.height = 30
 
@@ -129,7 +129,7 @@ func TestHandleAgentToolStartAttemptCompletion(t *testing.T) {
 }
 
 func TestHandleAgentToolStartAskFollowupQuestion(t *testing.T) {
-	m := New(nil)
+	m := New(nil, nil)
 	m.width = 100
 	m.height = 30
 
@@ -148,7 +148,7 @@ func TestHandleAgentToolStartAskFollowupQuestion(t *testing.T) {
 }
 
 func TestHandleAgentToolStartPlanModeRespond(t *testing.T) {
-	m := New(nil)
+	m := New(nil, nil)
 	m.width = 100
 	m.height = 30
 
@@ -167,7 +167,7 @@ func TestHandleAgentToolStartPlanModeRespond(t *testing.T) {
 }
 
 func TestHandleAgentToolStartSystemMessage(t *testing.T) {
-	m := New(nil)
+	m := New(nil, nil)
 	m.width = 100
 	m.height = 30
 
@@ -192,7 +192,7 @@ func TestHandleAgentToolStartSystemMessage(t *testing.T) {
 }
 
 func TestHandleAgentToolCompleteReturnsNeedsRefresh(t *testing.T) {
-	m := New(nil)
+	m := New(nil, nil)
 	m.width = 100
 	m.height = 30
 
@@ -224,7 +224,7 @@ func TestHandleAgentToolCompleteReturnsNeedsRefresh(t *testing.T) {
 }
 
 func TestHandleAgentToolCompleteAttemptCompletion(t *testing.T) {
-	m := New(nil)
+	m := New(nil, nil)
 	m.width = 100
 	m.height = 30
 
@@ -246,7 +246,7 @@ func TestHandleAgentToolCompleteAttemptCompletion(t *testing.T) {
 }
 
 func TestHandleAgentToolCompletePlanModeRespond(t *testing.T) {
-	m := New(nil)
+	m := New(nil, nil)
 	m.width = 100
 	m.height = 30
 
@@ -271,7 +271,7 @@ func TestHandleAgentToolCompletePlanModeRespond(t *testing.T) {
 }
 
 func TestHandleAgentToolCompleteAskFollowupQuestion(t *testing.T) {
-	m := New(nil)
+	m := New(nil, nil)
 	m.width = 100
 	m.height = 30
 
@@ -290,7 +290,7 @@ func TestHandleAgentToolCompleteAskFollowupQuestion(t *testing.T) {
 }
 
 func TestHandleAgentErrorReturnsNeedsRefresh(t *testing.T) {
-	m := New(nil)
+	m := New(nil, nil)
 	m.width = 100
 	m.height = 30
 
@@ -330,7 +330,7 @@ func TestHandleAgentErrorReturnsNeedsRefresh(t *testing.T) {
 }
 
 func TestHandleAgentErrorWithoutRunningTool(t *testing.T) {
-	m := New(nil)
+	m := New(nil, nil)
 	m.width = 100
 	m.height = 30
 
@@ -346,7 +346,7 @@ func TestHandleAgentErrorWithoutRunningTool(t *testing.T) {
 }
 
 func TestHandleAgentCompleteReturnsNeedsRefresh(t *testing.T) {
-	m := New(nil)
+	m := New(nil, nil)
 	m.width = 100
 	m.height = 30
 
@@ -374,7 +374,7 @@ func TestHandleAgentCompleteReturnsNeedsRefresh(t *testing.T) {
 }
 
 func TestHandleAgentStreamStartReturnsNeedsRefresh(t *testing.T) {
-	m := New(nil)
+	m := New(nil, nil)
 	m.width = 100
 	m.height = 30
 
@@ -402,7 +402,7 @@ func TestHandleAgentStreamStartReturnsNeedsRefresh(t *testing.T) {
 }
 
 func TestHandleAgentStreamEndReturnsNeedsRefresh(t *testing.T) {
-	m := New(nil)
+	m := New(nil, nil)
 	m.width = 100
 	m.height = 30
 
@@ -427,7 +427,7 @@ func TestHandleAgentStreamEndReturnsNeedsRefresh(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestUpdateCallsUpdateViewportOnAgentEvent(t *testing.T) {
-	m := New(nil)
+	m := New(nil, nil)
 	m.width = 100
 	m.height = 30
 
@@ -449,7 +449,7 @@ func TestUpdateCallsUpdateViewportOnAgentEvent(t *testing.T) {
 }
 
 func TestUpdateCallsUpdateViewportOnAskQuestionEvent(t *testing.T) {
-	m := New(nil)
+	m := New(nil, nil)
 	m.width = 100
 	m.height = 30
 
@@ -474,7 +474,7 @@ func TestUpdateCallsUpdateViewportOnAskQuestionEvent(t *testing.T) {
 }
 
 func TestUpdateDoesNotCallUpdateViewportOnTickMsg(t *testing.T) {
-	m := New(nil)
+	m := New(nil, nil)
 	m.width = 100
 	m.height = 30
 
@@ -486,7 +486,7 @@ func TestUpdateDoesNotCallUpdateViewportOnTickMsg(t *testing.T) {
 }
 
 func TestHandleAgentUpdateReturnsNeedsRefreshForAllEventTypes(t *testing.T) {
-	m := New(nil)
+	m := New(nil, nil)
 	m.width = 100
 	m.height = 30
 
@@ -507,7 +507,7 @@ func TestHandleAgentUpdateReturnsNeedsRefreshForAllEventTypes(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a fresh model for each test to avoid state pollution
-			m2 := New(nil)
+			m2 := New(nil, nil)
 			m2.width = 100
 			m2.height = 30
 

@@ -145,7 +145,7 @@ func handleKeyMsg(m *Model, msg tea.KeyMsg) []tea.Cmd {
 			m.conversation.Mode = agent.ModePlan
 		}
 		if m.agentInstance != nil {
-			m.agentInstance.SetMode(m.conversation.Mode)
+			m.agentInstance.SetMode(string(m.conversation.Mode))
 		}
 		m.updateViewport()
 

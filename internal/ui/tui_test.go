@@ -19,7 +19,7 @@ func stripANSI(s string) string {
 }
 
 func TestContentUpdateSurvivesToolStatus(t *testing.T) {
-	m := New(nil)
+	m := New(nil, nil)
 	m.width = 100
 	m.height = 30
 
@@ -59,7 +59,7 @@ func TestContentUpdateSurvivesToolStatus(t *testing.T) {
 }
 
 func TestToolStatusArea(t *testing.T) {
-	m := New(nil)
+	m := New(nil, nil)
 	m.width = 100
 	m.height = 30
 
@@ -88,7 +88,7 @@ func TestToolStatusArea(t *testing.T) {
 }
 
 func TestToolHistoryDoesNotPushContent(t *testing.T) {
-	m := New(nil)
+	m := New(nil, nil)
 	m.width = 100
 	m.height = 30
 
@@ -128,7 +128,7 @@ func TestToolHistoryDoesNotPushContent(t *testing.T) {
 }
 
 func TestWindowSizeUpdateKeepsModelUsable(t *testing.T) {
-	m := New(nil)
+	m := New(nil, nil)
 	updatedModel, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	updated := updatedModel.(*Model)
 
