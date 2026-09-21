@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-09-21 — read 工具对齐 Pi 基准优化 ✅（已部署）
+
+依据 Pi vs gline read 差距表优化（internal/tools/file.go）:
+
+| 维度 | 优化前 | 优化后 |
+|------|--------|--------|
+| 分页 | 仅 line_number,固定 200 行 | + 可选 `limit`（默认 200,上限 2000 行/次） |
+| 路径 | 仅 filepath.Clean | `~`/`~/` 展开 + 相对路径解析为绝对路径（输出前缀稳定） |
+| 图片 | 二进制乱码进上下文 | 按扩展名检测 → 元数据提示（无多模态管道,Content 纯 string,不塞 base64） |
+| 错误 | 基础 | 越界报总行数；not-found 提示 find_files/search_files；目录提示 list_files；空文件 [Empty file] |
+| 截断 | 100KB 原始字节切,原因不明 | 50KB 上限,最后一个完整行处切割（UTF-8 安全回退）,报原因 + continue line_number |
+| 性能 | countLines 多一次全量 string 拷贝 | bytes.Count 单遍计数（无拷贝）,countLines 删除 |
+
+**测试**: 新增 TestReadFileTool_LimitParam（limit/clamp 2000/越界错误）、EmptyAndImage、TildeExpansion、RelativePathResolvesAbs；原 3 个 read 测试不动全过。`go test ./... -race` 17 包绿,已部署。
+
 ## 2026-09-21 — rg/fd 外部搜索工具集成 ✅（70fee1b，已部署）
 
 | 改动 | 文件 | 说明 |
