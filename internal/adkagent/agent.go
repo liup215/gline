@@ -453,11 +453,20 @@ func (a *Agent) ResumeSession(ctx context.Context, sessionID string) error {
 }
 
 // Abort cancels the active run, if any. The runner surfaces cancellation as
-// a context error through the event stream.
+// a context error through the event stream. Any tool goroutine blocked in an
+// approval prompt is unblocked immediately: ADK executes a turn's tool calls
+// concurrently and they ignore the run context while waiting for user input,
+// so without closing their reply channels a cancel would never fully unwind.
 func (a *Agent) Abort() {
 	a.mu.Lock()
 	cancel := a.cancel
+	cb := a.cb
 	a.mu.Unlock()
+	if cb != nil {
+		if pa, ok := cb.(interface{ AbortPendingQuestions() }); ok {
+			pa.AbortPendingQuestions()
+		}
+	}
 	if cancel != nil {
 		cancel()
 	}
@@ -502,6 +511,11 @@ func (a *Agent) RunWithCallback(ctx context.Context, prompt string, cb glineagen
 	a.mu.Unlock()
 	defer func() {
 		cancel()
+		// Unblock any tool goroutine still waiting on an approval prompt so
+		// abandoned questions can never wedge a finished run.
+		if pa, ok := cb.(interface{ AbortPendingQuestions() }); ok {
+			pa.AbortPendingQuestions()
+		}
 		a.mu.Lock()
 		a.running = false
 		a.cancel = nil

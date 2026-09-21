@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textarea"
@@ -123,11 +124,11 @@ func handleKeyMsg(m *Model, msg tea.KeyMsg) []tea.Cmd {
 			case m.cancelCh <- cancel:
 			default:
 			}
-			// Close pending reply channel and clear reference.
-			if m.pendingReply != nil {
-				close(m.pendingReply)
-				m.pendingReply = nil
+			// Close all pending reply channels and clear the queue.
+			for _, p := range m.pendingReplies {
+				p.Abort()
 			}
+			m.pendingReplies = nil
 			// Notify user of interruption
 			m.addErrorMessage("✗ Interrupted by user (Esc)")
 			// Ensure processing flags updated; agent callback will also handle cleanup
@@ -159,8 +160,10 @@ func handleKeyMsg(m *Model, msg tea.KeyMsg) []tea.Cmd {
 			// Alt+Enter for new line
 			m.textarea.InsertString("\n")
 		} else {
-			// If the UI is awaiting a reply for AskFollowupQuestion, deliver it instead of starting the agent.
-			if m.pendingReply != nil {
+			// If the UI is awaiting replies for AskFollowupQuestion (tool
+			// approvals etc.), deliver the answer to the oldest pending one.
+			if len(m.pendingReplies) > 0 {
+				m.consumedEnter = true
 				cmds = append(cmds, submitPendingReply(m)...)
 			} else {
 				// Check if this is a standalone slash command and execute it immediately
@@ -302,20 +305,27 @@ func executeSlashCommand(m *Model, input string) []tea.Cmd {
 func submitPendingReply(m *Model) []tea.Cmd {
 	var cmds []tea.Cmd
 	answer := strings.TrimSpace(m.textarea.Value())
-	if answer != "" && m.pendingReply != nil {
+	if answer != "" && len(m.pendingReplies) > 0 {
 		// Non-blocking send to avoid blocking or panic if channel closed.
-		select {
-		case m.pendingReply <- answer:
-			// sent
-		default:
-			// receiver not ready or channel full/Closed — drop answer safely
-		}
+		m.pendingReplies[0].Ask(answer)
 	}
-	// Clear pending state and reset input box without starting a new agent run.
-	m.pendingReply = nil
+	// Pop the answered question; remaining queued approvals stay active.
+	if len(m.pendingReplies) > 0 {
+		m.pendingReplies = m.pendingReplies[1:]
+	}
+	// Clear the input box and keep the UI ready for the next answer (or a
+	// new message). While more approvals are queued, stay focused so the user
+	// can type the next answer right away; once the queue is empty, blur to
+	// mirror submitUserMessage so the Enter key that submitted this answer
+	// cannot leak into the textarea as a newline.
 	m.textarea.Reset()
-	m.textarea.Placeholder = "Type your message..."
-	m.textarea.Focus()
+	if len(m.pendingReplies) > 0 {
+		m.textarea.Placeholder = pendingReplyPlaceholder(len(m.pendingReplies))
+		m.textarea.Focus()
+	} else {
+		m.textarea.Placeholder = "Type your message..."
+		m.textarea.Blur()
+	}
 	cmds = append(cmds, textarea.Blink)
 	m.updateViewport()
 	return cmds
@@ -340,4 +350,14 @@ func submitUserMessage(m *Model) []tea.Cmd {
 		cmds = append(cmds, m.startAgent())
 	}
 	return cmds
+}
+
+// pendingReplyPlaceholder describes the approval queue in the input box:
+// with parallel tool calls several approvals can be waiting at once, so
+// the user can see how many are left to answer.
+func pendingReplyPlaceholder(remaining int) string {
+	if remaining > 1 {
+		return fmt.Sprintf("Type option number or your answer... (%d approvals pending)", remaining)
+	}
+	return "Type option number or your answer..."
 }

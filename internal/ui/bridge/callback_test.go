@@ -158,7 +158,7 @@ func TestTUIBridge_AskFollowupQuestion(t *testing.T) {
 		}
 
 		// Simulate user reply
-		aqe.Reply <- "Yes"
+		aqe.Reply.Ask("Yes")
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for AskQuestionEvent")
 	}

@@ -60,7 +60,7 @@ func TestCompleteEvent(t *testing.T) {
 }
 
 func TestAskQuestionEvent(t *testing.T) {
-	reply := make(chan string, 1)
+	reply := &PendingAsk{Ch: make(chan string, 1)}
 	evt := AskQuestionEvent{Question: "Continue?", Options: []string{"Yes", "No"}, Reply: reply}
 	if evt.Question != "Continue?" {
 		t.Fatalf("unexpected Question: %q", evt.Question)

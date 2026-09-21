@@ -453,7 +453,7 @@ func TestUpdateCallsUpdateViewportOnAskQuestionEvent(t *testing.T) {
 	m.width = 100
 	m.height = 30
 
-	replyCh := make(chan string, 1)
+	replyCh := &bridge.PendingAsk{Ch: make(chan string, 1)}
 	updatedModel, _ := m.Update(bridge.AskQuestionEvent{
 		Question: "What is your choice?",
 		Options:  []string{"A", "B"},

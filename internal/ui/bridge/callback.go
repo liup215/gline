@@ -4,6 +4,7 @@ package bridge
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/liup215/gline/internal/agent"
@@ -18,6 +19,13 @@ const sendTimeout = 5 * time.Second
 // to be unit-tested independently.
 type TUIBridge struct {
 	eventCh chan<- AgentEvent
+
+	// pending tracks the unanswered AskFollowupQuestion calls so they can all
+	// be unblocked on abort/cancel. Tools ask concurrently for parallel tool
+	// calls; a blocked asker would otherwise wait forever when its channel
+	// was overwritten in the UI queue or the run ended.
+	mu      sync.Mutex
+	pending []*PendingAsk
 }
 
 // NewTUIBridge creates a new TUIBridge that sends events to the given channel.
@@ -90,19 +98,48 @@ func (b *TUIBridge) OnTaskCreated(taskID string) {}
 // provides an answer via the Reply channel. This synchronous blocking is
 // intentional — the Agent goroutine waits for user input before continuing.
 func (b *TUIBridge) AskFollowupQuestion(question string, options []string) (string, error) {
-	reply := make(chan string, 1)
+	ask := &PendingAsk{Ch: make(chan string, 1)}
+	b.mu.Lock()
+	b.pending = append(b.pending, ask)
+	b.mu.Unlock()
+	defer func() {
+		b.mu.Lock()
+		for i, p := range b.pending {
+			if p == ask {
+				b.pending = append(b.pending[:i], b.pending[i+1:]...)
+				break
+			}
+		}
+		b.mu.Unlock()
+	}()
 	b.eventCh <- AskQuestionEvent{
 		Question: question,
 		Options:  options,
-		Reply:    reply,
+		Reply:    ask,
 	}
-	// Block until the TUI sends back the user's answer
-	answer, ok := <-reply
+	// Block until the TUI sends back the user's answer or the question is
+	// aborted (channel closed) — the latter is surfaced as cancellation.
+	answer, ok := <-ask.Ch
 	if !ok {
-		// UI closed the reply channel (e.g., user cancelled) — treat as canceled.
+		// Question aborted (user cancel / run teardown) — treat as canceled.
 		return "", context.Canceled
 	}
 	return answer, nil
+}
+
+// AbortPendingQuestions aborts every unanswered AskFollowupQuestion,
+// unblocking the tool goroutines waiting for user input. Called when the run
+// ends or is aborted so abandoned approvals cannot hang the agent loop.
+// Idempotent: questions the UI already aborted are skipped by the close-once
+// guard.
+func (b *TUIBridge) AbortPendingQuestions() {
+	b.mu.Lock()
+	pending := b.pending
+	b.pending = nil
+	b.mu.Unlock()
+	for _, p := range pending {
+		p.Abort()
+	}
 }
 
 // Compile-time assertion that TUIBridge implements agent.StreamCallback.

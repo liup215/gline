@@ -92,7 +92,7 @@ type ChatService struct {
 	Backend     *Backend
 	cmdReg      *slash.Registry
 	cancelFn    context.CancelFunc
-	followupCh  chan string
+	followupQ   []chan string // FIFO queue of pending followup reply channels (parallel tool calls ask concurrently)
 	mu          sync.Mutex
 	workingDir  string // user-selected project directory; empty means not selected yet
 	agentDone   chan struct{} // closed when the agent goroutine exits
@@ -562,14 +562,12 @@ func (c *ChatService) SendMessage(prompt string) error {
 		c.mu.Lock()
 	}
 
-	// Drain old followup channel
-	if c.followupCh != nil {
-		select {
-		case <-c.followupCh:
-		default:
-		}
+	// Close all stale followup channels so askers from a previous run cannot
+	// block forever.
+	for _, ch := range c.followupQ {
+		close(ch)
 	}
-	c.followupCh = make(chan string, 1)
+	c.followupQ = nil
 	ctx, cancel := context.WithCancel(context.Background())
 	c.cancelFn = cancel
 	c.agentDone = make(chan struct{})
@@ -589,16 +587,24 @@ func (c *ChatService) SendMessage(prompt string) error {
 	return nil
 }
 
-// AnswerFollowupQuestion sends the user's answer back to a pending AskFollowupQuestion call.
+// AnswerFollowupQuestion sends the user's answer back to the oldest pending
+// AskFollowupQuestion call (parallel tool approvals are answered in FIFO order).
 func (c *ChatService) AnswerFollowupQuestion(answer string) error {
 	c.mu.Lock()
-	ch := c.followupCh
-	c.mu.Unlock()
-	if ch == nil {
+	if len(c.followupQ) == 0 {
+		c.mu.Unlock()
 		return fmt.Errorf("no followup question pending")
 	}
-	ch <- answer
-	return nil
+	ch := c.followupQ[0]
+	c.followupQ = c.followupQ[1:]
+	c.mu.Unlock()
+	select {
+	case ch <- answer:
+		return nil
+	default:
+		// Asker is gone (aborted before reading); drop the answer safely.
+		return fmt.Errorf("followup question no longer active")
+	}
 }
 
 // StopMessage aborts the current agent run.
@@ -608,10 +614,10 @@ func (c *ChatService) StopMessage() {
 		c.cancelFn()
 		c.cancelFn = nil
 	}
-	if c.followupCh != nil {
-		close(c.followupCh)
-		c.followupCh = nil
+	for _, ch := range c.followupQ {
+		close(ch)
 	}
+	c.followupQ = nil
 	c.mu.Unlock()
 	if c.Backend.ag != nil {
 		c.Backend.ag.Abort()
@@ -867,18 +873,26 @@ func (g *guiStreamCallback) OnToolCallComplete(toolCall agent.ToolCall, result s
 }
 
 func (g *guiStreamCallback) AskFollowupQuestion(question string, options []string) (string, error) {
+	reply := make(chan string, 1)
 	g.svc.mu.Lock()
-	ch := g.svc.followupCh
+	g.svc.followupQ = append(g.svc.followupQ, reply)
 	g.svc.mu.Unlock()
-	if ch == nil {
-		return "", fmt.Errorf("no followup channel")
-	}
+	defer func() {
+		g.svc.mu.Lock()
+		for i, ch := range g.svc.followupQ {
+			if ch == reply {
+				g.svc.followupQ = append(g.svc.followupQ[:i], g.svc.followupQ[i+1:]...)
+				break
+			}
+		}
+		g.svc.mu.Unlock()
+	}()
 	g.app.Event.Emit("chat:followupQuestion", map[string]interface{}{
 		"question": question,
 		"options":  options,
 	})
 	select {
-	case answer := <-ch:
+	case answer := <-reply:
 		return answer, nil
 	case <-time.After(30 * time.Minute):
 		return "", fmt.Errorf("followup timeout")

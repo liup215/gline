@@ -2,27 +2,27 @@
 package ui
 
 import (
-"context"
-"encoding/json"
-"sync"
-"time"
-  
-"github.com/charmbracelet/bubbles/spinner"
-"github.com/charmbracelet/bubbles/textarea"
-"github.com/charmbracelet/bubbles/viewport"
-tea "github.com/charmbracelet/bubbletea"
-"github.com/charmbracelet/lipgloss"
-	"strings"
+	"context"
+	"encoding/json"
+	"sync"
+	"time"
+
+	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/viewport"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/liup215/gline/internal/storage"
- 
-"github.com/liup215/gline/internal/agent"
+	"strings"
+
+	"github.com/liup215/gline/internal/agent"
 	"github.com/liup215/gline/internal/slash"
-"github.com/liup215/gline/internal/ui/bridge"
-"github.com/liup215/gline/internal/ui/model"
-"github.com/liup215/gline/internal/ui/tool"
+	"github.com/liup215/gline/internal/ui/bridge"
+	"github.com/liup215/gline/internal/ui/model"
+	"github.com/liup215/gline/internal/ui/tool"
 	"github.com/liup215/gline/internal/ui/view"
-"github.com/liup215/gline/internal/ui/viewmodel"
-"github.com/liup215/gline/pkg/types"
+	"github.com/liup215/gline/internal/ui/viewmodel"
+	"github.com/liup215/gline/pkg/types"
 )
 
 // ScreenType represents the current TUI screen.
@@ -38,74 +38,81 @@ const (
 // *model.Conversation; UI-specific state (activeAssistantIndex, isProcessing,
 // etc.) stays here.
 type Model struct {
- // Domain model (extracted from the former god-object)
- conversation *model.Conversation
- 
- // UI components
- viewport viewport.Model
- textarea textarea.Model
- spinner  spinner.Model
- 
- // UI-only state
- inputHeight          int
- toolAreaHeight       int
- isProcessing         bool
- isStreaming          bool
- err                  error
- currentTool          string
- activeAssistantIndex int
- 
- // Agent components
- agentInstance AgentRunner
- ctx           context.Context
-    // Backwards-compatible cancel channel (kept for tests). Prefer agentCtx/agentCancel.
-    // Buffered size 1 to mimic previous single-value container behavior.
-    cancelCh chan context.CancelFunc
+	// Domain model (extracted from the former god-object)
+	conversation *model.Conversation
 
-    // Use a context + cancel func pair protected by a RWMutex to broadcast cancel
-    // and avoid data races when multiple goroutines may read/call cancel.
-    agentCtx    context.Context
-    agentCancel context.CancelFunc
-    cancelLock  sync.RWMutex
- 
- // Bridge channel: TUIBridge sends events here; a forwarding goroutine
- // relays them to tea.Program.Send so that Bridge stays decoupled from Bubbletea.
- eventCh chan bridge.AgentEvent
- done    chan struct{} // signals the forwarding goroutine to stop
- 
- // Pending reply channel when the UI is answering an AskFollowupQuestion
- pendingReply chan string
- 
- // ViewModel derives rendered display state from the conversation.
- convVM *viewmodel.ConversationViewModel
+	// UI components
+	viewport viewport.Model
+	textarea textarea.Model
+	spinner  spinner.Model
 
- // Tool registry for rendering tool outputs
- toolRegistry *tool.Registry
+	// UI-only state
+	inputHeight          int
+	toolAreaHeight       int
+	isProcessing         bool
+	isStreaming          bool
+	err                  error
+	currentTool          string
+	activeAssistantIndex int
 
- // Dimensions
- width  int
- height int
+	// Agent components
+	agentInstance AgentRunner
+	ctx           context.Context
+	// Backwards-compatible cancel channel (kept for tests). Prefer agentCtx/agentCancel.
+	// Buffered size 1 to mimic previous single-value container behavior.
+	cancelCh chan context.CancelFunc
 
- // Performance optimization: only refresh viewport when content actually changed
- contentChanged bool
+	// Use a context + cancel func pair protected by a RWMutex to broadcast cancel
+	// and avoid data races when multiple goroutines may read/call cancel.
+	agentCtx    context.Context
+	agentCancel context.CancelFunc
+	cancelLock  sync.RWMutex
+
+	// Bridge channel: TUIBridge sends events here; a forwarding goroutine
+	// relays them to tea.Program.Send so that Bridge stays decoupled from Bubbletea.
+	eventCh chan bridge.AgentEvent
+	done    chan struct{} // signals the forwarding goroutine to stop
+
+	// Pending reply channels for AskFollowupQuestion (tool approvals,
+	// followup prompts). FIFO: multiple tools may ask concurrently when the
+	// model emits parallel tool calls; each question is answered in order.
+	pendingReplies []*bridge.PendingAsk
+
+	// consumedEnter marks an Enter key already handled by the pending-reply
+	// path, so Update() skips forwarding it to the textarea (which would
+	// otherwise insert a stray newline into the just-cleared input).
+	consumedEnter bool
+
+	// ViewModel derives rendered display state from the conversation.
+	convVM *viewmodel.ConversationViewModel
+
+	// Tool registry for rendering tool outputs
+	toolRegistry *tool.Registry
+
+	// Dimensions
+	width  int
+	height int
+
+	// Performance optimization: only refresh viewport when content actually changed
+	contentChanged bool
 
 	// Slash command pending quit flag
-	quitting         bool
+	quitting bool
 
 	// Slash command menu state
-	slashMenu        *SlashMenuState
+	slashMenu *SlashMenuState
 
 	// Screen navigation
-	screen            ScreenType
+	screen ScreenType
 
 	// History screen state (screen == ScreenHistory)
-	store             storage.Store
-	historyTasks      []storage.TaskRecord
-	historySelected   int
-	historyScroll     int // first visible row index (windowed list)
-	historyDetail     *storage.TaskRecord
-	historyMessages   []storage.MessageRecord
-	historyConfirmID  string
+	store            storage.Store
+	historyTasks     []storage.TaskRecord
+	historySelected  int
+	historyScroll    int // first visible row index (windowed list)
+	historyDetail    *storage.TaskRecord
+	historyMessages  []storage.MessageRecord
+	historyConfirmID string
 
 	// Input history recall (↑/↓ in the chat input; screen == ScreenChat)
 	inputHistory []string // previously submitted prompts (oldest first)
@@ -156,7 +163,6 @@ func New(agentInstance AgentRunner, store storage.Store) *Model {
 		store:                store,
 		ctx:                  context.Background(),
 		cancelCh:             make(chan context.CancelFunc, 1),
-		pendingReply:         nil,
 		histIdx:              -1,
 	}
 	m.slashMenu = NewSlashMenuState(slash.NewDefaultRegistry(conv, func(result slash.CommandResult, message string) {
@@ -206,10 +212,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Timestamp: time.Now(),
 		})
 		m.convVM.MarkMessageDirty(idx)
-		// Set the reply channel so Enter will send the answer back to the agent
-		m.pendingReply = msg.Reply
+		// Queue the reply channel so Enter will send the answer back to the
+		// waiting tool; parallel approvals are answered one by one.
+		m.pendingReplies = append(m.pendingReplies, msg.Reply)
 		m.textarea.Reset()
-		m.textarea.Placeholder = "Type option number or your answer..."
+		m.textarea.Placeholder = pendingReplyPlaceholder(len(m.pendingReplies))
 		m.textarea.Focus()
 		cmds = append(cmds, textarea.Blink)
 		needsRefresh = true
@@ -251,10 +258,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.updateViewport()
 	}
 
-	// Update textarea
-	newTextarea, textareaCmd := m.textarea.Update(msg)
-	m.textarea = newTextarea
-	cmds = append(cmds, textareaCmd)
+	// Update textarea. Skip the key handleKeyMsg already consumed (e.g. the
+	// Enter that submitted a pending reply) so it does not also insert a
+	// newline into the just-cleared input box.
+	if keyMsg, ok := msg.(tea.KeyMsg); ok && m.consumedEnter && keyMsg.Type == tea.KeyEnter {
+		m.consumedEnter = false
+	} else {
+		newTextarea, textareaCmd := m.textarea.Update(msg)
+		m.textarea = newTextarea
+		cmds = append(cmds, textareaCmd)
+	}
 
 	// Update slash menu query based on current textarea content.
 	// We detect slash mode by checking if the value starts with / and has no space.
@@ -300,7 +313,7 @@ func (m *Model) tick() tea.Cmd {
 func isNearBottom(v viewport.Model, content string, threshold int) bool {
 	totalLines := len(strings.Split(content, "\n"))
 	visibleEnd := v.YOffset + v.Height
-	return totalLines - visibleEnd <= threshold
+	return totalLines-visibleEnd <= threshold
 }
 
 // updateViewport refreshes the viewport content via the ViewModel.
@@ -420,7 +433,7 @@ func handleSlashCommandResult(m *Model, result slash.CommandResult, message stri
 			Role:      types.RoleSystem,
 			Content:   message,
 			MsgType:   types.TypeNormal,
-			Strategy: types.StrategyPlain,
+			Strategy:  types.StrategyPlain,
 			Timestamp: time.Now(),
 		})
 		m.convVM.MarkMessageDirty(idx)
@@ -451,7 +464,7 @@ func handleSlashCommandResult(m *Model, result slash.CommandResult, message stri
 			Role:      types.RoleSystem,
 			Content:   message,
 			MsgType:   types.TypeNormal,
-			Strategy: types.StrategyPlain,
+			Strategy:  types.StrategyPlain,
 			Timestamp: time.Now(),
 		})
 		m.convVM.MarkMessageDirty(idx)
@@ -500,10 +513,10 @@ func (m *Model) sendMessage(content string) {
 // addErrorMessage adds an error message with proper typing
 func (m *Model) addErrorMessage(content string) {
 	msg := model.Message{
-		Role:     types.RoleSystem,
-		Content:  content,
-		MsgType:  types.TypeError,
-		Strategy: types.StrategyPlain,
+		Role:      types.RoleSystem,
+		Content:   content,
+		MsgType:   types.TypeError,
+		Strategy:  types.StrategyPlain,
 		Timestamp: time.Now(),
 	}
 	// Optionally set metadata for complex errors

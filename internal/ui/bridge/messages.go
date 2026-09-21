@@ -1,6 +1,8 @@
 // Package bridge provides type-safe event types for Agent-TUI communication.
 package bridge
 
+import "sync"
+
 // AgentEvent is the unified interface for all events produced by Agent callbacks.
 type AgentEvent interface {
 	agentEvent()
@@ -46,7 +48,30 @@ type CompleteEvent struct{}
 type AskQuestionEvent struct {
 	Question string
 	Options  []string
-	Reply    chan string
+	Reply    *PendingAsk
+}
+
+// PendingAsk is one unanswered AskFollowupQuestion: the reply channel plus a
+// close-once guard. Multiple tool calls can ask concurrently (parallel tool
+// calls), and both the UI (Esc) and the agent (abort/teardown) may close the
+// question — Abort is idempotent so a double close cannot panic.
+type PendingAsk struct {
+	Ch   chan string
+	once sync.Once
+}
+
+// Ask delivers the user's answer without blocking (channel is buffered).
+func (p *PendingAsk) Ask(answer string) {
+	select {
+	case p.Ch <- answer:
+	default:
+	}
+}
+
+// Abort closes the reply channel exactly once, unblocking the waiting tool
+// goroutine with context.Canceled. Safe to call from every abort path.
+func (p *PendingAsk) Abort() {
+	p.once.Do(func() { close(p.Ch) })
 }
 
 // Compile-time interface assertions.

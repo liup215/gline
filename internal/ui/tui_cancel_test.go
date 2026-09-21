@@ -87,16 +87,16 @@ return
 }
 }()
 
-// prepare pendingReply and simulate AskFollowupQuestion path
-reply := make(chan string, 1)
-m.pendingReply = reply
+// prepare pendingReplies and simulate AskFollowupQuestion path
+m.pendingReplies = []*bridge.PendingAsk{{Ch: make(chan string, 1)}}
 m.isProcessing = true
 
 // Start a goroutine to simulate the agent blocking on the reply channel.
 // The agent will unblock when the reply channel is closed by Esc handling.
+agentReply := m.pendingReplies[0].Ch
 agentUnblocked := make(chan bool, 1)
 go func() {
-_, ok := <-reply
+_, ok := <-agentReply
 agentUnblocked <- ok // ok == false means channel was closed
 }()
 
@@ -114,9 +114,9 @@ case <-time.After(1 * time.Second):
 t.Fatalf("agent goroutine did not unblock after Esc")
 }
 
-// ensure pendingReply cleared
-if m.pendingReply != nil {
-t.Fatalf("pendingReply should be nil after Esc, got non-nil")
+// ensure pendingReplies cleared
+if len(m.pendingReplies) != 0 {
+t.Fatalf("pendingReplies should be empty after Esc, got %d", len(m.pendingReplies))
 }
 }
 
