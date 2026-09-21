@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/liup215/gline/internal/shell"
 	"github.com/liup215/gline/pkg/types"
 )
 
@@ -108,10 +109,7 @@ func getSystemInfoSection() string {
 	osArch := runtime.GOARCH
 	cwd := getCWD()
 
-	shell := "bash"
-	if osName == "windows" {
-		shell = "PowerShell"
-	}
+	shellLabel := shell.Resolve().Name()
 
 	homeDir, _ := os.UserHomeDir()
 
@@ -121,7 +119,7 @@ OS: %s (%s)
 Shell: %s
 Home: %s
 Working Directory: %s
-Go: %s`, osName, osArch, shell, homeDir, cwd, goVersion)
+Go: %s`, osName, osArch, shellLabel, homeDir, cwd, goVersion)
 }
 
 // getCWD returns the current working directory.

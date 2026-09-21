@@ -8,6 +8,7 @@ import (
 
 	"github.com/liup215/gline/internal/log"
 	"github.com/liup215/gline/internal/prompts"
+	"github.com/liup215/gline/internal/shell"
 	"github.com/liup215/gline/internal/tools"
 	"github.com/liup215/gline/pkg/types"
 	"google.golang.org/adk/v2/model"
@@ -123,10 +124,7 @@ func (b *Builder) BuildEnvironmentBlock() string {
 		}
 	}
 
-	shell := "bash"
-	if runtime.GOOS == "windows" {
-		shell = "PowerShell"
-	}
+	shellLabel := shell.Resolve().Name()
 
 	homeDir, _ := os.UserHomeDir()
 
@@ -146,7 +144,7 @@ Operating System: %s
 Default Shell: %s
 Home Directory: %s
 Current Working Directory: %s
-</environment_details>`, string(workspacesJSON), runtime.GOOS, shell, homeDir, cwd)
+</environment_details>`, string(workspacesJSON), runtime.GOOS, shellLabel, homeDir, cwd)
 }
 
 // RegisterTool registers the use_subagents tool in the given registry.

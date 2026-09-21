@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"runtime"
 	"strings"
 	"time"
+
+	"github.com/liup215/gline/internal/shell"
 )
 
 // ExecuteCommandTool executes a CLI command
@@ -62,7 +63,7 @@ func NewExecuteCommandTool() *ExecuteCommandTool {
 	return &ExecuteCommandTool{
 		BaseTool: BaseTool{
 			name:        "run",
-			description: "Execute a CLI command on the system. Use this when you need to perform system operations or run specific commands. Commands that modify the system require approval by default.",
+			description: "Execute a CLI command on the system. Runs under bash (POSIX) when available; on Windows without bash it falls back to cmd.exe. Use this when you need to perform system operations or run specific commands. Commands that modify the system require approval by default.",
 			inputSchema: schema,
 		},
 	}
@@ -89,13 +90,14 @@ func (t *ExecuteCommandTool) Execute(ctx context.Context, input json.RawMessage)
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
 
-	// Prepare command
-	var cmd *exec.Cmd
-	if runtime.GOOS == "windows" {
-		cmd = exec.CommandContext(ctx, "cmd", "/C", req.Command)
-	} else {
-		cmd = exec.CommandContext(ctx, "sh", "-c", req.Command)
-	}
+	// Prepare command: prefer bash (POSIX semantics) and fall back to
+	// cmd.exe on Windows machines without a usable bash.
+	sh := shell.Resolve()
+	args := make([]string, 0, len(sh.Args)+1)
+	args = append(args, sh.Args...)
+	args = append(args, req.Command)
+	cmd := exec.CommandContext(ctx, sh.Path, args...)
+	hideConsole(cmd)
 
 	// Set working directory if specified
 	if req.Cwd != "" {
