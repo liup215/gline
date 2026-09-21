@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-09-21 — TUI 侧 skill 链路断裂修复 ✅（已部署）
+
+用户问“skill 加载了吗”。审计：**GUI 侧链路完整，TUI 侧两头全断**（提交 2193347）：
+
+| 环节 | GUI | TUI（修复前） |
+|------|-----|------|
+| Registry 创建 | ✅ | ✅ |
+| LoadFromDirs 扫描 DefaultSkillDirs | ✅ | ❌ 从不调用（空注册表） |
+| Skills 传 adkagent → SystemInstruction # Skills 段 | ✅ | ❌ Options 无 Skills 字段（模型不知道有技能） |
+| use_skill 工具 | ✅ | ✅（但空表，永远 not found） |
+
+修复：assembleSharedComponents 内 LoadFromDirs（~/.gline/skills、~/.agents/skills、~/.cline/skills、~/.claude/skills；缺目录非致命）；initializeAgent 接住 skillReg 传入 Options.Skills。
+
+**孤儿资产**：`internal/skills/builtin/*.yaml`（code-review/debug/doc/explain/refactor 5 个内置技能）无人加载 —— yaml prompt 格式，LoadSkillsFromDir 只认 SKILL.md。待定：转 SKILL.md 格式 + embed 加载，或删除。用户本机 ~/.agents/skills、~/.claude/skills 有大量第三方技能（GUI/TUI 现在都会列出）。
+
 ## 2026-09-21 — 旧机制清理审计（D82）✅（已部署）
 
 用户问“多余的、旧的机制是否都已清理”。全仓审计结果：**已确认干净** + 新删 3 处（提交 002edde，-169 行）：
