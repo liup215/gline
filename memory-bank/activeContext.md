@@ -2,6 +2,29 @@
 
 ## Current Focus
 
+### TUI 交互式问题选项选择器 OK（2026-09-19, commit a3e7d88）
+
+`ask_followup_question` 的问题现在带键盘驱动的选项选择器，不再必须手动打字：
+
+| 按键 | 行为 |
+|------|------|
+| Up/Down/Tab | 移动高亮选项（循环） |
+| 1-9 | 直接选中第 N 项（超出范围的数字回落为普通输入） |
+| Right | 把选中选项填入输入框，可继续追加自由文本 |
+| Enter | 有输入文字则发送文字；无输入则原样发送选中选项；无选项且空输入则保持 pending（修复旧版空 Enter 弹出队列孤儿化等待工具的 bug） |
+| Esc | 中止全部（既有行为） |
+
+**实现**：
+- `internal/ui/model/message.go`：Message 新增 `SelectedOption *int`（nil=未选中）
+- `internal/ui/tui.go`：`pendingReplies []*bridge.PendingAsk` 改为 `pendingQuestions []*pendingQuestion`（含 ask/options/selected/msgIndex）；Model 新增 `consumedPickerKey`——picker 消费的按键 Update 提前跳过 textarea/viewport 转发（否则方向键滚动会话、数字键打进输入框）
+- `internal/ui/tui_input.go`：`handleQuestionSelection`（拦截在 slash 菜单/历史屏之后、主 switch 之前；无选项问题回落正常输入）；`submitPendingReply` 重写（typed > selected > 保持 pending）；`appendOptionToInput`；占位符 "choose / send / edit, or type your own answer (N pending)"
+- `internal/ui/view/styles.go`：`OptionSelectedStyle`（蓝底加粗）
+- `internal/ui/viewmodel/conversation_vm.go`：`renderQuestionOptions` 共享渲染（TypeQuestion 分支 + legacy 回退分支），选中项 marker 标记 + 高亮
+- 并行问题仍 FIFO，只有最老的一个可交互；Tab 在问题 pending 时被选项循环占用（模态）
+- 测试：移动/环绕、数字跳选+回落、typed 覆盖选中、Right 追加编辑流、空 Enter 安全、标记渲染；tui_state_test 旧断言更新为选中标记形式
+
+**验证**：`go test ./... -count=1 -race` 全绿；已部署 C:/Users/22569/bin/gline.exe
+
 ### TUI 修复：并行工具审批阻塞输入框 ✅（2026-09-21，1269749，已部署）
 
 **问题**: 两条命令并行发出时，各自的 "Approve run" 提示使输入框卡死 —— Enter 只插入换行，答案发不出去。
