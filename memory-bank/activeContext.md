@@ -2,6 +2,21 @@
 
 ## Current Focus
 
+### TUI 修复：并行工具审批阻塞输入框 ✅（2026-09-21，1269749，已部署）
+
+**问题**: 两条命令并行发出时，各自的 "Approve run" 提示使输入框卡死 —— Enter 只插入换行，答案发不出去。
+
+**根因（已验证 ADK 源码）**: ADK `handleFunctionCalls` 用 `platform.RunTasks` **并发**执行同一轮的多个工具调用（internal/llminternal/base_flow.go L1179-1181）。两个 `requestApproval` 各自阻塞在自己的 reply channel；而 TUI 的 `m.pendingReply` 是单槽，第二个 AskQuestionEvent **覆盖**第一个 channel → 第一个 asker 永远阻塞 → RunTasks 不返回 → run 永不结束 → `isProcessing` 恒为 true → 之后所有 Enter 落入被 isProcessing 门控的普通发送路径被忽略，textarea 只剩换行。附加 bug：`submitPendingReply` 后同一 Enter 泄漏进 textarea 插入 `\n`（未 Blur）。
+
+**修复（commit 1269749）**:
+- **bridge**（`internal/ui/bridge/messages.go` + `callback.go`）: 新增 `PendingAsk{Ch chan string; once sync.Once}` + `Ask(answer)`（非阻塞发送）+ `Abort()`（once 守卫 close）；`AskQuestionEvent.Reply` 改为 `*PendingAsk`；`TUIBridge` 用 mutex 登记 pending asks，新增 `AbortPendingQuestions()` 解堵所有被遗弃的 asker
+- **TUI**（`tui.go`/`tui_input.go`）: `pendingReplies []*bridge.PendingAsk` FIFO 队列 —— Enter 应答最老的待审批，placeholder 显示剩余数（"N approvals pending"），Esc 全部 Abort；`consumedEnter` 标志阻止提交审批的 Enter 泄漏换行；队列非空保持聚焦便于答下一问，队列空则 Blur（镜像 submitUserMessage）
+- **adkagent**（`agent.go`）: `Abort()` 和 `RunWithCallback` teardown 通过接口断言调用 `AbortPendingQuestions` —— 工具 goroutine 在审批等待中不看 run context，取消必须靠 close channel 才能 unwind
+- **GUI**（`chat_service.go`）: 同样的单槽覆盖 bug 一并修掉 —— `followupCh` 改 `followupQ []chan string` FIFO，`AnswerFollowupQuestion` 服务队首，`StopMessage`/`SendMessage` close 全部陈旧 ask
+- **测试**: `bridge/callback_abort_test.go` 3 项（abort 解堵/双重 close 幂等/并行 FIFO）、`ui/pending_reply_test.go` 4 项（队列 FIFO/换行不泄漏/Esc 全关/Esc 解堵 asker）；17 包 `-race` 全绿；已重装 `C:\Users\22569\bin\gline.exe`
+
+**关键坑**: `sync.Once` 只防**经它**的 close —— 测试直接 `close(ch)` 绕过守卫仍 panic，正确做法是所有 close 统一走 `PendingAsk.Abort()`；`tui.go` 顺带被 gofmt 修正了整文件空格缩进漂移（diff 大但纯格式）。
+
 ### TUI 修复：输入历史回溯 + history 屏幕导航加固 + 滚动窗口 ✅（2026-09-21，7d55a33 / e7ad27c）
 
 **问题**: 当前 TUI（internal/ui）丢失了旧 inputModel 的输入历史回溯 —— 聊天输入框按 ↑/↓ 无法调出历史 prompt；另外 /history 屏幕存在隐患：textarea 残留 "/" 时 slash 菜单会在 history 屏幕后台静默重新激活，吃掉本应导航任务列表的 ↑/↓。
