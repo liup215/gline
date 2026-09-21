@@ -12,11 +12,13 @@ import (
 	"google.golang.org/adk/v2/model"
 	"google.golang.org/adk/v2/runner"
 	"google.golang.org/adk/v2/session"
+	"google.golang.org/adk/v2/session/compaction"
 	"google.golang.org/adk/v2/tool"
 	"google.golang.org/genai"
 
 	glineagent "github.com/liup215/gline/internal/agent" // StreamCallback interface
 	"github.com/liup215/gline/internal/log"
+	"github.com/liup215/gline/internal/memory"
 	"github.com/liup215/gline/internal/provider"
 	"github.com/liup215/gline/internal/storage"
 	"github.com/liup215/gline/internal/tools"
@@ -87,6 +89,16 @@ type Options struct {
 	// the transcript so history browsing keeps working. Nil skips all task
 	// bookkeeping (tests).
 	Store storage.Store
+
+	// Compaction enables ADK context compaction for this agent's sessions
+	// (tail retention and/or sliding window). Nil disables compaction.
+	// The default summarizer runs on the agent's own model.
+	Compaction *compaction.Config
+
+	// MemoryEngine enables background fact extraction after a completed
+	// run (facts layer only; wiki/RAG wiring stays with the legacy loop
+	// until Phase 7 removes it). Nil skips fact extraction.
+	MemoryEngine *memory.UnifiedEngine
 }
 
 // Agent drives the ADK-backed agent loop. It owns one root LLMAgent, one
@@ -169,6 +181,7 @@ func NewWithModel(ctx context.Context, opts Options, llm model.LLM) (*Agent, err
 		AppName:        AppName,
 		Agent:          rootAgent,
 		SessionService: sessionSvc,
+		Compaction:     opts.Compaction,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("creating runner: %w", err)
@@ -462,6 +475,7 @@ func (a *Agent) RunWithCallback(ctx context.Context, prompt string, cb glineagen
 			if err == nil {
 				cb.OnComplete()
 				a.finishTask("completed")
+				a.extractFactsAsync(transcriptFromMessages(acc.messages()))
 			} else {
 				a.finishTask("failed")
 			}

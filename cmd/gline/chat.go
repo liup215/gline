@@ -12,6 +12,7 @@ import (
 	glineagent "github.com/liup215/gline/internal/agent"
 	"github.com/liup215/gline/internal/api"
 	"github.com/liup215/gline/internal/log"
+	"github.com/liup215/gline/internal/memory"
 	"github.com/liup215/gline/internal/prompts"
 	"github.com/liup215/gline/internal/sessionstore"
 	"github.com/liup215/gline/internal/skills"
@@ -21,6 +22,7 @@ import (
 	"github.com/liup215/gline/internal/tools"
 	"github.com/liup215/gline/internal/ui"
 	"google.golang.org/adk/v2/session"
+	"google.golang.org/adk/v2/session/compaction"
 )
 
 // providerSettings carries the resolved provider configuration. The legacy
@@ -122,6 +124,50 @@ func resolveProviderSettings() (*providerSettings, error) {
 // Default is the ADK-backed agent (internal/adkagent). GLINE_AGENT=legacy
 // (or provider "mock") selects the legacy hand-written loop, which stays
 // until Phase 7 removes it.
+// defaultCompactionConfig enables ADK tail-retention compaction: once the
+// prompt grows past TokenThreshold, everything but the most recent
+// EventRetentionSize events is summarized before the next model call.
+// Sliding-window compaction stays off — tail retention alone bounds prompt
+// growth without interval/retention arithmetic.
+func defaultCompactionConfig() *compaction.Config {
+	return &compaction.Config{
+		TokenThreshold:     80_000,
+		EventRetentionSize: 12,
+	}
+}
+
+// initializeMemoryEngine builds the optional unified memory engine (facts
+// + wiki + RAG) when memory is enabled and an embedder can be constructed.
+// Mirrors internal/gui/backend.go; failures degrade to a nil engine.
+func initializeMemoryEngine() *memory.UnifiedEngine {
+	cfg := configManager.Get()
+	memCfg := cfg.Memory
+	if !memCfg.Enabled || (memCfg.Embedding.Provider == "" && memCfg.Embedding.APIKey == "") {
+		return nil
+	}
+	var embedder memory.Embedder
+	switch memCfg.Embedding.Provider {
+	case "ollama":
+		embedder = memory.NewOllamaEmbedder(memCfg.Embedding.Model)
+	default:
+		apiKey := memCfg.Embedding.APIKey
+		if apiKey == "" {
+			apiKey = cfg.Provider.OpenAI.APIKey
+		}
+		embedder = memory.NewOpenAIEmbedder(apiKey, memCfg.Embedding.Model)
+		if memCfg.Embedding.BaseURL != "" {
+			embedder.(*memory.OpenAIEmbedder).BaseURL = memCfg.Embedding.BaseURL
+		}
+	}
+	engine, err := memory.NewUnifiedEngine(embedder)
+	if err != nil {
+		log.Warnf("Memory engine not initialised: %v", err)
+		return nil
+	}
+	log.Info("Memory engine initialised")
+	return engine
+}
+
 func initializeAgent() (ui.AgentRunner, storage.Store, error) {
 
 	settings, err := resolveProviderSettings()
@@ -179,6 +225,8 @@ func initializeAgent() (ui.AgentRunner, storage.Store, error) {
 		Mode:           string(glineagent.ModeAct),
 		SessionService: sessionService,
 		Store:          store,
+		Compaction:     defaultCompactionConfig(),
+		MemoryEngine:   initializeMemoryEngine(),
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create agent: %w", err)
