@@ -151,11 +151,12 @@ cmd/gline (TUI 默认 / --gui / 子命令)
 - `cmd/gline/chat.go`（TUI 装配）与 `gline chat` CLI 子命令切到新 agent；GUI ChatService 内部换引擎（Wails 绑定不变，React 零改动）
 - **产出**：TUI 手测清单（streaming/工具面板/thinking/取消/Plan-Act 切换/yolo/history 续接）
 
-### Phase 6 — 治理能力对齐（1 天）
-- AutoCompact：优先评估 ADK `session/compaction`；不满足则 AfterModelCallback + 现有 summarizer 实现水位压缩（阈值沿用 30%/40% 策略）
-- facts 抽取/记忆写入挂 AfterModelCallback（现 extractFactsAsync 迁移）
-- `gline history` 续接：OpenSession(events 重放) 验证
-- **产出**：长会话压测脚本（>100 轮工具调用无 orphan、无内存涨）
+### Phase 6 — 治理能力对齐（1 天）✅（2026-09-20 ~ 09-21）
+- ✅ AutoCompact：ADK `session/compaction` 尾部保留（TokenThreshold 80k / EventRetentionSize 12），CLI 与 GUI 装配均传入；TUI `/compact` 对 ADK 路径提示自动处理
+- ✅ facts 抽取：`internal/adkagent/facts.go`，RunWithCallback 干净完成后异步抽取（Options.MemoryEngine）
+- ✅ `gline history` 续接：sessionstore（Phase 6a）+ ResumeSession（TUI/GUI 历史选中恢复 ADK session）
+- ✅ GUI 切换（Phase 6b part 2）：`internal/ui/runner.go` 能力接口（WorkingDirSetter/TaskIDProvider/TaskResetter/SkillsSetter/MemoryProvider/ConversationProvider/Compactor/RulesReloader/ResumeSessionResumer）；`ChatService`/`Backend` 全部改为 capability 断言，`Backend.ag` 类型改为 `ui.AgentRunner`；GUI 默认 ADK 循环（`GLINE_AGENT=legacy` 回退）；`--gui` 标志恢复；GetConversationState ADK 路径从 storage 读持久化转录；LoadTask 恢复 ADK session（无 session 的旧任务回退 SetTaskID）；ADK agent 支持动态 SetWorkingDir/SetSkills（InstructionProvider 每次调用重建指令）
+- ⏳ 长会话压测脚本（>100 轮工具调用无 orphan、无内存涨）——待办
 
 ### Phase 7 — 切换与清理（0.5 天）
 - 删除 `internal/api/go_llm.go`、旧 `RunWithCallback/processStream/preDispatch/executeToolCallsParallel`、go-llm 依赖

@@ -16,6 +16,7 @@ var (
 	// Global flags
 	cfgFile string
 	verbose bool
+	useGUI  bool
 
 	// Global config manager
 	configManager *config.Manager
@@ -66,9 +67,13 @@ Get started:
 		return nil
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		// If no subcommand, start interactive mode
+		// If no subcommand, start interactive mode (TUI by default, GUI with --gui)
 		if len(args) == 0 {
-			startInteractiveMode()
+			if useGUI {
+				runGUI()
+			} else {
+				startInteractiveMode()
+			}
 		}
 	},
 }
@@ -87,6 +92,7 @@ func init() {
 	// Global flags
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.gline/config.yaml)")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
+	rootCmd.Flags().BoolVar(&useGUI, "gui", false, "start the desktop GUI instead of the TUI")
 
 	// Add subcommands
 	rootCmd.AddCommand(chatCmd)

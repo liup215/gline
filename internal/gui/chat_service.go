@@ -17,6 +17,7 @@ import (
 	"github.com/liup215/gline/internal/skills"
 	"github.com/liup215/gline/internal/slash"
 	"github.com/liup215/gline/internal/storage"
+	"github.com/liup215/gline/internal/ui"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -43,7 +44,9 @@ func (c *ChatService) pickProjectDir() (string, error) {
 	c.workingDir = selected
 	// Sync to agent so CreateTask stores the correct working directory
 	if c.Backend.ag != nil {
-		c.Backend.ag.(*agent.BaseAgent).SetWorkingDir(selected)
+		if wd, ok := c.Backend.ag.(ui.WorkingDirSetter); ok {
+			wd.SetWorkingDir(selected)
+		}
 	}
 	return selected, nil
 }
@@ -53,10 +56,13 @@ func (c *ChatService) pickProjectDir() (string, error) {
 func (c *ChatService) StartNewConversation() {
 	c.workingDir = ""
 	if c.Backend.ag != nil {
-		c.Backend.ag.(*agent.BaseAgent).ResetTask()
-		c.Backend.ag.(*agent.BaseAgent).SetWorkingDir("")
-		c.Backend.ag.GetConversation().Clear()
-		// Note: Memory system reset removed (incompatible with current agent architecture)
+		if tm, ok := c.Backend.ag.(ui.TaskResetter); ok {
+			tm.ResetTask()
+		}
+		if wd, ok := c.Backend.ag.(ui.WorkingDirSetter); ok {
+			wd.SetWorkingDir("")
+		}
+		_ = c.Backend.ag.NewSession(context.Background())
 	}
 }
 
@@ -69,9 +75,11 @@ func (c *ChatService) SelectProjectDir() (string, error) {
 	}
 	// Update the database record if a task is loaded
 	if c.Backend.ag != nil {
-		if taskID := c.Backend.ag.(*agent.BaseAgent).GetTaskID(); taskID != "" {
-			if err := c.Backend.store.UpdateTaskWorkingDir(taskID, dir); err != nil {
-				log.Warnf("Failed to update task working_dir: %v", err)
+		if tp, ok := c.Backend.ag.(ui.TaskIDProvider); ok {
+			if taskID := tp.GetTaskID(); taskID != "" {
+				if err := c.Backend.store.UpdateTaskWorkingDir(taskID, dir); err != nil {
+					log.Warnf("Failed to update task working_dir: %v", err)
+				}
 			}
 		}
 	}
@@ -90,23 +98,30 @@ type ChatService struct {
 	agentDone   chan struct{} // closed when the agent goroutine exits
 }
 
+// reloadRules reloads custom rule files into the agent prompt. Only the
+// legacy loop supports live reloading; the ADK agent bakes rules into the
+// system instruction at startup.
+func (c *ChatService) reloadRules() (int, string, error) {
+	if c.Backend.ag == nil {
+		return 0, "", fmt.Errorf("agent not initialised")
+	}
+	rr, ok := c.Backend.ag.(ui.RulesReloader)
+	if !ok {
+		return 0, "", fmt.Errorf("rule reload requires the legacy agent (GLINE_AGENT=legacy); restart to pick up rule changes")
+	}
+	_, infos, err := rr.ReloadCustomRules()
+	if err != nil {
+		return 0, "", err
+	}
+	return len(infos), prompts.FormatRulesInfo(infos), nil
+}
+
 // InitSlashRegistry initialises the slash command registry for this service.
 func (c *ChatService) InitSlashRegistry() {
 	c.cmdReg = slash.NewRegistry()
 	ctx := &slash.CommandContext{
 		ReloadRules: func() (int, string, error) {
-			if c.Backend.ag == nil {
-				return 0, "", fmt.Errorf("agent not initialised")
-			}
-			baseAg, ok := c.Backend.ag.(*agent.BaseAgent)
-			if !ok {
-				return 0, "", fmt.Errorf("agent type mismatch")
-			}
-			_, infos, err := baseAg.ReloadCustomRules()
-			if err != nil {
-				return 0, "", err
-			}
-			return len(infos), prompts.FormatRulesInfo(infos), nil
+			return c.reloadRules()
 		},
 	}
 	for _, cmd := range slash.DefaultCommands(ctx) {
@@ -121,8 +136,8 @@ func (c *ChatService) InitSlashRegistry() {
 		}
 		// Keep the agent's skills metadata in sync with the registry.
 		if c.Backend.ag != nil {
-			if baseAg, ok := c.Backend.ag.(*agent.BaseAgent); ok {
-				baseAg.SetSkills(c.Backend.skillRegistry.GetMeta())
+			if ss, ok := c.Backend.ag.(ui.SkillsSetter); ok {
+				ss.SetSkills(c.Backend.skillRegistry.GetMeta())
 			}
 		}
 	}
@@ -132,11 +147,11 @@ func (c *ChatService) memoryEngine() (*memory.UnifiedEngine, error) {
 	if c.Backend == nil || c.Backend.ag == nil {
 		return nil, fmt.Errorf("agent not initialised")
 	}
-	baseAg, ok := c.Backend.ag.(*agent.BaseAgent)
+	mp, ok := c.Backend.ag.(ui.MemoryProvider)
 	if !ok {
-		return nil, fmt.Errorf("agent type mismatch")
+		return nil, fmt.Errorf("memory engine unavailable")
 	}
-	e := baseAg.GetMemoryEngine()
+	e := mp.MemoryEngine()
 	if e == nil {
 		return nil, fmt.Errorf("memory system not configured")
 	}
@@ -365,18 +380,7 @@ func (c *ChatService) ExecuteSlashCommand(name string, args string) (*SlashActio
 			capturedMessage = message
 		},
 		ReloadRules: func() (int, string, error) {
-			if c.Backend.ag == nil {
-				return 0, "", fmt.Errorf("agent not initialised")
-			}
-			baseAg, ok := c.Backend.ag.(*agent.BaseAgent)
-			if !ok {
-				return 0, "", fmt.Errorf("agent type mismatch")
-			}
-			_, infos, err := baseAg.ReloadCustomRules()
-			if err != nil {
-				return 0, "", err
-			}
-			return len(infos), prompts.FormatRulesInfo(infos), nil
+			return c.reloadRules()
 		},
 	}
 
@@ -512,18 +516,7 @@ func commandResultToString(r slash.CommandResult) string {
 // ReloadRules reloads custom rules from disk and updates the agent.
 // Returns the number of rule files loaded and a formatted description.
 func (c *ChatService) ReloadRules() (int, string, error) {
-	if c.Backend.ag == nil {
-		return 0, "", fmt.Errorf("agent not initialised")
-	}
-	baseAg, ok := c.Backend.ag.(*agent.BaseAgent)
-	if !ok {
-		return 0, "", fmt.Errorf("agent type mismatch")
-	}
-	_, infos, err := baseAg.ReloadCustomRules()
-	if err != nil {
-		return 0, "", err
-	}
-	return len(infos), prompts.FormatRulesInfo(infos), nil
+	return c.reloadRules()
 }
 
 // GetRulesInfo returns metadata about available custom rule files.
@@ -654,8 +647,10 @@ func (c *ChatService) StopMessage() {
 // Used by /clear slash command.
 func (c *ChatService) ClearConversation() {
 	if c.Backend.ag != nil {
-		c.Backend.ag.(*agent.BaseAgent).ResetTask()
-		c.Backend.ag.GetConversation().Clear()
+		if tm, ok := c.Backend.ag.(ui.TaskResetter); ok {
+			tm.ResetTask()
+		}
+		_ = c.Backend.ag.NewSession(context.Background())
 	}
 }
 
@@ -676,7 +671,11 @@ func (c *ChatService) GetMode() string {
 	if c.Backend.ag == nil {
 		return "act"
 	}
-	return string(c.Backend.ag.GetMode())
+	mode := c.Backend.ag.Mode()
+	if mode == "" {
+		return "act"
+	}
+	return mode
 }
 
 // SetMode switches the agent between plan and act modes.
@@ -686,19 +685,24 @@ func (c *ChatService) SetMode(mode string) error {
 	}
 	switch mode {
 	case "plan", "act":
-		return c.Backend.ag.SetMode(agent.Mode(mode))
+		c.Backend.ag.SetMode(mode)
+		return nil
 	default:
 		return fmt.Errorf("invalid mode: %s", mode)
 	}
 }
 
 // CompactConversation triggers manual compaction of the conversation history.
+// The ADK agent compacts automatically (tail retention), so this reports
+// success for it.
 func (c *ChatService) CompactConversation() (bool, error) {
 	if c.Backend.ag == nil {
 		return false, fmt.Errorf("agent not initialised")
 	}
-	compacted := c.Backend.ag.Compact()
-	return compacted, nil
+	if comp, ok := c.Backend.ag.(ui.Compactor); ok {
+		return comp.Compact(), nil
+	}
+	return true, nil
 }
 
 // GetMCPStatus returns the status of all configured MCP servers.
@@ -741,12 +745,18 @@ func (c *ChatService) GetStatus() (map[string]string, error) {
 	currentTokens := "0"
 	maxTokensStr := fmt.Sprintf("%d", maxTokens)
 	if c.Backend.ag != nil {
-		conv := c.Backend.ag.GetConversation()
-		if conv != nil {
-			mode = string(c.Backend.ag.GetMode())
-			currentTokens = fmt.Sprintf("%d", conv.GetTotalTokens())
-			if maxTokens == 0 {
-				maxTokensStr = fmt.Sprintf("%d", conv.MaxTokens)
+		mode = c.Backend.ag.Mode()
+		if mode == "" {
+			mode = "act"
+		}
+		// Legacy agent exposes a live token count from its conversation; the
+		// ADK agent reports "0" here (compaction is automatic).
+		if cp, ok := c.Backend.ag.(ui.ConversationProvider); ok {
+			if conv := cp.GetConversation(); conv != nil {
+				currentTokens = fmt.Sprintf("%d", conv.GetTotalTokens())
+				if maxTokens == 0 {
+					maxTokensStr = fmt.Sprintf("%d", conv.MaxTokens)
+				}
 			}
 		}
 	}
@@ -766,30 +776,51 @@ func (c *ChatService) GetConversationState() string {
 	if c.Backend.ag == nil {
 		return "[]"
 	}
-	conv := c.Backend.ag.GetConversation()
-	msgs := conv.GetMessages()
+	const maxMsgContent = 16000 // per-message limit
+	const maxMsgs = 200         // hard cap on number of messages returned
 	type msgView struct {
 		Role    string `json:"role"`
 		Content string `json:"content"`
 	}
-	const maxMsgContent = 16000   // per-message limit
-	const maxMsgs = 200          // hard cap on number of messages returned
-	start := 0
-	if len(msgs) > maxMsgs {
-		start = len(msgs) - maxMsgs
-	}
-	viewsCap := len(msgs) - start
-	if viewsCap > maxMsgs {
-		viewsCap = maxMsgs
-	}
-	views := make([]msgView, 0, viewsCap)
-	for i := start; i < len(msgs); i++ {
-		m := msgs[i]
-		content := m.Content
+	appendView := func(views []msgView, role, content string) []msgView {
 		if len(content) > maxMsgContent {
 			content = content[:maxMsgContent] + "\n\n[… truncated]"
 		}
-		views = append(views, msgView{Role: string(m.Role), Content: content})
+		return append(views, msgView{Role: role, Content: content})
+	}
+	var views []msgView
+	if cp, ok := c.Backend.ag.(ui.ConversationProvider); ok {
+		msgs := cp.GetConversation().GetMessages()
+		start := 0
+		if len(msgs) > maxMsgs {
+			start = len(msgs) - maxMsgs
+		}
+		for i := start; i < len(msgs); i++ {
+			views = appendView(views, string(msgs[i].Role), msgs[i].Content)
+		}
+	} else {
+		// ADK agent: read the persisted transcript for the current task.
+		taskID := ""
+		if tp, ok := c.Backend.ag.(ui.TaskIDProvider); ok {
+			taskID = tp.GetTaskID()
+		}
+		if taskID != "" {
+			msgs, err := c.Backend.store.GetMessages(taskID)
+			if err != nil {
+				log.Warnf("GetMessages(%s) failed: %v", taskID, err)
+			}
+			start := 0
+			if len(msgs) > maxMsgs {
+				start = len(msgs) - maxMsgs
+			}
+			for i := start; i < len(msgs); i++ {
+				role := msgs[i].Role
+				if role == "tool" {
+					continue // tool noise is not shown in the restored transcript
+				}
+				views = appendView(views, role, msgs[i].Content)
+			}
+		}
 	}
 	data, _ := json.Marshal(views)
 	return string(data)

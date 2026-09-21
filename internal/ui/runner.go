@@ -5,6 +5,9 @@ import (
 
 	glineagent "github.com/liup215/gline/internal/agent"
 	"github.com/liup215/gline/internal/adkagent"
+	"github.com/liup215/gline/internal/memory"
+	"github.com/liup215/gline/internal/prompts"
+	"github.com/liup215/gline/pkg/types"
 )
 
 // AgentRunner is the agent functionality the TUI depends on. It is
@@ -36,6 +39,60 @@ type taskManager interface {
 	ResetTask()
 }
 
+// The capability interfaces below are optional agent features consumed via
+// type assertion (mainly by the GUI ChatService). The ADK agent implements
+// the task/working-dir/skills/memory set; the legacy agent implements all.
+// Callers must degrade gracefully when a capability is absent.
+
+// WorkingDirSetter updates the agent's notion of the project directory.
+type WorkingDirSetter interface {
+	SetWorkingDir(dir string)
+}
+
+// TaskIDProvider reports the current task index row.
+type TaskIDProvider interface {
+	GetTaskID() string
+}
+
+// TaskResetter detaches the current task so the next turn starts a new one.
+type TaskResetter interface {
+	ResetTask()
+}
+
+// SkillsSetter replaces the skill metadata rendered into the prompt.
+type SkillsSetter interface {
+	SetSkills(meta []types.SkillMeta)
+}
+
+// MemoryProvider exposes the unified memory engine (nil when absent).
+type MemoryProvider interface {
+	MemoryEngine() *memory.UnifiedEngine
+}
+
+// ConversationProvider exposes the legacy in-memory conversation. The ADK
+// agent keeps its transcript in the ADK session + storage, so it does not
+// implement this; use the storage-backed views instead.
+type ConversationProvider interface {
+	GetConversation() *types.Conversation
+}
+
+// Compactor manually compacts the legacy conversation. The ADK agent
+// compacts automatically (tail retention) and does not implement this.
+type Compactor interface {
+	Compact() bool
+}
+
+// RulesReloader reloads custom rule files into the legacy system prompt.
+type RulesReloader interface {
+	ReloadCustomRules() (bool, []prompts.RuleFileInfo, error)
+}
+
+// ResumeSessionResumer points the agent at an existing recorded session
+// (history resume). Only the ADK agent implements it.
+type ResumeSessionResumer interface {
+	ResumeSession(ctx context.Context, sessionID string) error
+}
+
 // adkRunner adapts *adkagent.Agent to AgentRunner.
 type adkRunner struct{ *adkagent.Agent }
 
@@ -43,6 +100,8 @@ func (a adkRunner) RunWithCallback(ctx context.Context, prompt string, cb glinea
 	_, err := a.Agent.RunWithCallback(ctx, prompt, cb)
 	return err
 }
+
+func (a adkRunner) GetTaskID() string { return a.Agent.TaskID() }
 
 // legacyRunner adapts the legacy *agent.BaseAgent to AgentRunner.
 type legacyRunner struct{ *glineagent.BaseAgent }
@@ -73,7 +132,21 @@ func AdkRunner(a *adkagent.Agent) AgentRunner { return adkRunner{a} }
 
 // compile-time checks
 var (
-	_ AgentRunner = adkRunner{}
-	_ AgentRunner = legacyRunner{}
-	_ taskManager = legacyRunner{}
+	_ AgentRunner          = adkRunner{}
+	_ AgentRunner          = legacyRunner{}
+	_ taskManager          = legacyRunner{}
+	_ taskManager          = adkRunner{}
+	_ WorkingDirSetter     = adkRunner{}
+	_ WorkingDirSetter     = legacyRunner{}
+	_ TaskIDProvider       = adkRunner{}
+	_ TaskIDProvider       = legacyRunner{}
+	_ TaskResetter         = adkRunner{}
+	_ TaskResetter         = legacyRunner{}
+	_ SkillsSetter         = adkRunner{}
+	_ SkillsSetter         = legacyRunner{}
+	_ MemoryProvider       = adkRunner{}
+	_ ConversationProvider = legacyRunner{}
+	_ Compactor            = legacyRunner{}
+	_ RulesReloader        = legacyRunner{}
+	_ ResumeSessionResumer = adkRunner{}
 )

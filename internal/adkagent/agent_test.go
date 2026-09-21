@@ -464,10 +464,9 @@ func systemInstructionOf(req *model.LLMRequest) string {
 }
 
 func TestSystemInstructionIncludesSkills(t *testing.T) {
-	a := &Agent{opts: Options{
-		Model:  "fake",
-		Skills: []types.SkillMeta{{Name: "pdf-master", Description: "Handle PDFs"}},
-	}}
+	a := &Agent{opts: Options{Model: "fake"},
+		skills: []types.SkillMeta{{Name: "pdf-master", Description: "Handle PDFs"}},
+	}
 	si := a.SystemInstruction()
 	if !strings.Contains(si, "Skills") || !strings.Contains(si, "pdf-master") || !strings.Contains(si, "Handle PDFs") {
 		t.Fatalf("skills section missing:\n%s", si)

@@ -6,18 +6,24 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
+	"github.com/liup215/gline/internal/adkagent"
 	"github.com/liup215/gline/internal/agent"
 	"github.com/liup215/gline/internal/api"
 	"github.com/liup215/gline/internal/config"
 	"github.com/liup215/gline/internal/log"
 	"github.com/liup215/gline/internal/mcp"
 	"github.com/liup215/gline/internal/memory"
+	"github.com/liup215/gline/internal/sessionstore"
 	"github.com/liup215/gline/internal/skills"
 	"github.com/liup215/gline/internal/storage"
 	"github.com/liup215/gline/internal/subagent"
 	"github.com/liup215/gline/internal/summarizer"
 	"github.com/liup215/gline/internal/tools"
+	"github.com/liup215/gline/internal/ui"
+	"google.golang.org/adk/v2/session"
+	"google.golang.org/adk/v2/session/compaction"
 	"github.com/liup215/gline/pkg/types"
 )
 
@@ -59,7 +65,8 @@ func InitBackend() error {
 type Backend struct {
 	cfg            *config.Manager
 	store          storage.Store
-	ag             agent.Agent
+	ag             ui.AgentRunner
+	toolRegistry   *tools.Registry
 	skillRegistry  *skills.Registry
 	mcpManager     *mcp.Manager
 }
@@ -90,7 +97,7 @@ func getGlobalConfigDir() string {
 
 func (b *Backend) initAgent() error {
 	cfg := b.cfg.Get()
-	
+
 	// Debug: Log MCP configuration
 	log.Infof("MCP config check: %d servers in config", len(cfg.MCP.Servers))
 	for i, server := range cfg.MCP.Servers {
@@ -102,96 +109,19 @@ func (b *Backend) initAgent() error {
 	if providerName == "" {
 		providerName = "openai"
 	}
+	useLegacy := os.Getenv("GLINE_AGENT") == "legacy"
 
-	var provider agent.Provider
-	var maxTokens int
-	var err error
-
-	switch providerName {
-	case "openai":
-		s := cfg.Provider.OpenAI
-		provider = api.NewOpenAIProvider(s.APIKey, s.Model, s.BaseURL)
-		maxTokens = s.MaxContextTokens
-
-	case "opencode-go":
-		s := cfg.Provider.OpenCodeGo
-		apiKey := s.APIKey
-		if apiKey == "" {
-			apiKey = os.Getenv("OPENCODE_API_KEY")
-		}
-		model := s.Model
-		if model == "" {
-			model = "kimi-k2.7-code"
-		}
-		baseURL := s.BaseURL
-		if baseURL == "" {
-			baseURL = api.OpenCodeGoBaseURL
-		}
-		provider, err = api.NewGoLLMProvider(apiKey, model, baseURL, "opencode-go")
-		if err != nil {
-			return fmt.Errorf("failed to create OpenCode Go provider: %w", err)
-		}
-		maxTokens = s.MaxContextTokens
-
-	case "openrouter":
-		apiKey := os.Getenv("OPENROUTER_API_KEY")
-		if apiKey == "" {
-			return fmt.Errorf("OpenRouter API key not configured")
-		}
-		model := "anthropic/claude-sonnet-4"
-		provider, err = api.NewGoLLMProvider(apiKey, model, "https://openrouter.ai/api/v1", "openrouter")
-		if err != nil {
-			return fmt.Errorf("failed to create OpenRouter provider: %w", err)
-		}
-
-	default:
-		return fmt.Errorf("unknown provider: %s. Supported: openai, opencode-go, openrouter", providerName)
+	// Legacy provider interface — always built: the ADK path's
+	// summarize_file / use_subagents tools still make sub-LLM calls
+	// through it.
+	legacyProvider, maxTokens, err := b.buildLegacyProvider(providerName)
+	if err != nil {
+		return err
 	}
+	_ = maxTokens
 
+	memoryEngine := b.initMemoryEngine(legacyProvider)
 	customRules := loadCustomRules()
-
-	// Try to initialize memory engine if enabled and embedding is configured
-	var memoryEngine *memory.UnifiedEngine
-	memCfg := cfg.Memory
-	if memCfg.Enabled && (memCfg.Embedding.Provider != "" || memCfg.Embedding.APIKey != "") {
-		var embedder memory.Embedder
-		switch memCfg.Embedding.Provider {
-		case "ollama":
-			embedder = memory.NewOllamaEmbedder(memCfg.Embedding.Model)
-		default:
-			apiKey := memCfg.Embedding.APIKey
-			if apiKey == "" {
-				apiKey = cfg.Provider.OpenAI.APIKey
-			}
-			embedder = memory.NewOpenAIEmbedder(apiKey, memCfg.Embedding.Model)
-			if memCfg.Embedding.BaseURL != "" {
-				embedder.(*memory.OpenAIEmbedder).BaseURL = memCfg.Embedding.BaseURL
-			}
-		}
-		var err error
-		memoryEngine, err = memory.NewUnifiedEngine(embedder)
-		if err != nil {
-			log.Warnf("Memory engine not initialised: %v", err)
-		} else {
-			// Wire LLM caller for wiki ingest and future memory layers
-			memoryEngine.Caller = func(ctx context.Context, systemPrompt, userContent string) (string, error) {
-				req := &agent.MessageRequest{
-					Messages: []types.Message{
-						{Role: types.RoleUser, Content: userContent},
-					},
-					SystemPrompt:  systemPrompt,
-					MaxTokens:     2048,
-					Temperature:   0.0,
-				}
-				resp, err := provider.CreateMessage(ctx, req)
-				if err != nil {
-					return "", err
-				}
-				return resp.Content, nil
-			}
-			log.Info("Memory engine initialised")
-		}
-	}
 
 	// Initialize and load skills FIRST so they are available for the use_skill tool
 	b.skillRegistry = skills.NewRegistry()
@@ -200,9 +130,10 @@ func (b *Backend) initAgent() error {
 	// Initialize tool registry first (without summarizer) to break the
 	// circular dependency between registry, subagent builder and summarizer.
 	registry := tools.InitDefaultRegistry(memoryEngine, nil)
+	b.toolRegistry = registry
 
 	// Subagent builder for large-file summarizer, using the real registry.
-	subBuilder := subagent.NewBuilder(provider, registry, "", customRules, b.skillRegistry.GetMeta())
+	subBuilder := subagent.NewBuilder(legacyProvider, registry, "", customRules, b.skillRegistry.GetMeta())
 	sum := summarizer.NewSummarizer(subagent.NewSummarizerCaller(subBuilder), summarizer.DefaultOptions())
 
 	// Register summarization tool and remaining tools.
@@ -210,23 +141,34 @@ func (b *Backend) initAgent() error {
 	tools.RegisterSkillTool(registry, b.skillRegistry)
 
 	// Register use_subagents tool
-	subagent.RegisterTool(registry, provider, registry, "", customRules, b.skillRegistry.GetMeta())
+	subagent.RegisterTool(registry, legacyProvider, registry, "", customRules, b.skillRegistry.GetMeta())
 
-	ag, err := agent.New(agent.Options{
-		Provider:     provider,
-		ToolRegistry:   registry,
-		Mode:           agent.ModeAct,
-		AutoApprove:    false,
-		CustomRules:    customRules,
-		Store:          b.store,
-		MaxTokens:      maxTokens,
-		MemoryEngine:   memoryEngine,
-		Skills:         b.skillRegistry.GetMeta(),
-	})
-	if err != nil {
-		return err
+	if useLegacy {
+		ag, err := agent.New(agent.Options{
+			Provider:       legacyProvider,
+			ToolRegistry:   registry,
+			Mode:           agent.ModeAct,
+			AutoApprove:    false,
+			CustomRules:    customRules,
+			Store:          b.store,
+			MaxTokens:      maxTokens,
+			MemoryEngine:   memoryEngine,
+			Skills:         b.skillRegistry.GetMeta(),
+		})
+		if err != nil {
+			return err
+		}
+		b.ag = ui.LegacyRunner(ag)
+		log.Info("GUI using legacy agent loop (GLINE_AGENT=legacy)")
+	} else {
+		adkAg, err := b.buildAdkAgent(providerName, registry, memoryEngine)
+		if err != nil {
+			return err
+		}
+		b.ag = ui.AdkRunner(adkAg)
+		provName, modelName := adkAg.ProviderInfo()
+		log.Infof("GUI using ADK agent with provider %s model %s", provName, modelName)
 	}
-	b.ag = ag
 
 	// Initialize MCP Manager if configured
 	if len(cfg.MCP.Servers) > 0 {
@@ -254,6 +196,175 @@ func (b *Backend) initAgent() error {
 	}
 
 	return nil
+}
+
+// guiProviderSettings carries the resolved provider coordinates.
+type guiProviderSettings struct {
+	id      string // internal provider id (openai / opencode-go / openrouter / volcano)
+	model   string
+	apiKey  string
+	baseURL string
+}
+
+// resolveProviderSettings maps the configured default provider name to
+// concrete credentials and endpoints.
+func (b *Backend) resolveProviderSettings(name string) (guiProviderSettings, error) {
+	cfg := b.cfg.Get()
+	switch name {
+	case "openai":
+		s := cfg.Provider.OpenAI
+		return guiProviderSettings{id: "openai", model: s.Model, apiKey: s.APIKey, baseURL: s.BaseURL}, nil
+	case "opencode-go":
+		s := cfg.Provider.OpenCodeGo
+		apiKey := s.APIKey
+		if apiKey == "" {
+			apiKey = os.Getenv("OPENCODE_API_KEY")
+		}
+		model := s.Model
+		if model == "" {
+			model = "kimi-k2.7-code"
+		}
+		baseURL := s.BaseURL
+		if baseURL == "" {
+			baseURL = api.OpenCodeGoBaseURL
+		}
+		return guiProviderSettings{id: "opencode-go", model: model, apiKey: apiKey, baseURL: baseURL}, nil
+	case "openrouter":
+		apiKey := os.Getenv("OPENROUTER_API_KEY")
+		if apiKey == "" {
+			return guiProviderSettings{}, fmt.Errorf("OpenRouter API key not configured")
+		}
+		return guiProviderSettings{id: "openrouter", model: "anthropic/claude-sonnet-4", apiKey: apiKey, baseURL: "https://openrouter.ai/api/v1"}, nil
+	default:
+		return guiProviderSettings{}, fmt.Errorf("unknown provider: %s. Supported: openai, opencode-go, openrouter", name)
+	}
+}
+
+// buildLegacyProvider constructs the legacy agent.Provider for the
+// configured provider. Used by the legacy loop and by the ADK path's
+// sub-LLM tools (summarize_file, use_subagents).
+func (b *Backend) buildLegacyProvider(name string) (agent.Provider, int, error) {
+	s, err := b.resolveProviderSettings(name)
+	if err != nil {
+		return nil, 0, err
+	}
+	cfg := b.cfg.Get()
+	var maxTokens int
+	var provider agent.Provider
+	switch s.id {
+	case "openai":
+		maxTokens = cfg.Provider.OpenAI.MaxContextTokens
+		provider = api.NewOpenAIProvider(s.apiKey, s.model, s.baseURL)
+	case "opencode-go":
+		maxTokens = cfg.Provider.OpenCodeGo.MaxContextTokens
+		provider, err = api.NewGoLLMProvider(s.apiKey, s.model, s.baseURL, "opencode-go")
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to create OpenCode Go provider: %w", err)
+		}
+	case "openrouter":
+		provider, err = api.NewGoLLMProvider(s.apiKey, s.model, s.baseURL, "openrouter")
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to create OpenRouter provider: %w", err)
+		}
+	}
+	return provider, maxTokens, nil
+}
+
+// initMemoryEngine mirrors the CLI assembly: builds the unified memory
+// engine when enabled and an embedder is configured.
+func (b *Backend) initMemoryEngine(caller agent.Provider) *memory.UnifiedEngine {
+	cfg := b.cfg.Get()
+	memCfg := cfg.Memory
+	if !memCfg.Enabled || (memCfg.Embedding.Provider == "" && memCfg.Embedding.APIKey == "") {
+		return nil
+	}
+	var embedder memory.Embedder
+	switch memCfg.Embedding.Provider {
+	case "ollama":
+		embedder = memory.NewOllamaEmbedder(memCfg.Embedding.Model)
+	default:
+		apiKey := memCfg.Embedding.APIKey
+		if apiKey == "" {
+			apiKey = cfg.Provider.OpenAI.APIKey
+		}
+		embedder = memory.NewOpenAIEmbedder(apiKey, memCfg.Embedding.Model)
+		if memCfg.Embedding.BaseURL != "" {
+			embedder.(*memory.OpenAIEmbedder).BaseURL = memCfg.Embedding.BaseURL
+		}
+	}
+	engine, err := memory.NewUnifiedEngine(embedder)
+	if err != nil {
+		log.Warnf("Memory engine not initialised: %v", err)
+		return nil
+	}
+	if caller != nil {
+		engine.Caller = func(ctx context.Context, systemPrompt, userContent string) (string, error) {
+			req := &agent.MessageRequest{
+				Messages: []types.Message{
+					{Role: types.RoleUser, Content: userContent},
+				},
+				SystemPrompt: systemPrompt,
+				MaxTokens:    2048,
+				Temperature:  0.0,
+			}
+			resp, err := caller.CreateMessage(ctx, req)
+			if err != nil {
+				return "", err
+			}
+			return resp.Content, nil
+		}
+	}
+	log.Info("Memory engine initialised")
+	return engine
+}
+
+// mapGUIProviderID maps internal provider ids to internal/provider ids.
+func mapGUIProviderID(id string) string {
+	if id == "opencode-go" {
+		return "opencode"
+	}
+	return id
+}
+
+// buildAdkAgent assembles the ADK-backed agent (same shape as the CLI's
+// initializeAgent): provider LLM, tool registry, memory engine, compaction
+// and the persistent ADK session store.
+func (b *Backend) buildAdkAgent(providerName string, registry *tools.Registry, memoryEngine *memory.UnifiedEngine) (*adkagent.Agent, error) {
+	s, err := b.resolveProviderSettings(providerName)
+	if err != nil {
+		return nil, err
+	}
+
+	sessionStore, err := sessionstore.Open(sessionstore.Options{})
+	if err != nil {
+		log.Warnf("ADK session store unavailable (%v); using in-memory sessions", err)
+		sessionStore = nil // adkagent falls back to an in-memory service
+	}
+	var sessionSvc session.Service
+	if sessionStore != nil {
+		sessionSvc = sessionStore.Service()
+	}
+
+	return adkagent.New(context.Background(), adkagent.Options{
+		Provider:       mapGUIProviderID(s.id),
+		Model:          s.model,
+		APIKey:         s.apiKey,
+		BaseURL:        s.baseURL,
+		Tools:          registry,
+		MemoryEngine:   memoryEngine,
+		Skills:         b.skillRegistry.GetMeta(),
+		Compaction:     defaultCompactionConfig(),
+		Store:          b.store,
+		SessionService: sessionSvc,
+	})
+}
+
+// defaultCompactionConfig mirrors the CLI's tail-retention compaction.
+func defaultCompactionConfig() *compaction.Config {
+	return &compaction.Config{
+		TokenThreshold:     80_000,
+		EventRetentionSize: 12,
+	}
 }
 
 func loadCustomRules() string {
@@ -360,10 +471,9 @@ func (b *Backend) restartMCPManager() error {
 	// Create and start new MCP manager
 	cfg := b.cfg.Get()
 	if len(cfg.MCP.Servers) > 0 {
-		// Get tool registry from agent
-		if b.ag != nil {
-			registry := b.ag.GetToolRegistry()
-			b.mcpManager = mcp.NewManager(&cfg.MCP, registry)
+		// Get tool registry from the backend
+		if b.toolRegistry != nil {
+			b.mcpManager = mcp.NewManager(&cfg.MCP, b.toolRegistry)
 			if err := b.mcpManager.Start(context.Background()); err != nil {
 				// Don't return error here, just log it - we don't want to crash the app
 				log.Warnf("Failed to start MCP manager: %v", err)
@@ -390,15 +500,13 @@ func (b *Backend) DeleteTask(taskID string) error {
 	return b.store.DeleteTask(taskID)
 }
 
-// LoadTask restores the agent's state for an existing task by setting its taskID
-// and loading messages back into the conversation.
+// LoadTask restores the agent's state for an existing task. Legacy agents
+// replay the stored messages into the in-memory conversation; ADK agents
+// resume the recorded ADK session when one exists (falling back to task-id
+// reattachment for pre-sessionstore tasks).
 func (b *Backend) LoadTask(taskID string) (*storage.TaskRecord, error) {
 	if b.ag == nil {
 		return nil, fmt.Errorf("agent not initialised")
-	}
-	baseAg, ok := b.ag.(*agent.BaseAgent)
-	if !ok {
-		return nil, fmt.Errorf("agent type mismatch")
 	}
 	// Load task metadata and messages from storage
 	task, msgs, err := b.store.GetTaskSummary(taskID)
@@ -407,22 +515,41 @@ func (b *Backend) LoadTask(taskID string) (*storage.TaskRecord, error) {
 	}
 	if task != nil && task.WorkingDir != "" {
 		if err := os.Chdir(task.WorkingDir); err == nil {
-			baseAg.SetWorkingDir(task.WorkingDir)
+			if wd, ok := b.ag.(ui.WorkingDirSetter); ok {
+				wd.SetWorkingDir(task.WorkingDir)
+			}
 		} else {
 			log.Warnf("Failed to chdir to %s: %v", task.WorkingDir, err)
 		}
 	}
-	// Set task ID so responses are stored under the same task
-	baseAg.SetTaskID(taskID)
-	// Load messages from storage into the conversation
-	b.ag.GetConversation().Clear()
-	for _, m := range msgs {
-		msg, err := m.ToTypesMessage()
-		if err != nil {
-			log.Warnf("failed to convert message record: %v", err)
-			continue
+
+	if base, ok := b.ag.(ui.ConversationProvider); ok {
+		// Legacy path: replay transcript into the conversation.
+		if tm, ok := b.ag.(interface{ SetTaskID(string) }); ok {
+			tm.SetTaskID(taskID)
 		}
-		b.ag.GetConversation().AddMessage(msg)
+		base.GetConversation().Clear()
+		for _, m := range msgs {
+			msg, err := m.ToTypesMessage()
+			if err != nil {
+				log.Warnf("failed to convert message record: %v", err)
+				continue
+			}
+			base.GetConversation().AddMessage(msg)
+		}
+		return task, nil
+	}
+
+	// ADK path: resume the recorded session when available.
+	if resumer, ok := b.ag.(ui.ResumeSessionResumer); ok && task != nil && task.SessionID != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := resumer.ResumeSession(ctx, task.SessionID); err != nil {
+			log.Warnf("ResumeSession(%s) failed: %v; attaching task id only", task.SessionID, err)
+		}
+	}
+	if tm, ok := b.ag.(interface{ SetTaskID(string) }); ok {
+		tm.SetTaskID(taskID)
 	}
 	return task, nil
 }

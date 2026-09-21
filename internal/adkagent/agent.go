@@ -121,6 +121,9 @@ type Agent struct {
 
 	taskID    string // task index row (empty until the first turn creates one)
 	taskTitle string
+
+	workingDir string            // dynamic working dir for the system instruction
+	skills     []types.SkillMeta // dynamic skill metadata for the system instruction
 }
 
 // New builds the LLM client, wraps the gline tool registry for ADK, creates
@@ -157,6 +160,8 @@ func NewWithModel(ctx context.Context, opts Options, llm model.LLM) (*Agent, err
 		sessionSvc: sessionSvc,
 		mode:       opts.Mode,
 		yolo:       opts.Yolo,
+		workingDir: opts.WorkingDir,
+		skills:     opts.Skills,
 	}
 
 	adkTools, err := a.buildTools()
@@ -269,19 +274,34 @@ Write tools (write, edit, run) are disabled; do not attempt them.
 You are in Act Mode. Execute tasks by reading, writing, and modifying files.
 `)
 	}
-	if a.opts.WorkingDir != "" {
-		fmt.Fprintf(&b, "\nCurrent working directory: %s\n", a.opts.WorkingDir)
+	if wd := a.workingDirLocked(); wd != "" {
+		fmt.Fprintf(&b, "\nCurrent working directory: %s\n", wd)
 	}
-	if len(a.opts.Skills) > 0 {
+	if skills := a.skillsLocked(); len(skills) > 0 {
 		b.WriteString("\n# Skills\n\n")
 		b.WriteString(`Specialized instructions are available as skills. When the user's request matches one, activate it with the use_skill tool (once per task), then follow its instructions.
 
 `)
-		for _, s := range a.opts.Skills {
+		for _, s := range skills {
 			fmt.Fprintf(&b, "- %s: %s\n", s.Name, s.Description)
 		}
 	}
 	return b.String()
+}
+
+// workingDirLocked returns the current working directory shown in the
+// system instruction. Callers must not hold a.mu.
+func (a *Agent) workingDirLocked() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.workingDir
+}
+
+// skillsLocked returns the current skill metadata. Callers must not hold a.mu.
+func (a *Agent) skillsLocked() []types.SkillMeta {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.skills
 }
 
 // SessionID returns the ADK session this agent runs against.
@@ -391,6 +411,29 @@ func (a *Agent) TaskID() string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.taskID
+}
+
+// SetWorkingDir updates the working directory shown in the system
+// instruction (effective on the next invocation) and used for future
+// task records. The sandbox/tools follow the process cwd, which callers
+// change separately.
+func (a *Agent) SetWorkingDir(dir string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.workingDir = dir
+}
+
+// SetSkills replaces the skill metadata rendered in the system
+// instruction (effective on the next invocation).
+func (a *Agent) SetSkills(meta []types.SkillMeta) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.skills = meta
+}
+
+// MemoryEngine returns the configured memory engine (nil when absent).
+func (a *Agent) MemoryEngine() *memory.UnifiedEngine {
+	return a.opts.MemoryEngine
 }
 
 // ResumeSession points the agent at an existing ADK session (history
@@ -515,7 +558,7 @@ func (a *Agent) streamTurn(runCtx context.Context, prompt string, cb glineagent.
 	// conversation, mirroring the legacy agent's behaviour.
 	if a.opts.Store != nil && a.taskID == "" {
 		prov, mdl := a.ProviderInfo()
-		id, err := a.opts.Store.CreateTask(a.taskTitle, prompt, a.Mode(), prov, mdl, a.opts.WorkingDir)
+		id, err := a.opts.Store.CreateTask(a.taskTitle, prompt, a.Mode(), prov, mdl, a.workingDir)
 		if err != nil {
 			log.Warnf("failed to create task record: %v", err)
 		} else {
