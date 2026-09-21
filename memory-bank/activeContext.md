@@ -2,7 +2,7 @@
 
 ## Current Focus
 
-### TUI 修复：输入历史回溯 + history 屏幕导航加固 ✅（2026-09-21，7d55a33）
+### TUI 修复：输入历史回溯 + history 屏幕导航加固 + 滚动窗口 ✅（2026-09-21，7d55a33 / e7ad27c）
 
 **问题**: 当前 TUI（internal/ui）丢失了旧 inputModel 的输入历史回溯 —— 聊天输入框按 ↑/↓ 无法调出历史 prompt；另外 /history 屏幕存在隐患：textarea 残留 "/" 时 slash 菜单会在 history 屏幕后台静默重新激活，吃掉本应导航任务列表的 ↑/↓。
 
@@ -10,7 +10,8 @@
 - 新增 `internal/ui/input_history.go`：`inputHistory`/`histIdx`/`histDraft` 状态 + `addToInputHistory`（去连续重复、跳过空、上限 100）/`prevInputHistory`（↑ 回溯，进入时存草稿）/`nextInputHistory`（↓ 向新，越过最新恢复草稿）/`resetHistoryBrowsing`
 - 接入点：聊天路径 KeyUp/KeyDown（仅单行时接管，多行保留原生光标移动）；`submitUserMessage` 提交后记录并重置浏览位；`loadHistoryTask` 回主屏时重置
 - history 屏幕加固：`enterHistoryScreen` 重置 textarea；Update() 的 slash 自动检测在 `screen == ScreenHistory` 时跳过
-- 测试：`input_history_test.go` 6 项（箭头回溯/草稿恢复/多行不接管/去重+提交重置/history 屏箭头导航/slash 模式不误激活），全部通过；17 包绿；已重装 `C:\Users\22569\bin\gline.exe`
+- 测试：`input_history_test.go` 7 项 + `view/history_screen_test.go` 3 项，全部通过；17 包绿
+- **e7ad27c 滚动窗口**：history 列表改为可视窗口渲染（`view.HistoryVisibleRows(height)` 共享公式 + `historyScroll` 光标跟随 + 底部 `[x–y / z]` 位置指示 + resize 重夹，每次选择移动调 `adjustHistoryScroll`）；详情页消息超 40 条显示 "and N more"；顺带修掉 `renderHistoryDetail` 中 `t.ID[:8]` 短 ID panic 隐患；已重装 `C:\Users\22569\bin\gline.exe`
 
 ### Agent Loop 重构 — Phase 0-7b 全部完成（2026-09-21，最新提交 f12be63）
 
