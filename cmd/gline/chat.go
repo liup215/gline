@@ -13,12 +13,9 @@ import (
 	"github.com/liup215/gline/internal/log"
 	"github.com/liup215/gline/internal/memory"
 	"github.com/liup215/gline/internal/prompts"
-	"github.com/liup215/gline/internal/provider"
 	"github.com/liup215/gline/internal/sessionstore"
 	"github.com/liup215/gline/internal/skills"
 	"github.com/liup215/gline/internal/storage"
-	"github.com/liup215/gline/internal/subagent"
-	"github.com/liup215/gline/internal/summarizer"
 	"github.com/liup215/gline/internal/tools"
 	"github.com/liup215/gline/internal/ui"
 	"google.golang.org/adk/v2/session"
@@ -171,25 +168,16 @@ func initializeAgent() (ui.AgentRunner, storage.Store, error) {
 		return nil, nil, fmt.Errorf("mock provider is no longer supported (legacy agent loop removed); configure a real provider")
 	}
 
-	// Shared tool-registry assembly.
-	registry, store, skillReg, err := assembleSharedComponents()
+	// Shared tool-assembly. (skillReg is consumed inside; the agent only
+	// needs registry + store now that use_subagents is disabled.)
+	registry, store, _, err := assembleSharedComponents()
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// Sub-LLM backend — kept solely for sub-LLM tools
-	// (summarize_file / use_subagents).
-	subLLM, err := provider.NewLLM(context.Background(), mapProviderID(settings.name), settings.model, settings.apiKey, settings.baseURL, "", nil)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create %s sub-LLM client: %w", settings.name, err)
-	}
+	// summarize_file / use_subagents tools are disabled (2026-09-21, tool
+	// pruning); no sub-LLM client is needed anymore.
 	log.Infof("Using %s provider with model: %s", settings.name, settings.model)
-
-	customRules, _ := prompts.LoadCustomRules()
-	subBuilder := subagent.NewBuilder(subLLM, registry, "", customRules, skillReg.GetMeta())
-	sum := summarizer.NewSummarizer(subagent.NewSummarizerCaller(subBuilder), summarizer.DefaultOptions())
-	_ = tools.RegisterSummarizeFileTool(registry, sum)
-	subagent.RegisterTool(registry, subLLM, registry, "", customRules, skillReg.GetMeta())
 	log.Infof("Initialized %d tools", registry.Count())
 
 	ctx := context.Background()

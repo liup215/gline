@@ -32,10 +32,9 @@ func InitDefaultRegistry(engine *memory.UnifiedEngine, sum *summarizer.Summarize
 		RequiresConfirmation: false,
 	})
 
-	// Large-file summarization (optional)
-	if sum != nil {
-		_ = RegisterSummarizeFileTool(registry, sum)
-	}
+	// Note: summarize_file registration disabled (2026-09-21, tool pruning);
+	// the `sum` parameter is kept for API compatibility. Re-enable with
+	// RegisterSummarizeFileTool(registry, sum) if needed.
 
 	// File write operations - act mode only; run without approval prompts
 	// (user preference: full auto-approve).
@@ -68,12 +67,7 @@ func InitDefaultRegistry(engine *memory.UnifiedEngine, sum *summarizer.Summarize
 		RequiresConfirmation: false,
 	})
 
-	registry.Register(&ToolInfo{
-		Tool:                 NewListCodeDefinitionNamesTool(),
-		Category:             CategorySearch,
-		AllowedModes:         []string{"plan", "act"},
-		RequiresConfirmation: false,
-	})
+	// Note: list_code_definition_names disabled (2026-09-21, tool pruning).
 
 	// Command execution - act mode only; runs directly without an approval
 	// prompt (user preference: no confirmation for running commands).
@@ -124,21 +118,8 @@ func InitDefaultRegistry(engine *memory.UnifiedEngine, sum *summarizer.Summarize
 		},
 	})
 
-	// Network tools - allowed in both modes
-	registry.Register(&ToolInfo{
-		Tool:                 NewWebFetchTool(),
-		Category:             CategoryNetwork,
-		AllowedModes:         []string{"plan", "act"},
-		RequiresConfirmation: false,
-	})
-
-	// Browser automation - act mode only (resource intensive); no approval prompt.
-	registry.Register(&ToolInfo{
-		Tool:                 NewBrowserCopyTool(),
-		Category:             CategoryNetwork,
-		AllowedModes:         []string{"act"},
-		RequiresConfirmation: false,
-	})
+	// Note: web_fetch / browser_copy disabled (2026-09-21, tool pruning);
+	// re-enable via RegisterSummarizeFileTool-style blocks here if needed.
 
 	// Memory / knowledge base tools - optional, only if engine is available
 	if engine != nil {

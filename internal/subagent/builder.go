@@ -21,7 +21,7 @@ var AllowedTools = []string{
 	"ls",
 	"grep",
 	"glob",
-	"list_code_definition_names",
+	// list_code_definition_names removed (tool disabled 2026-09-21).
 	"run",
 	"use_skill",
 	"write",

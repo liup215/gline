@@ -18,8 +18,6 @@ import (
 	"github.com/liup215/gline/internal/sessionstore"
 	"github.com/liup215/gline/internal/skills"
 	"github.com/liup215/gline/internal/storage"
-	"github.com/liup215/gline/internal/subagent"
-	"github.com/liup215/gline/internal/summarizer"
 	"github.com/liup215/gline/internal/tools"
 	"github.com/liup215/gline/internal/ui"
 	"google.golang.org/adk/v2/model"
@@ -111,35 +109,27 @@ func (b *Backend) initAgent() error {
 		providerName = "openai"
 	}
 
-	// Sub-LLM backend — always built: the summarize_file / use_subagents
-	// tools make their own model calls through it.
+	// Sub-LLM backend — used by the memory engine (summarize_file /
+	// use_subagents tools are disabled).
 	subLLM, err := b.buildSubLLM(providerName)
 	if err != nil {
 		return err
 	}
 
 	memoryEngine := b.initMemoryEngine(subLLM)
-	customRules := loadCustomRules()
 
 	// Initialize and load skills FIRST so they are available for the use_skill tool
 	b.skillRegistry = skills.NewRegistry()
 	b.skillRegistry.LoadFromDirs(skills.DefaultSkillDirs...)
 
-	// Initialize tool registry first (without summarizer) to break the
-	// circular dependency between registry, subagent builder and summarizer.
+	// Initialize tool registry first to keep assembly ordering explicit.
 	registry := tools.InitDefaultRegistry(memoryEngine, nil)
 	b.toolRegistry = registry
 
-	// Subagent builder for large-file summarizer, using the real registry.
-	subBuilder := subagent.NewBuilder(subLLM, registry, "", customRules, b.skillRegistry.GetMeta())
-	sum := summarizer.NewSummarizer(subagent.NewSummarizerCaller(subBuilder), summarizer.DefaultOptions())
-
-	// Register summarization tool and remaining tools.
-	_ = tools.RegisterSummarizeFileTool(registry, sum)
+	// Register remaining tools. (summarize_file / use_subagents are
+	// disabled; re-register via RegisterSummarizeFileTool / subagent.RegisterTool
+	// if ever needed again.)
 	tools.RegisterSkillTool(registry, b.skillRegistry)
-
-	// Register use_subagents tool
-	subagent.RegisterTool(registry, subLLM, registry, "", customRules, b.skillRegistry.GetMeta())
 
 	adkAg, err := b.buildAdkAgent(providerName, registry, memoryEngine)
 	if err != nil {
