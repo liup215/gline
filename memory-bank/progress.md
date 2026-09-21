@@ -1,5 +1,12 @@
 # Progress
 
+## 2026-09-21 — 全工具免确认 ✅ (14d00b0)
+
+- `internal/tools/init.go`: write / edit / browser_copy 也改为 `RequiresConfirmation: false`（此前 cc616e0 已免 execute_command）
+- 现在内置工具在 Act 模式全部直接运行，无任何审批提示；Plan 模式门控不变
+- **工具名澄清**: 模型侧早已是短名 read/write/edit/run（pkg/types/tool_names.go + internal/tools/file.go + prompts/system.go 一致）；旧名 write_to_file/replace_in_file 只存在于 internal/ui/view/styles.go 的显示别名表（NormalizeToolName 兼容历史记录）
+- 已部署 `C:\Users\22569\bin\gline.exe`
+
 ## 2026-09-21 — execute_command 免确认 ✅ (cc616e0)
 
 - `internal/tools/init.go`: execute_command `RequiresConfirmation: true → false`
