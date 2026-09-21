@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-09-21 — rg/fd 外部搜索工具集成 ✅（70fee1b，已部署）
+
+| 改动 | 文件 | 说明 |
+|------|------|------|
+| search_files rg 后端 | `internal/tools/search_rg.go`（新） | `rg --json` 解析 → SearchResult，输出格式与 Go 版一致 |
+| 纯 Go 回退 | `internal/tools/search.go` | Execute 拆分: rg 优先 → searchFilesGo 回退；取消不回退 |
+| find_files 新工具 | `internal/tools/find_files.go`（新） | fd `--search-path/--glob/--exclude`，Go walk 回退 |
+| 外部工具检测 | `internal/tools/external.go`（新） | sync.Once LookPath + 测试 override 变量 |
+| Windows 控制台抑制 | `internal/tools/exec_windows.go`（新） | CREATE_NO_WINDOW，防 GUI 闪烁 |
+| glob 绝对路径 gotcha | search_rg.go | 跳过目录 glob 必须无斜杠（`!dir` 而非 `!dir/**`） |
+| 注册/提示词/显示 | init.go, tool_names.go, system.go, styles.go | find_files 全链路接入 |
+
+**性能**: rg/fd 并行遍历 + SIMD 匹配 + .gitignore 感知，大仓库比纯 Go walk 快 10-100x。
+
+**验证**: `go test ./... -count=1 -race` 17 包绿；`go vet` 干净；已部署 `C:/Users/22569/bin/gline.exe`。
+
 ## 2026-09-21 — 全工具零权限提示（锁死默认）✅ (24cadcc)
 
 - 内置工具全部 `RequiresConfirmation: false`（cc616e0 + 14d00b0）；MCP/子代理工具注册时未设标志（零值 false）
