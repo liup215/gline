@@ -12,7 +12,6 @@ import (
 	glineagent "github.com/liup215/gline/internal/agent"
 	"github.com/liup215/gline/internal/log"
 	"github.com/liup215/gline/internal/memory"
-	"github.com/liup215/gline/internal/prompts"
 	"github.com/liup215/gline/internal/sessionstore"
 	"github.com/liup215/gline/internal/skills"
 	"github.com/liup215/gline/internal/storage"
@@ -221,8 +220,8 @@ func mapProviderID(name string) string {
 // assembleSharedComponents builds the tool registry, storage, skills and
 // subagent wiring used by the agent engine.
 func assembleSharedComponents() (*tools.Registry, storage.Store, *skills.Registry, error) {
-	// Load custom rules from global and workspace directories
-	_, _ = prompts.LoadCustomRules()
+	// (Custom rules are loaded per model call by adkagent.SystemInstruction;
+	// they used to be loaded-and-discarded here for the subagent builder.)
 
 	// Initialize skills registry
 	skillReg := skills.NewRegistry()

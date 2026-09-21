@@ -18,6 +18,7 @@ import (
 
 	glineagent "github.com/liup215/gline/internal/agent" // StreamCallback interface
 	"github.com/liup215/gline/internal/log"
+	"github.com/liup215/gline/internal/prompts"
 	"github.com/liup215/gline/internal/memory"
 	"github.com/liup215/gline/internal/provider"
 	"github.com/liup215/gline/internal/storage"
@@ -280,6 +281,15 @@ You are in Act Mode. Execute tasks by reading, writing, and modifying files.
 	}
 	if wd := a.workingDirLocked(); wd != "" {
 		fmt.Fprintf(&b, "\nCurrent working directory: %s\n", wd)
+	}
+	// Custom rules (~/.gline/rules/*.md|txt and ./.gline/rules/*.md|txt).
+	// Loaded on every call: the instruction provider already runs per model
+	// call (that is how Plan/Act switching works), the files are small, and
+	// re-reading keeps rule edits live without an agent rebuild.
+	if rules, err := prompts.LoadCustomRules(); err == nil && rules != "" {
+		b.WriteString("\n")
+		b.WriteString(rules)
+		b.WriteString("\n")
 	}
 	if skills := a.skillsLocked(); len(skills) > 0 {
 		b.WriteString("\n# Skills\n\n")

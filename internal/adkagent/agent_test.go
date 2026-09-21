@@ -481,3 +481,29 @@ func TestSystemInstructionIncludesSkills(t *testing.T) {
 		t.Fatal("SKILLS section rendered with empty skill list")
 	}
 }
+
+func TestSystemInstructionIncludesCustomRules(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	rulesDir := filepath.Join(dir, ".gline", "rules")
+	if err := os.MkdirAll(rulesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rulesDir, "style.md"), []byte("Always answer in haiku."), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a := &Agent{opts: Options{Model: "fake"}}
+	si := a.SystemInstruction()
+	if !strings.Contains(si, "Workspace Rules") || !strings.Contains(si, "Always answer in haiku.") {
+		t.Fatalf("custom rules not in system instruction:\n%s", si)
+	}
+
+	// Empty workspace: no Workspace Rules section. (Global rules from the
+	// real HOME may legitimately appear on a developer machine, so only the
+	// workspace section is asserted absent.)
+	t.Chdir(t.TempDir())
+	a2 := &Agent{opts: Options{Model: "fake"}}
+	if strings.Contains(a2.SystemInstruction(), "Workspace Rules") {
+		t.Fatalf("Workspace Rules rendered with no workspace rule files:\n%s", a2.SystemInstruction())
+	}
+}

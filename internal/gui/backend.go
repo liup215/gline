@@ -331,42 +331,6 @@ func defaultCompactionConfig() *compaction.Config {
 	}
 }
 
-func loadCustomRules() string {
-	homeDir, _ := os.UserHomeDir()
-	var content string
-
-	globalRulesDir := filepath.Join(homeDir, ".gline", "rules")
-	content += loadRulesFromDir(globalRulesDir)
-
-	workspaceRulesDir := filepath.Join(".gline", "rules")
-	content += loadRulesFromDir(workspaceRulesDir)
-
-	return content
-}
-
-func loadRulesFromDir(dir string) string {
-	var result string
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return ""
-	}
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		if filepath.Ext(name) != ".md" && filepath.Ext(name) != ".txt" {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(dir, name))
-		if err != nil || len(data) == 0 {
-			continue
-		}
-		result += string(data) + "\n"
-	}
-	return result
-}
-
 // GetConfig returns the current configuration as JSON
 func (b *Backend) GetConfig() (string, error) {
 	cfg := b.cfg.Get()
