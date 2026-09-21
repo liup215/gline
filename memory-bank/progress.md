@@ -1,5 +1,12 @@
 # Progress
 
+## 2026-09-21 — execute_command 免确认 ✅ (cc616e0)
+
+- `internal/tools/init.go`: execute_command `RequiresConfirmation: true → false`
+- Act 模式下命令直接运行，不再弹 "Approve run"；Plan 模式门控不变
+- write_to_file / replace_in_file / browser_copy 仍保留确认
+- 已部署 `C:\Users\22569\bin\gline.exe`
+
 ## 2026-09-21 — 并行工具审批阻塞修复 ✅ (1269749)
 
 | 项 | 内容 |
