@@ -17,6 +17,11 @@ func handleWindowSize(m *Model, msg tea.WindowSizeMsg) []tea.Cmd {
 	m.height = msg.Height
 	m.viewport.Width = msg.Width
 
+	// Keep the history list window in range when the terminal shrinks.
+	if m.screen == ScreenHistory {
+		m.adjustHistoryScroll()
+	}
+
 	// Calculate flexible layout
 	viewportH, toolH, inputH := calculateLayout(msg.Height)
 	m.toolAreaHeight = toolH
@@ -236,11 +241,13 @@ func handleHistoryKeyMsg(m *Model, msg tea.KeyMsg) []tea.Cmd {
 	case tea.KeyUp:
 		if m.historySelected > 0 {
 			m.historySelected--
+			m.adjustHistoryScroll()
 		}
 
 	case tea.KeyDown:
 		if m.historySelected < len(m.historyTasks)-1 {
 			m.historySelected++
+			m.adjustHistoryScroll()
 		}
 
 	case tea.KeyEnter:

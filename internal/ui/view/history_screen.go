@@ -14,12 +14,32 @@ import (
 type HistoryScreenData struct {
 	Tasks         []storage.TaskRecord
 	SelectedIndex int
+	ScrollOffset  int // index of the first visible task (windowed list)
 	ShowDetail    bool
 	DetailTask    *storage.TaskRecord
 	DetailMsgs    []storage.MessageRecord
 	ConfirmDelete string // task ID awaiting deletion confirmation
 	Width         int
 	Height        int
+}
+
+// Layout constants for the history list: title block (2 lines),
+// footer block (2 lines) and 3 lines per task row (title + meta + blank).
+const (
+	historyChromeLines = 4
+	historyRowLines    = 3
+	maxDetailMessages  = 40
+)
+
+// HistoryVisibleRows returns how many task rows fit on the history screen
+// for the given terminal height. Shared by the renderer and the model so
+// scroll bookkeeping and drawing always agree.
+func HistoryVisibleRows(height int) int {
+	rows := 1
+	if height > historyChromeLines+historyRowLines {
+		rows = (height - historyChromeLines) / historyRowLines
+	}
+	return rows
 }
 
 // RenderHistoryScreen renders the full-screen history view.
@@ -45,7 +65,23 @@ func renderHistoryList(data HistoryScreenData) string {
 		return b.String()
 	}
 
-	for i, t := range data.Tasks {
+	// Windowed rendering: only the rows that fit on screen, starting at
+	// ScrollOffset, so long lists stay navigable on short terminals.
+	visible := HistoryVisibleRows(data.Height)
+	start := data.ScrollOffset
+	if start < 0 {
+		start = 0
+	}
+	if start > len(data.Tasks) {
+		start = len(data.Tasks)
+	}
+	end := start + visible
+	if end > len(data.Tasks) {
+		end = len(data.Tasks)
+	}
+
+	for i, t := range data.Tasks[start:end] {
+		i := start + i
 		prefix := "  "
 		if i == data.SelectedIndex {
 			prefix = "▸ "
@@ -77,11 +113,14 @@ func renderHistoryList(data HistoryScreenData) string {
 		b.WriteString(meta + "\n\n")
 	}
 
-	// Footer help
+	// Footer help with a position indicator when the list is windowed.
 	b.WriteString("\n")
 	help := "↑/↓ select • Enter: load & continue • D: delete • Esc: back"
 	if data.ConfirmDelete != "" {
 		help = "Press Y to confirm deletion, N to cancel"
+	}
+	if visible < len(data.Tasks) {
+		help += fmt.Sprintf("    [%d–%d / %d]", start+1, end, len(data.Tasks))
 	}
 	b.WriteString(HelpStyle.Render("  " + help))
 	return b.String()
@@ -97,7 +136,7 @@ func renderHistoryDetail(data HistoryScreenData) string {
 	b.WriteString("\n\n")
 
 	b.WriteString(fmt.Sprintf("  Title:    %s\n", t.Title))
-	b.WriteString(fmt.Sprintf("  ID:       %s\n", t.ID[:8]))
+	b.WriteString(fmt.Sprintf("  ID:       %s\n", t.ID))
 	b.WriteString(fmt.Sprintf("  Status:   %s\n", statusLabel(t.Status)))
 	b.WriteString(fmt.Sprintf("  Mode:     %s\n", t.Mode))
 	b.WriteString(fmt.Sprintf("  Provider: %s / %s\n", t.Provider, t.Model))
@@ -106,7 +145,11 @@ func renderHistoryDetail(data HistoryScreenData) string {
 
 	// Messages
 	b.WriteString(SystemStyle.Render(fmt.Sprintf("  Messages (%d):\n", len(data.DetailMsgs))))
-	for i, m := range data.DetailMsgs {
+	shown := len(data.DetailMsgs)
+	if shown > maxDetailMessages {
+		shown = maxDetailMessages
+	}
+	for j, m := range data.DetailMsgs[:shown] {
 		roleLabel := m.Role
 		if roleLabel == "assistant" {
 			roleLabel = "AI"
@@ -127,7 +170,10 @@ func renderHistoryDetail(data HistoryScreenData) string {
 				preview = "[empty]"
 			}
 		}
-		b.WriteString(fmt.Sprintf("    [%d] %s: %s\n", i+1, roleLabel, preview))
+		b.WriteString(fmt.Sprintf("    [%d] %s: %s\n", j+1, roleLabel, preview))
+	}
+	if shown < len(data.DetailMsgs) {
+		b.WriteString(HelpStyle.Render(fmt.Sprintf("    … and %d more (open the task to view full history)\n", len(data.DetailMsgs)-shown)))
 	}
 
 	b.WriteString("\n")

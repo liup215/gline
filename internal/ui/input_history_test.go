@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -170,5 +171,57 @@ func TestHistoryScreenSlashModeStaysInactive(t *testing.T) {
 	mm := updated.(*Model)
 	if mm.historySelected != 1 {
 		t.Fatalf("↓: expected selected=1, got %d", mm.historySelected)
+	}
+}
+
+func TestHistoryScreenScrollFollowsSelection(t *testing.T) {
+	m := New(nil, nil)
+	m.width = 80
+	m.height = 14 // fits 3 task rows: (14-4)/3 = 3
+	n := 10
+	m.historyTasks = make([]storage.TaskRecord, n)
+	for i := range m.historyTasks {
+		m.historyTasks[i] = storage.TaskRecord{ID: fmt.Sprintf("task-%d", i+1), Title: fmt.Sprintf("task %d", i)}
+	}
+	m.screen = ScreenHistory
+
+	// Move down past the visible window: scroll must follow the cursor.
+	for i := 0; i < 6; i++ {
+		updated, _ := m.Update(key(tea.KeyDown))
+		m = updated.(*Model)
+	}
+	if m.historySelected != 6 || m.historyScroll != 4 {
+		t.Fatalf("expected selected=6 scroll=4, got selected=%d scroll=%d", m.historySelected, m.historyScroll)
+	}
+	v := stripANSI(m.View())
+	if !strings.Contains(v, "▸ ● task 6") {
+		t.Fatalf("selected row must be visible:\n%s", v)
+	}
+	if strings.Contains(v, "task 0\n") || strings.Contains(v, "● task 0 ") {
+		t.Fatalf("rows above the window must not be rendered:\n%s", v)
+	}
+	if !strings.Contains(v, "[5") || !strings.Contains(v, "/ 10]") {
+		t.Fatalf("missing position indicator:\n%s", v)
+	}
+
+	// Move back up to the top: scroll clamps to 0 and the top row shows.
+	for i := 0; i < 6; i++ {
+		updated, _ := m.Update(key(tea.KeyUp))
+		m = updated.(*Model)
+	}
+	if m.historySelected != 0 || m.historyScroll != 0 {
+		t.Fatalf("expected selected=0 scroll=0, got selected=%d scroll=%d", m.historySelected, m.historyScroll)
+	}
+	v = stripANSI(m.View())
+	if !strings.Contains(v, "▸ ● task 0") {
+		t.Fatalf("top row must be visible after scrolling up:\n%s", v)
+	}
+
+	// Window resize to a shorter terminal clamps the scroll window.
+	m.historyScroll = 8
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
+	m = updated.(*Model)
+	if m.historyScroll != 0 {
+		t.Fatalf("resize should clamp scroll, got %d", m.historyScroll)
 	}
 }

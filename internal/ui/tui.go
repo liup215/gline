@@ -102,6 +102,7 @@ type Model struct {
 	store             storage.Store
 	historyTasks      []storage.TaskRecord
 	historySelected   int
+	historyScroll     int // first visible row index (windowed list)
 	historyDetail     *storage.TaskRecord
 	historyMessages   []storage.MessageRecord
 	historyConfirmID  string
@@ -338,6 +339,7 @@ func (m *Model) View() string {
 		return view.RenderHistoryScreen(view.HistoryScreenData{
 			Tasks:         m.historyTasks,
 			SelectedIndex: m.historySelected,
+			ScrollOffset:  m.historyScroll,
 			ShowDetail:    m.historyDetail != nil,
 			DetailTask:    m.historyDetail,
 			DetailMsgs:    m.historyMessages,
@@ -609,6 +611,7 @@ func (m *Model) enterHistoryScreen() {
 	}
 	m.historyTasks = tasks
 	m.historySelected = 0
+	m.historyScroll = 0
 	m.historyDetail = nil
 	m.historyMessages = nil
 	m.historyConfirmID = ""
