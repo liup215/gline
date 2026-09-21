@@ -11,6 +11,7 @@ import (
 	"google.golang.org/genai"
 
 	"github.com/liup215/gline/internal/tools"
+	"github.com/liup215/gline/pkg/types"
 )
 
 // adkTool adapts a gline tools.Tool to ADK's tool.Tool interface so the
@@ -69,6 +70,25 @@ func (t *adkTool) Run(ctx agent.Context, args any) (map[string]any, error) {
 	// Repair model-produced args before execution: parameter aliases
 	// (file_path → path) and type coercion ("3" → 3). See tools.RepairToolArgs.
 	m = tools.RepairToolArgs(t.Name(), t.inner.InputSchema(), m)
+
+	// Route ask_followup_question through the active run's StreamCallback
+	// (same path as tool approvals) so the question surfaces in the TUI
+	// option picker, GUI dialog, or CLI prompt. Without this the tool falls
+	// back to reading os.Stdin directly, which competes with Bubbletea for
+	// stdin, garbles the input area, and never completes. Re-wire per call:
+	// the bridge is created per run, one run at a time, so overwriting the
+	// handler with the current cb is idempotent within a run.
+	if t.Name() == string(types.ToolAskFollowupQuestion) {
+		if asker, ok := t.inner.(*tools.AskFollowupQuestionTool); ok {
+			t.a.mu.Lock()
+			cb := t.a.cb
+			t.a.mu.Unlock()
+			if cb != nil {
+				asker.SetHandler(cb.AskFollowupQuestion)
+			}
+		}
+	}
+
 	raw, err := json.Marshal(m)
 	if err != nil {
 		return nil, fmt.Errorf("tool %q: encoding args: %w", t.Name(), err)

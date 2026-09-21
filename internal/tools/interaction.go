@@ -51,6 +51,9 @@ func (t *AskFollowupQuestionTool) Execute(ctx context.Context, input json.RawMes
 
 	// If a handler is provided (e.g., the TUI), delegate the prompt to it.
 	if t.handler != nil {
+		if ctx == nil {
+			ctx = context.Background()
+		}
 		type resp struct {
 			ans string
 			err error
