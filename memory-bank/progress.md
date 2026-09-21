@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-09-21 — run 工具默认改用 bash 执行 ✅（已部署）
+
+新建 `internal/shell` 叶子包（避免循环依赖），`tools`/`prompts`/`subagent` 共用：
+
+| 平台 | 解析顺序 | 回退 |
+|------|---------|------|
+| Windows | 显式 Git 安装路径（Program Files/LOCALAPPDATA）→ PATH 中的 bash.exe（**排除 System32/WindowsApps 的 WSL stub**，路径与 cwd 语义不兼容） | `cmd /C` |
+| Unix | PATH 中的 bash | `sh -c` |
+
+- `shell.Resolve()` 进程内 sync.Once 缓存；`Name()` 返回 bash/cmd/sh 标签
+- `command.go`：`exec.CommandContext(sh.Path, -c, cmd)` + 补上了 `hideConsole`（GUI 模式不再闪控制台窗）
+- **修复既有不一致**：提示词 System Info 与 subagent 环境块原先硬编码 bash/PowerShell 标签，而 Windows 实际执行是 `cmd /C`；现在报告真实解析结果（本机：Git Bash → `Shell: bash`）
+- 测试：`internal/shell` 解析规则 + `command_test.go` 用 `$((2+3))` 算术探针验证 bash 语义（cmd 无法求值）
+- 本机解析结果：`C:\Program Files\Git\usr\bin\bash.exe`（PATH 首位）
+
 ## 2026-09-21 — 工具重命名：grep / glob / ls ✅（已部署）
 
 三个文件工具统一改为简短命名（对齐 Claude Code Glob/Grep 惯例，主流模型训练数据熟悉度高）：
