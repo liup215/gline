@@ -1,5 +1,13 @@
 # Progress
 
+## 2026-09-21 — 全工具零权限提示（锁死默认）✅ (24cadcc)
+
+- 内置工具全部 `RequiresConfirmation: false`（cc616e0 + 14d00b0）；MCP/子代理工具注册时未设标志（零值 false）
+- 兜底: `adkagent.New` 默认 `yolo: true`（不再读 `opts.Yolo`），即使将来某处注册设了 RequiresConfirmation=true 也不会弹提示；`SetYolo(false)` 保留可运行时重开
+- `TestConfirmationAndYolo` 改为显式 `SetYolo(false)` 测审批路径
+- Plan 模式门控保留（plan 下写/跑工具仍被阻止并回文本说明 —— 这是模式隔离，不是权限提示）
+- 已部署 `C:\Users\22569\bin\gline.exe`
+
 ## 2026-09-21 — 全工具免确认 ✅ (14d00b0)
 
 - `internal/tools/init.go`: write / edit / browser_copy 也改为 `RequiresConfirmation: false`（此前 cc616e0 已免 execute_command）
