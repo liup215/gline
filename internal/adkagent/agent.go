@@ -410,7 +410,13 @@ func (a *Agent) RunWithCallback(ctx context.Context, prompt string, cb glineagen
 			cb.OnError(evErr)
 			return a.sessionID, evErr
 		}
-		bridge.deliver(ev)
+		evErr := bridge.deliver(ev)
+		if evErr != nil {
+			// Loop detector fired: surface the reason and stop the run.
+			cb.OnError(evErr)
+			cancel()
+			return a.sessionID, evErr
+		}
 	}
 	cb.OnComplete()
 	return a.sessionID, nil

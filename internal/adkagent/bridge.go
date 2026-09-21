@@ -20,6 +20,7 @@ import (
 type eventBridge struct {
 	cb    glineagent.StreamCallback
 	dedup StreamDedup
+	stuck stuckDetector
 
 	started bool // an OnStreamStart is open for the current model turn
 }
@@ -28,11 +29,15 @@ func newEventBridge(cb glineagent.StreamCallback) *eventBridge {
 	return &eventBridge{cb: cb}
 }
 
-// deliver routes one ADK event into callbacks.
-func (b *eventBridge) deliver(ev *session.Event) {
+// deliver routes one ADK event into callbacks. It returns a *stuckError when
+// the loop detector calls the run dead (Phase 5b): the caller should surface
+// the error and abort the run. pi-go additionally tells the model why and
+// resumes; that recovery loop lands in Phase 6.
+func (b *eventBridge) deliver(ev *session.Event) error {
 	b.dedup.BeginEvent(ev)
+	b.stuck.beginEvent()
 	if ev.Content == nil {
-		return
+		return nil
 	}
 	isModelTurn := modelRoles[ev.Content.Role]
 
@@ -48,6 +53,9 @@ func (b *eventBridge) deliver(ev *session.Event) {
 			if ev.Partial || !b.dedup.SkipText(ev) {
 				if ev.Partial {
 					b.cb.OnReasoning(part.Text)
+					if err := stuckErr(b.stuck.observeOutput(part.Text)); err != nil {
+						return err
+					}
 				}
 			}
 		case part.Text != "" && isModelTurn:
@@ -59,6 +67,9 @@ func (b *eventBridge) deliver(ev *session.Event) {
 				b.started = true
 			}
 			b.cb.OnContent(part.Text)
+			if err := stuckErr(b.stuck.observeOutput(part.Text)); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -73,6 +84,9 @@ func (b *eventBridge) deliver(ev *session.Event) {
 	// events after the runner executes the tools.
 	for _, part := range ev.Content.Parts {
 		if part.FunctionCall != nil {
+			if err := stuckErr(b.stuck.observe(part.FunctionCall.ID, part.FunctionCall.Name, part.FunctionCall.Args)); err != nil {
+				return err
+			}
 			b.cb.OnToolCallStart(glineagent.ToolCall{
 				ID:    part.FunctionCall.ID,
 				Name:  part.FunctionCall.Name,
@@ -80,12 +94,26 @@ func (b *eventBridge) deliver(ev *session.Event) {
 			})
 		}
 		if part.FunctionResponse != nil {
+			// A changed result on a repeated call is progress, not a loop —
+			// let it reset the identical-call streak before the next call
+			// is observed. Cycle detection also runs here: a cycle is only
+			// decidable once every call in the window has its result.
+			if err := stuckErr(b.stuck.observeResult(part.FunctionResponse.ID, part.FunctionResponse.Name, part.FunctionResponse.Response)); err != nil {
+				return err
+			}
+			// ADK wraps tool errors as {"error": ...}; anything else is a
+			// success and resets the error streaks.
+			_, isErr := part.FunctionResponse.Response["error"]
+			if err := stuckErr(b.stuck.observeError(part.FunctionResponse.ID, part.FunctionResponse.Name, isErr)); err != nil {
+				return err
+			}
 			b.cb.OnToolCallComplete(glineagent.ToolCall{
 				ID:   part.FunctionResponse.ID,
 				Name: part.FunctionResponse.Name,
 			}, functionResponseText(part.FunctionResponse.Response))
 		}
 	}
+	return nil
 }
 
 // functionResponseText extracts the human/model-readable result from a
