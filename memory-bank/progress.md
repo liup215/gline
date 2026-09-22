@@ -1,5 +1,41 @@
 # Progress
 
+## 2026-09-25 — messages.created_at 零值修复 + 历史数据回填 ✅（已部署）
+
+**现象**：用户分析数据库发现 session 对话记录 created_at 全是空值。
+
+**排查结论**：sessions.db（ADK 库）时间完好；gline.db 的 tasks/tool_calls 也正常；唯独 messages 表 created_at 全为 Go 零值 `0001-01-01`（非 SQL NULL）。根因：ADK 持久化路径 `transcriptAccumulator` 构造 `types.Message` 从不设 Timestamp → `SaveMessage` 把零值直写入列，覆盖了 `DEFAULT CURRENT_TIMESTAMP`。内存态 `Conversation.AddMessage` 的零值补时保护不到这条路径。
+
+**修复（两层）**：
+1. `internal/adkagent/persist.go`：accumulator 用 `ev.Timestamp`（ADK event 真实时间）填充 assistant/tool/user 消息；`addUserPrompt` 用 `time.Now()`。
+2. `internal/storage/sqlite.go` `SaveMessage`：`Timestamp.IsZero()` 时补 `time.Now()`（存储边界兑底，防未来调用方）。
+
+**历史数据回填**：`go run ./cmd/dbcheck/ -fix` 将零值行 `created_at` 更新为其所属 task 的 created_at（近似）；验证 zero_time=0。dbcheck 是保留的诊断工具（默认只读，`-fix` 才写）。
+
+## 2026-09-25 — 托盘失焦隐藏根因修复 ✅（已部署）
+
+**根因（wails v3.0.0-alpha.63 源码）**：`SystemTray.Run()` 对 `AttachWindow` 的窗口强制注册 `WindowLostFocus → Hide()` 监听器（systemtray.go，无开关，popover 设计）。之前怀疑的 WindowClosing hook 只是表象。
+
+**修复**：不 `AttachWindow`，改 `systemTray.OnClick()` 手动切换（`cmd/gline-gui/main.go` + `cmd/gline/gui.go`）。托盘功能完整保留；alpha2.106 已将此行为改为 opt-in `HideOnFocusLost` 选项，未来升级后可重新评估。
+
+## 2026-09-25 — chat completions 路径 thinking 提取 ✅（已部署）
+
+**根因**：OpenAI chat completions 路径（mimo-v2.5 等）`oaiRunStreaming`/`oaiRunNonStreaming` thinking hook 传 nil，`delta.reasoning` 被静默丢弃。
+
+**修复**：`internal/provider/openai_completions.go` 新增 `chatDeltaThinking` 通用提取器（`delta.reasoning` 字符串 + `delta.reasoning_details[].text` 数组），streaming/non-streaming 双路接入 → `Role:"thinking"` partial → bridge `OnReasoning` → GUI `chat:reasoning` → 前端 Thinking 折叠区。
+
+## 2026-09-24 — GUI 流式事件乱序修复 ✅（提交 a2daf24，已部署）
+
+**症状**：GUI 聊天页模型输出语序错乱（"me先用Let us fly trap-rag 搜索 ven相关内容。"），而 SQLite 里存的原型完整（"Let me先用 go-rag 搜索 venus fly trap 相关内容。"）→ delta 全部送达、只是被重排。
+
+**根因**：Wails v3 `EventProcessor.Emit`（alpha.63 / alpha2.106 均如此，升级无效）每个事件起 2 个 goroutine 分发（dispatchEventToListeners + dispatchEventToWindows），高频 content delta 竞争导致到达 JS listener 的顺序不确定。TUI 不受影响（TUIBridge 有序 channel）；持久化不走 callback 路径所以 DB 干净。
+
+**修复**：
+1. Go：`guiStreamCallback` 增 `seq atomic.Uint64` + `emit()` helper，所有流式事件带单调序号（error/taskCreated 除外）。
+2. 前端：useChat.ts ordered dispatcher —— expected 锚定首事件，乱序入 stash 按序重放，旧重复（seq<expected）丢弃（顺带修复双注册 listener 重复追加）。
+
+**验证**：go build/vet/test 全绿；tsc --noEmit 通过；vite build + go build 重新部署 bin/gline.exe。
+
 ## 2026-09-21 — TUI ask_followup_question 交互链路修复 ✅（提交 db9dc9f，已部署）
 
 **症状**：TUI 里 ask_followup_question 交互不完成，且打破底部 input area。

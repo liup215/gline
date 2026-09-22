@@ -2,6 +2,69 @@
 
 ## Current Focus
 
+### 托盘失焦隐藏根因修复 + thinking 流式提取（2026-09-25，已部署）
+
+**问题 1：GUI 失焦自动缩到托盘**（多次修复未果）
+
+**根因（源码定位）**：Wails v3.0.0-alpha.63 `pkg/application/systemtray.go` `Run()`：
+```go
+if s.attachedWindow.Window != nil {
+    s.attachedWindow.Window.OnWindowEvent(events.Common.WindowLostFocus, func(event *WindowEvent) {
+        s.attachedWindow.Window.Hide()  // ← 附着窗口失焦即隐藏，无开关
+    })
+}
+```
+这是给“托盘弹窗”设计的 popover 行为；alpha2.106 已改为显式选项 `WebviewWindowOptions.HideOnFocusLost`（默认 false）。
+
+**修复（方案 B，留在 alpha.63 不升级）**：两个入口（`cmd/gline-gui/main.go`、`cmd/gline/gui.go`）不再调用 `systemTray.AttachWindow(window)`，改用 `systemTray.OnClick(func(){ ... toggle Show/Hide ... })` 手动实现左键切换。托盘完整保留：左键切换显隐、右键菜单（Hide/Show + Quit）、WindowHide/Show hook 同步菜单文案。失焦不再隐藏。
+
+**问题 2：thinking/reasoning 不显示**
+
+**根因**：mimo-v2.5 走 OpenAI chat completions 路径（`openai_completions.go`），`oaiRunStreaming`/`oaiRunNonStreaming` 传 `nil` thinking hook —— 即使模型下发 `delta.reasoning` 也被静默丢弃。只有 Anthropic 路径和 OpenAI responses 路径处理 thinking。
+
+**修复**：`openai_completions.go` 新增通用 `chatDeltaThinking(rawChunk)` 提取器（支持 `delta.reasoning` 字符串与 `delta.reasoning_details[].text` 数组两种 JSON 形状），streaming/non-streaming 均接入。提取出的 thinking 以 `Role:"thinking"` partial 上行 → bridge `OnReasoning` → GUI `chat:reasoning` 事件 → 前端“▶ Thinking”折叠区。
+
+**部署**：`gline.exe` + `gline-gui.exe` 均已复制到 `C:\Users\22569\bin\`（gline-gui 进程已 taskkill 后覆盖）。
+
+**备注**：若 thinking 仍不显示，说明 mimo-v2.5 后端不下发 `reasoning` 字段（用日志抓 RawJSON 验证）。
+
+### 独立 GUI 入口 ✅（2026-09-24, commit b1d9ada, 已部署）
+
+**需求**: GUI 要有独立应用入口，不和命令行一起启动。
+
+**实现**:
+- `cmd/gline-gui/main.go`（build tag `gui`）：完全独立的 Wails 入口，不含 Cobra/TUI 代码；Windows 构建用 `-H windowsgui` 抑制控制台窗口
+- `build-all.ps1` / `build-all.sh`：现在同时构建 CLI + GUI 两个二进制，分别复制前端资源到各自的 embed 目录
+- `cmd/gline-gui/build/appicon.png`：图标副本（Go `go:embed` 不支持 `..` 路径）
+
+**部署**: `C:\Users\22569\bin\gline-gui.exe` 已就绪。`gline.exe` 因正在运行暂存为 `gline-new.exe`，下次重启后替换。
+
+**使用方式**:
+| 命令 | 效果 |
+|---|---|
+| `gline-gui` | 独立 GUI（无控制台窗口） |
+| `gline --gui` | 同上（走 Cobra 路由，终端窗口停留） |
+| `gline` | TUI（默认） |
+| `gline chat` | CLI |
+
+### 记忆功能全关（2026-09-24，用户决策）
+
+**决策**: kb/memory 全部关闭但不删除，统一改用 go-rag skill。
+
+**实现**: `~/.gline/config.yaml` → `memory.enabled: false`（零代码改动）。
+
+### GUI 流式事件乱序修复 ✅（2026-09-24, commit a2daf24, 已部署）
+
+**问题**: GUI 聊天页模型输出语序错乱（如"me先用Let us fly trap-rag 搜索 ven相关内容。"），DB 原文却是干净的（`Let me先用 go-rag 搜索 venus fly trap 相关内容。`）→ delta 都到了、只是被重排。
+
+**根因**: Wails v3 `EventProcessor.Emit`（alpha.63 与 alpha2.106 均如此）每个事件起 2 个 goroutine 分发 → 高频 content delta 竞争，到达 JS listener 顺序不确定。TUI 无此问题（TUIBridge 用自己的有序 channel）；持久化不走 callback 路径所以 DB 干净。
+
+**修复**:
+1. **Go 侧** `internal/gui/chat_service.go`: `guiStreamCallback` 新增 `seq atomic.Uint64` + `emit(name, payload)` helper，所有流式事件（content/reasoning/streamStart/streamEnd/toolStart/toolComplete/systemMessage/followupQuestion/complete）统一带单调序号。`chat:error`（两端）/`chat:taskCreated` 不带 seq（终态/非视觉序）。
+2. **前端** `frontend/src/hooks/useChat.ts`: setupEventListeners 内置 ordered dispatcher —— `expected` 锚定首个事件，乱序到达的先入 `stash`，按序重放；`seq < expected` 的旧重复直接丢弃（顺带修复双注册 listener 的重复追加）。
+
+**部署**: vite build + `go build -o C:/Users/22569/bin/gline.exe ./cmd/gline/`。验证: go build/vet/test 全绿，tsc --noEmit 通过。
+
 ### rg/fd 外部搜索工具集成 ✅（2026-09-21, commit 70fee1b, 已部署）
 
 **需求**: 像 pi agent 一样用 rg/fd 等外部工具搜索文件/内容，提升大仓库性能。
