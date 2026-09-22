@@ -109,6 +109,12 @@ func (s *SQLiteStore) FailTask(taskID string, errMsg string) error {
 
 // SaveMessage persists a message.
 func (s *SQLiteStore) SaveMessage(taskID string, msg types.Message) error {
+	// Backfill zero timestamps: an unset Go zero-time would otherwise be
+	// written verbatim (0001-01-01), overriding the column DEFAULT and
+	// breaking time-ordered history queries.
+	if msg.Timestamp.IsZero() {
+		msg.Timestamp = time.Now()
+	}
 	// Serialize tool calls to JSON if present
 	var toolCallsJSON []byte
 	if len(msg.ToolCalls) > 0 {

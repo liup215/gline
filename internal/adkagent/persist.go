@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"sync"
+	"time"
 
 	"google.golang.org/adk/v2/session"
 
@@ -45,7 +46,7 @@ func (t *transcriptAccumulator) addUserPrompt(prompt string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.flushAssistant()
-	t.msg = append(t.msg, types.Message{Role: types.RoleUser, Content: prompt})
+	t.msg = append(t.msg, types.Message{Role: types.RoleUser, Content: prompt, Timestamp: time.Now()})
 }
 
 func (t *transcriptAccumulator) addEvent(ev *session.Event) {
@@ -62,7 +63,7 @@ func (t *transcriptAccumulator) addEvent(ev *session.Event) {
 				continue
 			}
 			if t.as == nil {
-				t.as = &types.Message{Role: types.RoleAssistant}
+				t.as = &types.Message{Role: types.RoleAssistant, Timestamp: ev.Timestamp}
 			}
 			t.as.ReasoningContent += p.Text
 		}
@@ -70,13 +71,13 @@ func (t *transcriptAccumulator) addEvent(ev *session.Event) {
 		for _, p := range ev.Content.Parts {
 			if p.Text != "" {
 				if t.as == nil {
-					t.as = &types.Message{Role: types.RoleAssistant}
+					t.as = &types.Message{Role: types.RoleAssistant, Timestamp: ev.Timestamp}
 				}
 				t.as.Content += p.Text
 			}
 			if p.FunctionCall != nil {
 				if t.as == nil {
-					t.as = &types.Message{Role: types.RoleAssistant}
+					t.as = &types.Message{Role: types.RoleAssistant, Timestamp: ev.Timestamp}
 				}
 				t.as.ToolCalls = append(t.as.ToolCalls, types.ToolCall{
 					ID:    p.FunctionCall.ID,
@@ -94,10 +95,11 @@ func (t *transcriptAccumulator) addEvent(ev *session.Event) {
 					Role:       types.RoleTool,
 					Content:    functionResponseText(p.FunctionResponse.Response),
 					ToolCallID: p.FunctionResponse.ID,
+					Timestamp:  ev.Timestamp,
 				})
 			case p.Text != "":
 				t.flushAssistant()
-				t.msg = append(t.msg, types.Message{Role: types.RoleUser, Content: p.Text})
+				t.msg = append(t.msg, types.Message{Role: types.RoleUser, Content: p.Text, Timestamp: ev.Timestamp})
 			}
 		}
 	}
