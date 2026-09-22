@@ -4,6 +4,7 @@ import (
 	"embed"
 	_ "embed"
 	"log"
+	"sync/atomic"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -85,6 +86,19 @@ func runGUI() {
 			window.Show().Focus()
 		}
 	})
+	// Close button (X) hides to tray instead of quitting. RegisterHook
+	// runs before Wails' internal destroy listener and Cancel() skips it
+	// (webview_window.go HandleWindowEvent), so the window is merely
+	// hidden. The tray Quit item sets `quitting` first so real shutdown
+	// can still close the window.
+	var quitting atomic.Bool
+	window.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
+		if quitting.Load() {
+			return
+		}
+		e.Cancel()
+		window.Hide()
+	})
 	window.RegisterHook(events.Common.WindowHide, func(e *application.WindowEvent) {
 		if toggleItem != nil {
 			toggleItem.SetLabel("Show gline")
@@ -97,6 +111,7 @@ func runGUI() {
 	})
 	trayMenu.AddSeparator()
 	trayMenu.Add("Quit").OnClick(func(ctx *application.Context) {
+		quitting.Store(true)
 		app.Quit()
 	})
 	systemTray.SetMenu(trayMenu)

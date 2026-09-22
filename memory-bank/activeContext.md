@@ -2,6 +2,32 @@
 
 ## Current Focus
 
+### 关闭按钮 → 收进托盘（2026-09-25，已部署）
+
+**行为变更**：点窗口 X 不再退出应用，而是隐藏到托盘；真正退出走托盘右键菜单 Quit。托盘应用标准 UX。
+
+**之前行为**：X → `unregisterWindow`（application_windows.go:336）发现 windowMap 空 → `PostQuitMessage(0)` → 整个应用（含托盘）退出。
+
+**实现（两个入口同步）**：alpha.63 没有 `HideOnClose` 选项（alpha2.x 也没有），用 hook 拦截等价实现：
+```go
+var quitting atomic.Bool
+window.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
+    if quitting.Load() { return }  // 真正退出时不拦截
+    e.Cancel()                     // 跳过框架内部销毁 listener
+    window.Hide()                  // 只隐藏，不销毁
+})
+trayMenu.Add("Quit").OnClick(func(ctx *application.Context) {
+    quitting.Store(true); app.Quit()
+})
+```
+
+**机制依据（alpha.63 源码）**：
+- `HandleWindowEvent`（webview_window.go:803）：hooks（RegisterHook）先同步执行，`event.Cancel()` 后所有 listeners（含 newWindow 里注册的内部销毁 listener）不再执行 → unconditionallyClose 保持 0 → 窗口不销毁
+- X 按钮 → WM_CLOSE → emit `Windows.WindowClosing`(1204) → `DefaultWindowEventMapping`（events/defaults.go:7）映射 emit `Common.WindowClosing`(1028) → hook 生效；托盘 Quit → cleanup 直接 `window.Close()` emit Common.WindowClosing → quitting flag 放行 → 正常销毁退出
+- **纠正 D89**：旧记录“WindowClosing hook 在失焦时也触发”是误诊 —— 映射表里失焦走 `WindowKillFocus → WindowLostFocus`，与 WindowClosing 是不同事件 ID；当时现象实为 AttachWindow 失焦隐藏
+
+**验证**：go vet/build 通过，两二进制已部署 `C:\Users\22569\bin\`。
+
 ### 托盘失焦隐藏根因修复 + thinking 流式提取（2026-09-25，已部署）
 
 **问题 1：GUI 失焦自动缩到托盘**（多次修复未果）

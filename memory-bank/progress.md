@@ -1,5 +1,15 @@
 # Progress
 
+## 2026-09-25 — 关闭按钮收进托盘 ✅（已部署）
+
+**之前行为**：点 X 直接退出整个应用（`unregisterWindow` 发现 windowMap 空 → `PostQuitMessage`，托盘一并退出）。
+
+**新行为**：X → 隐藏到托盘（应用继续运行）；托盘菜单 Quit → 真正退出。
+
+**实现**：alpha.63 无 `HideOnClose` 选项，用 `RegisterHook(Common.WindowClosing)` + `event.Cancel()` + `window.Hide()` 拦截；托盘 Quit 先置 `quitting`（atomic.Bool）再 `app.Quit()` 放行正常销毁。机制依据：`HandleWindowEvent` 中 hooks 先于 listeners 执行，Cancel 后内部销毁 listener 不运行；X 按钮的 Windows.WindowClosing(1204) 经 DefaultWindowEventMapping 映射到 Common.WindowClosing(1028)。同时纠正 D89（“WindowClosing 失焦误触发”实为 AttachWindow 失焦隐藏的误诊，事件 ID 不同）。
+
+**验证**：vet/build 通过；两二进制已部署 `C:\Users\22569\bin\`。
+
 ## 2026-09-25 — messages.created_at 零值修复 + 历史数据回填 ✅（已部署）
 
 **现象**：用户分析数据库发现 session 对话记录 created_at 全是空值。
