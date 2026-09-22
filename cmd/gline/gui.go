@@ -60,16 +60,21 @@ func runGUI() {
 		URL:              "/",
 	})
 
-	// Intercept close button (X) to hide to system tray instead of quitting
-	window.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
-		window.Hide()
-		e.Cancel()
-	})
-
-	// --- System Tray Setup ---
+	// --- System tray ---
+	// NOTE: deliberately NOT calling systemTray.AttachWindow(window).
+	// Wails v3.0.0-alpha.63 force-registers a WindowLostFocus → Hide()
+	// listener on attached windows (popover-style behaviour), which makes
+	// the main window vanish whenever it loses focus. Wire the tray click
+	// toggle manually instead — same UX, no auto-hide on blur.
 	systemTray := app.SystemTray.New()
 	systemTray.SetIcon(iconBytes)
-	systemTray.AttachWindow(window)
+	systemTray.OnClick(func() {
+		if window.IsVisible() {
+			window.Hide()
+		} else {
+			window.Show().Focus()
+		}
+	})
 
 	trayMenu := app.NewMenu()
 	toggleItem := trayMenu.Add("Hide gline")
@@ -80,8 +85,6 @@ func runGUI() {
 			window.Show().Focus()
 		}
 	})
-
-	// Dynamically update menu label when window is hidden/shown
 	window.RegisterHook(events.Common.WindowHide, func(e *application.WindowEvent) {
 		if toggleItem != nil {
 			toggleItem.SetLabel("Show gline")
@@ -92,14 +95,13 @@ func runGUI() {
 			toggleItem.SetLabel("Hide gline")
 		}
 	})
-
 	trayMenu.AddSeparator()
 	trayMenu.Add("Quit").OnClick(func(ctx *application.Context) {
 		app.Quit()
 	})
-
 	systemTray.SetMenu(trayMenu)
-	// --- End System Tray Setup ---
+	// --- End system tray ---
+
 
 	if err := app.Run(); err != nil {
 		log.Fatal(err)
