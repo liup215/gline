@@ -83,7 +83,10 @@ $buildTime = (Get-Date -Format "yyyy-MM-dd_HH:mm:ss").ToString()
 $ldflags = "-X github.com/liup215/gline/internal/version.Version=$version " +
            "-X github.com/liup215/gline/internal/version.Commit=$commit " +
            "-X github.com/liup215/gline/internal/version.BuildTime=$buildTime " +
-           "-s -w -H=windowsgui"
+           "-s -w"
+# CLI/TUI stays on the console subsystem: Bubbletea opens CONIN$ directly,
+# which is invalid for a windowsgui-subsystem process (no attached console —
+# the TUI would exit silently with its error printed to an invisible stderr).
 
 cmd /c "go build -ldflags `"$ldflags`" -o $Output ./cmd/gline"
 if ($LASTEXITCODE -ne 0) {
