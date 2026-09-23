@@ -16,6 +16,45 @@ import (
 	"google.golang.org/genai"
 )
 
+// chatDeltaThinking is a generic deltaThinking hook for chat completions.
+// It walks choices[0].delta and extracts reasoning text from common JSON shapes:
+//   - {"choices":[{"delta":{"reasoning":"..."}}}]}          (OpenRouter, OpenCode Zen)
+//   - {"choices":[{"delta":{"reasoning_content":"..."}}}]}  (DeepSeek-style gateways)
+//   - {"choices":[{"delta":{"reasoning_details":[{"type":"reasoning_text"|"reasoning.text","text":"..."}]}}]}
+// The openai-go SDK's ChatCompletionChunk has no field for any of these, so
+// they are only reachable through the chunk's raw JSON.
+// Returns empty string when no reasoning is found.
+func chatDeltaThinking(rawChunk string) string {
+	var raw struct {
+		Choices []struct {
+			Delta struct {
+				Reasoning        string `json:"reasoning"`
+				ReasoningContent string `json:"reasoning_content"`
+				ReasoningDetails []struct {
+					Type string `json:"type"`
+					Text string `json:"text"`
+				} `json:"reasoning_details"`
+			} `json:"delta"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal([]byte(rawChunk), &raw); err != nil || len(raw.Choices) == 0 {
+		return ""
+	}
+	delta := raw.Choices[0].Delta
+	if delta.Reasoning != "" {
+		return delta.Reasoning
+	}
+	if delta.ReasoningContent != "" {
+		return delta.ReasoningContent
+	}
+	for _, d := range delta.ReasoningDetails {
+		if d.Text != "" && (d.Type == "reasoning_text" || d.Type == "reasoning.text") {
+			return d.Text
+		}
+	}
+	return ""
+}
+
 // generateChat implements the Chat Completions API path (default for GPT-4, o1, etc.).
 func (m *openaiModel) generateChat(ctx context.Context, req *model.LLMRequest, modelName string, stream bool) iter.Seq2[*model.LLMResponse, error] {
 	return func(yield func(*model.LLMResponse, error) bool) {
@@ -47,10 +86,10 @@ func (m *openaiModel) generateChat(ctx context.Context, req *model.LLMRequest, m
 
 		if stream {
 			retryStream(ctx, streamRetryConfig(), yield, func(y func(*model.LLMResponse, error) bool) {
-				oaiRunStreaming(ctx, &m.client, params, y)
+				oaiRunStreamingExtract(ctx, &m.client, params, y, chatDeltaThinking)
 			})
 		} else {
-			oaiRunNonStreaming(ctx, &m.client, params, yield)
+			oaiRunNonStreamingExtract(ctx, &m.client, params, yield, chatDeltaThinking)
 		}
 	}
 }

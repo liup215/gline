@@ -25,7 +25,8 @@ import * as application$0 from "../../../../wailsapp/wails/v3/pkg/application/mo
 import * as $models from "./models.js";
 
 /**
- * AnswerFollowupQuestion sends the user's answer back to a pending AskFollowupQuestion call.
+ * AnswerFollowupQuestion sends the user's answer back to the oldest pending
+ * AskFollowupQuestion call (parallel tool approvals are answered in FIFO order).
  */
 export function AnswerFollowupQuestion(answer: string): $CancellablePromise<void> {
     return $Call.ByID(2763467677, answer);
@@ -48,7 +49,8 @@ export function ClearConversation(): $CancellablePromise<void> {
 }
 
 /**
- * CompactConversation triggers manual compaction of the conversation history.
+ * CompactConversation is a no-op on the ADK agent, which compacts
+ * automatically (tail retention). Reported as success.
  */
 export function CompactConversation(): $CancellablePromise<boolean> {
     return $Call.ByID(4150294459);
@@ -87,7 +89,8 @@ export function GetConfig(): $CancellablePromise<string> {
 }
 
 /**
- * GetConversationState returns the current messages in JSON form.
+ * GetConversationState returns the current messages in JSON form, read
+ * from the persisted transcript of the current task.
  * Messages are truncated to avoid exceeding Wails IPC payload limits.
  */
 export function GetConversationState(): $CancellablePromise<string> {

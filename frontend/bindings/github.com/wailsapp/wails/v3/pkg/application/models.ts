@@ -24,7 +24,6 @@ export class App {
     "Screen": ScreenManager | null;
     "Clipboard": ClipboardManager | null;
     "SystemTray": SystemTrayManager | null;
-    "Autostart": AutostartManager | null;
     "Logger": slog$0.Logger | null;
 
     /** Creates a new App instance. */
@@ -62,9 +61,6 @@ export class App {
         if (!("SystemTray" in $$source)) {
             this["SystemTray"] = null;
         }
-        if (!("Autostart" in $$source)) {
-            this["Autostart"] = null;
-        }
         if (!("Logger" in $$source)) {
             this["Logger"] = null;
         }
@@ -88,7 +84,6 @@ export class App {
         const $$createField9_0 = $$createType19;
         const $$createField10_0 = $$createType21;
         const $$createField11_0 = $$createType23;
-        const $$createField12_0 = $$createType25;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("Window" in $$parsedSource) {
             $$parsedSource["Window"] = $$createField0_0($$parsedSource["Window"]);
@@ -123,48 +118,10 @@ export class App {
         if ("SystemTray" in $$parsedSource) {
             $$parsedSource["SystemTray"] = $$createField10_0($$parsedSource["SystemTray"]);
         }
-        if ("Autostart" in $$parsedSource) {
-            $$parsedSource["Autostart"] = $$createField11_0($$parsedSource["Autostart"]);
-        }
         if ("Logger" in $$parsedSource) {
-            $$parsedSource["Logger"] = $$createField12_0($$parsedSource["Logger"]);
+            $$parsedSource["Logger"] = $$createField11_0($$parsedSource["Logger"]);
         }
         return new App($$parsedSource as Partial<App>);
-    }
-}
-
-/**
- * AutostartManager provides cross-platform control over whether the
- * application launches when the user logs in.
- * 
- * Registration takes effect on the next login, not immediately.
- * 
- * Platform behaviour:
- * 
- *   - macOS 13+ (bundled .app):  SMAppService.mainAppService — works for
- *     sandboxed and Mac-App-Store apps, no TCC automation prompt.
- *   - macOS (older or unbundled): a LaunchAgent plist is written to
- *     ~/Library/LaunchAgents/.
- *   - Windows: a value is added under
- *     HKCU\Software\Microsoft\Windows\CurrentVersion\Run.
- *   - Linux: an .desktop file is written to $XDG_CONFIG_HOME/autostart/
- *     (defaulting to ~/.config/autostart/).
- *   - Android / iOS / server builds: ErrAutostartNotSupported.
- */
-export class AutostartManager {
-
-    /** Creates a new AutostartManager instance. */
-    constructor($$source: Partial<AutostartManager> = {}) {
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new AutostartManager instance from a string or object.
-     */
-    static createFrom($$source: any = {}): AutostartManager {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new AutostartManager($$parsedSource as Partial<AutostartManager>);
     }
 }
 
@@ -408,7 +365,5 @@ const $$createType18 = ClipboardManager.createFrom;
 const $$createType19 = $Create.Nullable($$createType18);
 const $$createType20 = SystemTrayManager.createFrom;
 const $$createType21 = $Create.Nullable($$createType20);
-const $$createType22 = AutostartManager.createFrom;
+const $$createType22 = slog$0.Logger.createFrom;
 const $$createType23 = $Create.Nullable($$createType22);
-const $$createType24 = slog$0.Logger.createFrom;
-const $$createType25 = $Create.Nullable($$createType24);

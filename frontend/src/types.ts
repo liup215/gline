@@ -1,6 +1,7 @@
 export interface Message {
   role: 'user' | 'assistant' | 'tool' | 'system';
   content: string;
+  thinking?: string;  // LLM reasoning / chain-of-thought
   id?: string;
   toolName?: string;
   toolInput?: string;

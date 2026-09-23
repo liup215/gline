@@ -50,9 +50,30 @@ func (t *transcriptAccumulator) addUserPrompt(prompt string) {
 }
 
 func (t *transcriptAccumulator) addEvent(ev *session.Event) {
-	if ev == nil || ev.Content == nil || ev.Partial {
+	if ev == nil || ev.Content == nil {
 		return
 	}
+	// Streaming thinking deltas are the only place providers emit reasoning
+	// (both Anthropic and the OpenAI-compatible paths send role="thinking"
+	// partial events; the terminal aggregate is always role="model" and never
+	// re-carries the thinking text, except the thought-only-turn fallback).
+	// Accumulate them here so stored messages keep their reasoning.
+	if ev.Partial {
+		if ev.Content.Role == "thinking" {
+			t.mu.Lock()
+			defer t.mu.Unlock()
+			for _, p := range ev.Content.Parts {
+				if p != nil && p.Text != "" {
+					if t.as == nil {
+						t.as = &types.Message{Role: types.RoleAssistant, Timestamp: ev.Timestamp}
+					}
+					t.as.ReasoningContent += p.Text
+				}
+			}
+		}
+		return
+	}
+
 	t.mu.Lock()
 	defer t.mu.Unlock()
 

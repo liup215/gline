@@ -89,6 +89,9 @@ export function useChat(onLoadHistory: () => void, onLoadStatus: () => void, get
 
     setInput('');
 
+    // Show STOP button immediately — don't wait for the LLM to start streaming.
+    setIsLoading(true);
+
     // Build display message with file indicators
     const fileRefs = getFileRefs?.() || [];
     const displayPrefix = fileRefs.length > 0
@@ -171,7 +174,16 @@ export function useChat(onLoadHistory: () => void, onLoadStatus: () => void, get
     Events.On('chat:streamStart', (ev: any) => {
       ordered(ev?.data?.seq ?? 0, () => {
         setIsLoading(true);
-        setMessages(prev => [...prev, { role: 'assistant', content: '', streaming: true }]);
+        setMessages(prev => {
+          // Reasoning deltas usually arrive before any text content and have
+          // already opened the streaming assistant bubble below — don't add
+          // a second, empty one.
+          const last = prev[prev.length - 1];
+          if (last && last.role === 'assistant' && last.streaming) {
+            return prev;
+          }
+          return [...prev, { role: 'assistant', content: '', streaming: true }];
+        });
       });
     });
 
@@ -189,11 +201,34 @@ export function useChat(onLoadHistory: () => void, onLoadStatus: () => void, get
       });
     });
 
+    Events.On('chat:reasoning', (ev: any) => {
+      const seq = ev?.data?.seq ?? 0;
+      const delta = ev?.data?.delta ?? '';
+      ordered(seq, () => {
+        setMessages(prev => {
+          const last = prev[prev.length - 1];
+          if (last && last.role === 'assistant' && last.streaming) {
+            return [...prev.slice(0, -1), { ...last, thinking: (last.thinking || '') + delta }];
+          }
+          // Reasoning arrives before the bridge opens the text slot (streamStart
+          // only fires on model-authored text) — open the streaming assistant
+          // bubble here so thinking is visible while the model reasons.
+          return [...prev, { role: 'assistant', content: '', thinking: delta, streaming: true }];
+        });
+      });
+    });
+
     Events.On('chat:toolStart', (ev: any) => {
       const { seq, id, name, input: toolInput } = ev?.data ?? {};
       ordered(seq ?? 0, () => {
         setMessages(prev => {
           const last = prev[prev.length - 1];
+          // A thinking bubble is worth keeping visible next to the tool row;
+          // only an empty text-less bubble gets replaced by the tool row.
+          const hasThinking = !!(last && last.role === 'assistant' && last.streaming && last.thinking && last.thinking.trim());
+          if (hasThinking) {
+            return [...prev, { role: 'tool', id, toolName: name, toolInput, content: '' }];
+          }
           if (last && last.role === 'assistant' && last.content.trim() === '' && last.streaming) {
             return [...prev.slice(0, -1), { role: 'tool', id, toolName: name, toolInput, content: '' }];
           }
@@ -221,10 +256,32 @@ export function useChat(onLoadHistory: () => void, onLoadStatus: () => void, get
       });
     });
 
+    // streamEnd closes the current assistant text slot (emitted by the bridge
+    // after each non-partial model turn).  The frontend treats this as the
+    // signal to stop showing the streaming cursor on the current message.
+    Events.On('chat:streamEnd', (ev: any) => {
+      const seq = ev?.data?.seq ?? 0;
+      ordered(seq, () => {
+        setMessages(prev => {
+          const last = prev[prev.length - 1];
+          if (last && last.role === 'assistant' && last.streaming) {
+            return [...prev.slice(0, -1), { ...last, streaming: false }];
+          }
+          return prev;
+        });
+      });
+    });
+
     Events.On('chat:error', (data: any) => {
       const err = data?.data ?? 'Unknown error';
       setIsLoading(false);
-      setMessages(prev => [...prev, { role: 'system', content: `Error: ${err}` }]);
+      setMessages(prev => {
+        // Finalize any in-progress streaming assistant message
+        const updated = prev.map(m =>
+          m.role === 'assistant' && m.streaming ? { ...m, streaming: false } : m
+        );
+        return [...updated, { role: 'system', content: `Error: ${err}` }];
+      });
     });
 
     Events.On('chat:complete', (ev: any) => {

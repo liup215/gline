@@ -23,15 +23,15 @@ export function MessageList({ messages, showSelectDir, onSelectProjectDir }: Mes
   }, [messages]);
 
   const renderMessage = (msg: Message, idx: number) => {
-    // Skip assistant messages that have no content and are pure tool-call prompts
-    if (msg.role === 'assistant' && msg.content.trim() === '') {
+    // Skip assistant messages that have no content and no thinking
+    if (msg.role === 'assistant' && msg.content.trim() === '' && !(msg.thinking && msg.thinking.trim())) {
       return null;
     }
     if (msg.role === 'user') {
       return <UserMessage key={idx} content={msg.content} />;
     }
     if (msg.role === 'assistant') {
-      return <AssistantMessage key={idx} content={msg.content} streaming={msg.streaming} isLast={idx === messages.length - 1} />;
+      return <AssistantMessage key={idx} content={msg.content} thinking={msg.thinking} streaming={msg.streaming} isLast={idx === messages.length - 1} />;
     }
     if (msg.role === 'tool') {
       return <ToolMessage key={idx} toolName={msg.toolName} toolInput={msg.toolInput} toolResult={msg.toolResult} />;

@@ -3,7 +3,6 @@
 
 export {
     App,
-    AutostartManager,
     BrowserManager,
     ClipboardManager,
     ContextMenuManager,

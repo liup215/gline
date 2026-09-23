@@ -93,6 +93,7 @@ export class TaskRecord {
     "Model": string;
     "Status": string;
     "WorkingDir": string;
+    "SessionID": string;
     "CreatedAt": time$0.Time;
     "UpdatedAt": time$0.Time;
     "CompletedAt": time$0.Time | null;
@@ -122,6 +123,9 @@ export class TaskRecord {
         }
         if (!("WorkingDir" in $$source)) {
             this["WorkingDir"] = "";
+        }
+        if (!("SessionID" in $$source)) {
+            this["SessionID"] = "";
         }
         if (!("CreatedAt" in $$source)) {
             this["CreatedAt"] = null;

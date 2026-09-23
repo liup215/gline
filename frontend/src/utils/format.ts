@@ -40,24 +40,28 @@ export function parseToolInput(raw: string | undefined): ToolInput {
 export function getToolHint(name: string, rawInput: string | undefined): string {
   const input = parseToolInput(rawInput);
   switch (name) {
-    case 'read_file':
+    case 'read':
       return input.path ? `View: ${input.path}` : name;
-    case 'write_to_file':
+    case 'write':
       return input.path ? `Write: ${input.path}` : name;
-    case 'replace_in_file':
+    case 'edit':
       return input.path ? `Edit: ${input.path}` : name;
     case 'ls':
       return input.path ? `List: ${input.path}` : name;
     case 'grep':
       return input.regex ? `Search "${input.regex}"${input.path ? ` in ${input.path}` : ''}` : name;
-    case 'list_code_definition_names':
-      return input.path ? `Definitions in ${input.path}` : name;
-    case 'execute_command':
+    case 'glob':
+      return input.pattern ? `Glob: ${input.pattern}` : name;
+    case 'run':
       return input.command ? `Run: ${input.command}` : name;
+    case 'use_skill':
+      return input.skill_name ? `Skill: ${input.skill_name}` : name;
     case 'ask_followup_question':
       return input.question ? `💬 ${input.question}` : name;
     case 'attempt_completion':
       return 'Complete';
+    case 'plan_mode_respond':
+      return 'Plan';
     default:
       return name;
   }
