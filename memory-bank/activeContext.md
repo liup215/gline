@@ -2,6 +2,27 @@
 
 ## Current Focus
 
+### GUI thinking/reasoning 全链路修复（2026-09-23，已部署，commit 99da7b7 + b79c637）
+
+**症状**：GUI 发消息后长时间无任何显示（像卡死）；reasoning 字段（DB `ReasoningContent` 列）完全为空。
+
+**根因（三层叠在一起）**：
+1. **provider 层（主犯）**：`chatDeltaThinking` hook 解析的是 chunk **顶层** `delta`，但所有网关（OpenCode Zen/OpenRouter/DeepSeek 风格）都把 delta 嵌在 **`choices[0].delta`** 里。hook 每次 silent 返回空串 —— thinking 从未流出。之前 9/22 的"已修复"记录是误报：代码存在但从未命中。
+2. **前端层**：`chat:reasoning` handler 要求已存在 streaming assistant bubble，但 bridge 只在模型**文本**到达时才发 `chat:streamStart` —— reasoning 先于 streamStart 到达，全部被丢弃。修：reasoning 事件自己开 bubble；streamStart 防重复；toolStart 保留带 thinking 的 bubble。
+3. **持久层**：`transcriptAccumulator.addEvent` 忽略 partial 事件，而两家 provider（Anthropic + OpenAI 兼容路径）的 thinking **只**以 role="thinking" partial 发出，终态聚合永远是 role="model" —— DB ReasoningContent 永远空。修：partial thinking 事件也累积进 ReasoningContent。
+
+**验证方法（可复用）**：
+- curl 抓包确认网关确实下发 reasoning：`POST opencode.ai/zen/go/v1/chat/completions` 必须带 `x-opencode-session` header（否则 MissingSessionID 错误），形状 `delta.reasoning` + `delta.reasoning_details[].type="reasoning.text"`（点号！）
+- 写临时 live 测试（OPENCODE_API_KEY=~/.gline/config.yaml 的 opencode-go key）跑 `NewLLM("opencode","mimo-v2.5")` → 修复前 0 thinking partials，修复后 34 个
+- 全链路：adkagent `RunWithCallback` + collectCallback → 修复后 22 个 reasoning 回调
+- 新增回归测试 `chat_delta_thinking_test.go`（用真实抓包 JSON 形状）
+
+**其余改动**：AssistantMessage 流式期间自动展开 thinking（脉冲点动画 + 自动滚动），正文开始后自动收起；agent.go 失败路径也发 OnComplete 防 isLoading 卡死。
+
+**注意**：若换了 provider（如 volcano/dashscope 的 kimi-k2.5），thinking 字段形状可能不同（`reasoning_content`），hook 已兼容；若仍为空先用 curl 抓真实 chunk 形状。
+
+---
+
 ### 关闭按钮 → 收进托盘（2026-09-25，已部署）
 
 **行为变更**：点窗口 X 不再退出应用，而是隐藏到托盘；真正退出走托盘右键菜单 Quit。托盘应用标准 UX。

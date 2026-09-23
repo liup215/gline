@@ -1,5 +1,15 @@
 # Progress
 
+## 2026-09-23 — GUI thinking/reasoning 全链路修复 ✅（commit 99da7b7，已部署）
+
+**症状**：GUI 发消息后长时间无显示；DB ReasoningContent 全空。
+
+**根因**：`chatDeltaThinking` 解析 chunk 顶层 `delta`，但真实网关把 delta 嵌在 `choices[0].delta` —— hook 每次静默返回空串，thinking 从未流出（此前 9/22 的"已修复"是误报）。叠加前端丢弃 streamStart 之前的 reasoning 事件、persist 忽略 partial thinking 事件。
+
+**修复**：hook 下钻 choices[0].delta + 兼容 reasoning_content/reasoning.text 点号型；前端 reasoning 事件自开 bubble（streamStart 防重、toolStart 保留 thinking bubble）；persist 累积 partial thinking 进 ReasoningContent；AssistantMessage 流式自动展开 thinking + 脉冲动画；agent 失败路径补发 OnComplete。
+
+**验证**：curl 抓包确认网关下发 reasoning（需 x-opencode-session header）；live 测试 mimo-v2.5 修复后 34 个 thinking partials；全链路 RunWithCallback 22 个 reasoning 回调；新增回归测试（真实 chunk 形状）。两二进制已部署 `C:\Users\22569\bin\`。
+
 ## 2026-09-25 — 关闭按钮收进托盘 ✅（已部署）
 
 **之前行为**：点 X 直接退出整个应用（`unregisterWindow` 发现 windowMap 空 → `PostQuitMessage`，托盘一并退出）。
@@ -29,6 +39,8 @@
 **修复**：不 `AttachWindow`，改 `systemTray.OnClick()` 手动切换（`cmd/gline-gui/main.go` + `cmd/gline/gui.go`）。托盘功能完整保留；alpha2.106 已将此行为改为 opt-in `HideOnFocusLost` 选项，未来升级后可重新评估。
 
 ## 2026-09-25 — chat completions 路径 thinking 提取 ✅（已部署）
+
+> **⚠ 2026-09-23 纠正：该条修复实际无效（误报）。** hook 本身接入了，但解析的是 chunk 顶层 `delta`，而真实网关的 delta 在 `choices[0].delta` —— hook 从未命中，reasoning 依旧全空。真正修复见上方 2026-09-23 条目（commit 99da7b7）。教训：接入 hook 后必须用真实 chunk 形状做单测/live 验证，否则 silent 返回空串完全无感知。
 
 **根因**：OpenAI chat completions 路径（mimo-v2.5 等）`oaiRunStreaming`/`oaiRunNonStreaming` thinking hook 传 nil，`delta.reasoning` 被静默丢弃。
 
