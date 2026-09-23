@@ -1,5 +1,15 @@
 # Progress
 
+## 2026-09-23 — gline TUI 静默失效修复 ✅（commit be9fbf9，已部署）
+
+**症状**：`gline` 命令无报错但不进 TUI。
+
+**根因**：build-all.ps1 给 CLI 构建也传了 `-H=windowsgui`（6805c94 引入的潜在雷）—— windowsgui 子系统进程无控制台，Bubbletea 打开 `CONIN$` 报 "The handle is invalid"，错误写到看不见的 stderr 直接退出。之前部署一直用裸 `go build`（console 子系统）所以没踩雷，今天改用脚本重建后暴露。对照实验：同一个小程序，console 子系统 `CONIN$` OK，windowsgui（含 cmd 启动）必败。
+
+**修复**：build-all.ps1 只给 GUI 入口保留 `-H=windowsgui`，CLI 保持 console 子系统。验证：重建后 gline.exe subsystem=3，TUI 进入 alt screen 正常渲染。
+
+**教训**：给 TUI/CLI 诊断"静默退出"时先查 PE 子系统字段（pe_header+0x5C）：windowsgui 进程的错误输出用户完全看不到。
+
 ## 2026-09-23 — thinking 气泡卡在“等待”态修复 ✅（commit cfc5e7f，已部署）
 
 **症状**：有些 thinking 一直脉动（等待态），实际回合早已结束。
