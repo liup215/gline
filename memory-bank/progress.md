@@ -1,5 +1,13 @@
 # Progress
 
+## 2026-09-23 — 删除 'gline --gui' 重复入口 ✅（commit 83c8f1a，已部署）
+
+**验证后删除**：`gline --gui` 确实能启动完整 GUI（gui.go 无 build tag，被编进每个 CLI 构建），按要求删除，gline-gui.exe 成为唯一 GUI 入口。
+
+**改动**：删 cmd/gline/gui.go + 前端 embed（CLI 74MB→66MB，不再 import Wails，Windows release 也不再需要 CGO）；root.go 移除 --gui flag；bindings 生成改为 `-f "-tags gui" ./cmd/gline-gui`（ChatService 注册在 gline-gui，build tag 会挡扫描，不带 tag 会生成空 bindings 覆盖 chatservice.ts）；build-all.ps1 只同步 dist 到 gline-gui；CI 同步改并去掉 CLI 的 -H=windowsgui。
+
+**验证**：`gline --gui` → unknown flag；TUI 冒烟通过；gline-gui 启动正常。
+
 ## 2026-09-23 — gline TUI 静默失效修复 ✅（commit be9fbf9，已部署）
 
 **症状**：`gline` 命令无报错但不进 TUI。
