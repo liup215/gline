@@ -7,6 +7,7 @@ import (
 	"google.golang.org/adk/v2/session"
 	"google.golang.org/adk/v2/model"
 	"google.golang.org/genai"
+
 )
 
 // partialEvent builds a partial model event carrying one text delta.
@@ -101,4 +102,64 @@ func TestEventError(t *testing.T) {
 	if err == nil || !errors.Is(err, err) || err.Error() != "AUTH" {
 		t.Fatalf("empty msg = %v, want code only", err)
 	}
+}
+
+// thinkingEvent builds a partial thinking-role event carrying one delta.
+func thinkingEvent(text string) *session.Event {
+	return &session.Event{
+		LLMResponse: model.LLMResponse{
+			Content: &genai.Content{Role: "thinking", Parts: []*genai.Part{{Text: text}}},
+			Partial: true,
+		},
+	}
+}
+
+// toolCallAggregate builds a non-partial model event with one function call.
+func toolCallAggregate() *session.Event {
+	return &session.Event{
+		LLMResponse: model.LLMResponse{
+			Content: &genai.Content{Role: "model", Parts: []*genai.Part{
+				{FunctionCall: &genai.FunctionCall{ID: "call-1", Name: "read_file"}},
+			}},
+			TurnComplete: true,
+		},
+	}
+}
+
+// TestBridgeThinkingToolTurnClosesStream covers the thinking → tool-call turn
+// (no answer text): the stream slot must open at the first reasoning delta and
+// close before the tool call is announced, or UIs keyed on the streaming flag
+// keep showing the thinking bubble as still running after the turn ended.
+func TestBridgeThinkingToolTurnClosesStream(t *testing.T) {
+	rec := &recordingCallback{}
+	b := newEventBridge(rec)
+
+	for _, ev := range []*session.Event{
+		thinkingEvent("用户"), thinkingEvent("在思考"),
+		toolCallAggregate(),
+	} {
+		b.dedup.BeginEvent(ev)
+		if err := b.deliver(ev); err != nil {
+			t.Fatalf("deliver: %v", err)
+		}
+	}
+
+	// recordingCallback records: stream_start, reasoning, stream_end,
+	// tool_start:<name> — in callback order.
+	want := []string{"stream_start", "reasoning", "reasoning", "stream_end", "tool_start:read_file"}
+	if got := rec.order; !equalStrings(got, want) {
+		t.Fatalf("event order = %v, want %v", got, want)
+	}
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }

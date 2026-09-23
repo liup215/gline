@@ -263,11 +263,18 @@ export function useChat(onLoadHistory: () => void, onLoadStatus: () => void, get
       const seq = ev?.data?.seq ?? 0;
       ordered(seq, () => {
         setMessages(prev => {
-          const last = prev[prev.length - 1];
-          if (last && last.role === 'assistant' && last.streaming) {
-            return [...prev.slice(0, -1), { ...last, streaming: false }];
-          }
-          return prev;
+          // At most one slot should be open; closing every streaming assistant
+          // message is the safe behaviour and heals any earlier turn that
+          // missed its streamEnd.
+          let changed = false;
+          const updated = prev.map(m => {
+            if (m.role === 'assistant' && m.streaming) {
+              changed = true;
+              return { ...m, streaming: false };
+            }
+            return m;
+          });
+          return changed ? updated : prev;
         });
       });
     });
@@ -288,14 +295,24 @@ export function useChat(onLoadHistory: () => void, onLoadStatus: () => void, get
       ordered(ev?.data?.seq ?? 0, () => {
         setIsLoading(false);
         setMessages(prev => {
-          const last = prev[prev.length - 1];
-          if (last && last.role === 'assistant' && last.streaming) {
-            if (!last.content.trim()) {
-              return prev.slice(0, -1);
-            }
-            return [...prev.slice(0, -1), { ...last, streaming: false }];
+          // Finalize every streaming assistant message — earlier turns that
+          // ended in a tool call never get their own streamEnd-driven close
+          // and would otherwise leave the thinking indicator pulsing forever.
+          const updated = prev.map(m =>
+            m.role === 'assistant' && m.streaming ? { ...m, streaming: false } : m
+          );
+          const last = updated[updated.length - 1];
+          // Drop a trailing bubble that carries nothing at all; keep it when
+          // it has thinking (that is the visible record of the turn).
+          if (
+            last &&
+            last.role === 'assistant' &&
+            !last.content.trim() &&
+            !(last.thinking && last.thinking.trim())
+          ) {
+            return updated.slice(0, -1);
           }
-          return prev;
+          return updated;
         });
         onLoadHistory();
         onLoadStatus();

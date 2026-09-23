@@ -52,6 +52,15 @@ func (b *eventBridge) deliver(ev *session.Event) error {
 			// emit only the partial deltas, never the aggregate re-send.
 			if ev.Partial || !b.dedup.SkipText(ev) {
 				if ev.Partial {
+					// Reasoning also opens the stream slot: thinking+tool-call
+					// turns (the common agent shape — no answer text before the
+					// calls) otherwise never emit OnStreamStart/OnStreamEnd, and
+					// UIs keyed on the streaming flag would show the thinking
+					// bubble as still running after the turn is over.
+					if !b.started {
+						b.cb.OnStreamStart()
+						b.started = true
+					}
 					b.cb.OnReasoning(part.Text)
 					if err := stuckErr(b.stuck.observeOutput(part.Text)); err != nil {
 						return err
