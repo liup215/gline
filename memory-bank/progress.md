@@ -1,5 +1,13 @@
 # Progress
 
+## 2026-09-23 — thinking 气泡卡在“等待”态修复 ✅（commit cfc5e7f，已部署）
+
+**症状**：有些 thinking 一直脉动（等待态），实际回合早已结束。
+
+**根因**：bridge 的 stream slot 只在**文本**分支开启；thinking→工具调用、无正文的回合（agent 最常见形态）永远不发 OnStreamEnd —— 每个这种回合泄漏一个 streaming=true 的气泡，且 chat:complete 只处理最后一条，泄漏活到整个 run 结束。
+
+**修复**：bridge 首个 reasoning delta 开启 stream slot（OnStreamStart 先于 OnReasoning，排序保证对无文本回合也成立）；前端 streamEnd/complete 兜底 finalize 所有 streaming 气泡（complete 不再丢弃 thinking-only 气泡）。新增 TestBridgeThinkingToolTurnClosesStream 回归测试。
+
 ## 2026-09-23 — GUI thinking/reasoning 全链路修复 ✅（commit 99da7b7，已部署）
 
 **症状**：GUI 发消息后长时间无显示；DB ReasoningContent 全空。
