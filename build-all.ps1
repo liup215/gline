@@ -20,12 +20,13 @@ if (-not (Get-Command wails3 -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-Push-Location "$PSScriptRoot\cmd\gline"
-    cmd /c "wails3 generate bindings --ts -d ..\..\frontend\bindings"
-    if ($LASTEXITCODE -ne 0) {
-        Write-Warning "Bindings generation reported issues, but continuing..."
-    }
-Pop-Location
+# Services (ChatService) are registered in cmd/gline-gui (the only GUI entry
+# since 'gline --gui' was removed). Its main.go carries a 'gui' build tag, so
+# the generator needs -f "-tags gui" to see it.
+cmd /c "wails3 generate bindings -f \"-tags gui\" --ts -d frontend\bindings .\cmd\gline-gui"
+if ($LASTEXITCODE -ne 0) {
+    Write-Warning "Bindings generation reported issues, but continuing..."
+}
 
 # ===========================================================================
 # 2. Build frontend (production, always)
@@ -51,7 +52,9 @@ Pop-Location
 Write-Host "`n[3/6] Syncing frontend to embed paths..." -ForegroundColor Yellow
 $src = "$PSScriptRoot\frontend\dist"
 
-foreach ($dstRel in @("cmd\gline\frontend\dist", "cmd\gline-gui\frontend\dist")) {
+# The CLI no longer embeds the frontend (the Cobra GUI entry was removed);
+# only the standalone gline-gui entry needs the web assets.
+foreach ($dstRel in @("cmd\gline-gui\frontend\dist")) {
     $dst = "$PSScriptRoot\$dstRel"
     if (Test-Path $dst) {
         Remove-Item -Recurse -Force "$dst\*" -ErrorAction SilentlyContinue
