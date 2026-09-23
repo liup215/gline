@@ -548,6 +548,7 @@ func (a *Agent) RunWithCallback(ctx context.Context, prompt string, cb glineagen
 				a.finishTask("completed")
 				a.extractFactsAsync(transcriptFromMessages(acc.messages()))
 			} else {
+				cb.OnComplete() // always emit so frontend clears isLoading
 				a.finishTask("failed")
 			}
 			return a.sessionID, err
@@ -555,6 +556,7 @@ func (a *Agent) RunWithCallback(ctx context.Context, prompt string, cb glineagen
 		if attempt >= maxStuckRecoveries {
 			gaveUp := fmt.Errorf("%w (gave up after %d recovery attempt(s))", err, attempt)
 			cb.OnError(gaveUp)
+			cb.OnComplete() // always emit so frontend clears isLoading
 			return a.sessionID, gaveUp
 		}
 		log.Infof("agent loop stuck (%s); telling the model and resuming (attempt %d of %d)",
