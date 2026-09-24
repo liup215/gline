@@ -97,6 +97,7 @@ type ChatService struct {
 	mu          sync.Mutex
 	workingDir  string // user-selected project directory; empty means not selected yet
 	agentDone   chan struct{} // closed when the agent goroutine exits
+	streamSeq   atomic.Uint64 // monotonic stream-event seq, shared by every run (see guiStreamCallback)
 }
 
 // reloadRules reports that live rule reloading is unavailable: the ADK
@@ -537,6 +538,13 @@ func (c *ChatService) GetTaskSummary(taskID string) (*storage.TaskRecord, []stor
 func (c *ChatService) DeleteTask(taskID string) error {
 	return c.Backend.DeleteTask(taskID)
 }
+// newChatRunCallback creates the stream callback for one SendMessage run. It
+// shares the ChatService-level seq counter so seq numbers stay monotonic
+// across runs (see guiStreamCallback.seq for the regression this prevents).
+func (c *ChatService) newChatRunCallback() *guiStreamCallback {
+	return &guiStreamCallback{app: c.App, svc: c, seq: &c.streamSeq}
+}
+
 func (c *ChatService) SendMessage(prompt string) error {
 	if c.Backend.ag == nil {
 		return fmt.Errorf("agent not initialised")
@@ -574,7 +582,7 @@ func (c *ChatService) SendMessage(prompt string) error {
 	c.agentDone = make(chan struct{})
 	c.mu.Unlock()
 
-	cb := &guiStreamCallback{app: c.App, svc: c}
+	cb := c.newChatRunCallback()
 
 	go func(done chan struct{}) {
 		defer close(done)
@@ -802,18 +810,28 @@ type guiStreamCallback struct {
 	// reach the JS listeners out of order — the GUI rendered scrambled text
 	// while the persisted transcript stayed clean. The frontend reorders by
 	// seq before applying (useChat.ts ordered dispatcher).
-	seq atomic.Uint64
+	//
+	// seq points at the ChatService-level counter, NOT a per-callback one:
+	// the frontend registers its ordered dispatcher once per app lifetime
+	// and keeps a single monotonic `expected` forever. A per-run counter
+	// restarts at 0 on every SendMessage, so from the second message on,
+	// every event had seq < expected and was swallowed as "stale" — the GUI
+	// froze on "AI is thinking..." while the run completed and persisted
+	// fine (recurring 2026-09-24 incident).
+	seq *atomic.Uint64
 }
 
 // emit sends one stream event with the next sequence number attached.
 // All events that participate in the stream's visual order (content,
 // reasoning, stream start/end, tool activity, system messages, followup,
 // completion) must go through here.
+func (g *guiStreamCallback) nextSeq() uint64 { return g.seq.Add(1) }
+
 func (g *guiStreamCallback) emit(name string, payload map[string]any) {
 	if payload == nil {
 		payload = map[string]any{}
 	}
-	payload["seq"] = g.seq.Add(1)
+	payload["seq"] = g.nextSeq()
 	g.app.Event.Emit(name, payload)
 }
 

@@ -136,3 +136,30 @@ func TestChatServiceClearConversation(t *testing.T) {
 		t.Fatalf("workingDir = %q, want preserved", ag.workingDir)
 	}
 }
+
+
+// TestStreamSeqMonotonicAcrossRuns guards the 2026-09-24 "GUI froze on 'AI is
+// thinking...'" regression: the frontend's ordered dispatcher keeps a single
+// monotonic `expected` counter for the app lifetime, so the Go-side seq must
+// NOT restart at 0 for each SendMessage. A per-run counter made every event of
+// the second and later messages have seq < expected, so the dispatcher
+// swallowed them as stale duplicates — nothing rendered while the agent run
+// completed and persisted normally (DB had the full answer).
+func TestStreamSeqMonotonicAcrossRuns(t *testing.T) {
+	c := newChatService(t)
+
+	// Two callbacks created the way SendMessage does (one per run) must draw
+	// from one shared, strictly increasing counter.
+	cb1 := c.newChatRunCallback()
+	s1 := cb1.nextSeq()
+	s2 := cb1.nextSeq()
+	cb2 := c.newChatRunCallback()
+	s3 := cb2.nextSeq()
+
+	if !(s1 < s2 && s2 < s3) {
+		t.Fatalf("seq not strictly increasing across runs: %d, %d, %d", s1, s2, s3)
+	}
+	if s3 <= s1 {
+		t.Fatal("second run reused seq numbers; frontend ordered dispatcher would swallow run 2")
+	}
+}

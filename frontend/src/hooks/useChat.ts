@@ -8,6 +8,9 @@ export function useChat(onLoadHistory: () => void, onLoadStatus: () => void, get
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  // Armed by setupEventListeners; re-anchors the ordered dispatcher before each
+  // send so a new run's events are never swallowed as stale (see below).
+  const resetStreamOrderRef = useRef<(() => void) | null>(null);
 
   const [followup, setFollowup] = useState<{ question: string; options: string[] } | null>(null);
 
@@ -91,6 +94,9 @@ export function useChat(onLoadHistory: () => void, onLoadStatus: () => void, get
 
     // Show STOP button immediately — don't wait for the LLM to start streaming.
     setIsLoading(true);
+    // Re-anchor the seq dispatcher: each SendMessage starts a fresh stream, and
+    // events from the previous run must not wedge this one's ordering.
+    resetStreamOrderRef.current?.();
 
     // Build display message with file indicators
     const fileRefs = getFileRefs?.() || [];
@@ -169,6 +175,16 @@ export function useChat(onLoadHistory: () => void, onLoadStatus: () => void, get
       } else if (seq > expected) {
         stash.set(seq, fn);
       }
+    };
+    // Re-anchor before each user send: the Go side starts a fresh stream and
+    // (before the ChatService-level seq counter fix) reused low seq numbers,
+    // which this dispatcher would treat as stale duplicates and swallow —
+    // the UI then froze on "AI is thinking..." while the run completed and
+    // persisted fine. Clearing `expected` lets the first event of the new
+    // run re-anchor, and clearing the stash drops any stale leftovers.
+    resetStreamOrderRef.current = () => {
+      expected = -1;
+      stash.clear();
     };
 
     Events.On('chat:streamStart', (ev: any) => {
