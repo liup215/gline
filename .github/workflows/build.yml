@@ -41,9 +41,12 @@ jobs:
       - name: Install Linux dependencies
         run: |
           sudo apt-get update
-          # Wails v3 (alpha.63) Linux bindings are cgo against GTK3 + WebKitGTK
-          # 4.1 — go test ./... compiles internal/gui, so these are required.
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libsoup-3.0-dev libayatana-appindicator3-dev build-essential pkg-config npm
+          # Two cgo consumers with different deps:
+          # - wails3 CLI (alpha.95): gtk4 + webkitgtk-6.0
+          # - wails v3 lib (alpha.63, compiled via internal/gui in tests): gtk3 + webkit2gtk-4.1
+          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev \
+            libgtk-3-dev libwebkit2gtk-4.1-dev libsoup-3.0-dev libayatana-appindicator3-dev \
+            build-essential pkg-config npm
 
       - name: Install wails3 CLI
         run: |
