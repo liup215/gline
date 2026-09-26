@@ -1,5 +1,30 @@
 # Progress
 
+## 2026-09-25 — CI workflow 同时编译 CLI + GUI ✅（待 push 验证）
+
+**背景**：`.github/workflows/build.yml` 的 build job 此前只编译 `./cmd/gline`（CLI），GUI（gline-gui.exe）仅靠本地 `build-all.ps1` 手工构建，Release 里没有 GUI 产物。
+
+**改动（build.yml）**：
+1. **新增 Sync 步骤**（frontend build 之后）：把 `frontend/dist` 复制到 `cmd/gline-gui/frontend/dist`（GUI `//go:embed all:frontend/dist` 需要；CLI 已不 embed 前端），并复制 `cmd/gline/build/appicon.png` → `cmd/gline-gui/build/appicon.png`（`//go:embed build/appicon.png`）。
+2. **Build 步骤双编译**：Windows 两个二进制都 `CGO_ENABLED=0`（已核实 wails v3.0.0-alpha.63 Windows 路径纯 syscall 无 cgo，本地干跑验证通过；CLI 保持无 `-H=windowsgui`，GUI 加 `-H=windowsgui` + `-tags gui`）；macOS 两个二进制均默认 CGO（WebKit 需要）。
+3. **产物命名**：CLI `gline-{platform}`，GUI `gline-gui-{platform}`（如 `gline-gui-windows-amd64.exe`）；各带 .sha256；upload path 改为 `bin/gline*` 以同时匹配两者。
+4. **Release/Snapshot 同步修改**：
+   - `Prepare release files` 的 find 改为单一 `-name "gline*"`（GUI 文件共享该前缀，同时覆盖 .sha256 边车文件）。
+   - **修 bug**：SHA256SUMS 原本用 `sha256sum gline-darwin* gline-windows*`，但 GUI 产物前缀是 `gline-gui-`，glob 匹配不到 —— GUI 二进制的校验和会被漏掉。改为 `find -name "gline*" ! -name "*.sha256" | sort | xargs sha256sum`（同时排除旧逻辑里“校验 .sha256 文件自己”的杂讯，排序保证确定性）；本地干跑模拟验证输出含全部 4 个二进制。
+   - Release/Snapshot 说明增加 Windows GUI 与 macOS GUI 下载条目，且 macOS GUI 附 `xattr -d com.apple.quarantine` Gatekeeper 提示（无签名构建）；build summary 表格标注 CLI + GUI。
+
+**注意**：macOS GUI 构建（darwin-arm64）未在 CI 实跑验证过，若失败多半是 runner 上 WebKit/CGO 环境差异。
+
+## 2026-09-24 — 流式 seq 跨 run 重置 → GUI 永久 "AI is thinking..." 修复 ✅（commit 74d57a4，已部署）
+
+**症状（复发）**：GUI 第二条及后续消息永久停在 "AI is thinking..."，无任何渲染；DB 里 agent loop 已完成、回答已完整持久化。
+
+**根因**：a2daf24 引入 seq 重排时生命周期错位 —— Go 端 `guiStreamCallback` 每次 `SendMessage` 新建、seq 从 0 重计；前端 ordered dispatcher 只在 App 挂载时注册一次、`expected` 单调递增永不回落。第二条消息起所有事件 seq < expected 被当 stale duplicate 吞掉。偶发"正常"是 `setupEventListeners` 重注册时重置了 `expected`（副作用掩盖）。
+
+**修复**：① seq 计数器上移到 `ChatService.streamSeq`（app 级共享，`newChatRunCallback()` 构造）；② 前端 `handleSubmit` 发送前 re-anchor（`expected=-1` + 清 stash）防御纵深。回归测试 `TestStreamSeqMonotonicAcrossRuns`。
+
+**教训**：seq 重排机制的两侧生命周期必须对齐（前端 dispatcher 只注册一次 → seq 必须 app 级单调）；诊断"后端完成、前端冻结"先查 DB 确认后端无恙，再审事件消费端的去重逻辑。
+
 ## 2026-09-23 — 删除 'gline --gui' 重复入口 ✅（commit 83c8f1a，已部署）
 
 **验证后删除**：`gline --gui` 确实能启动完整 GUI（gui.go 无 build tag，被编进每个 CLI 构建），按要求删除，gline-gui.exe 成为唯一 GUI 入口。

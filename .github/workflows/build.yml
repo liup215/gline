@@ -60,6 +60,17 @@ jobs:
       - name: Build frontend
         run: cd frontend && node ./node_modules/typescript/bin/tsc && node ./node_modules/vite/bin/vite.js build --mode production
 
+      # Sync frontend build output into the standalone GUI entry (gline-gui
+      # embeds it via //go:embed all:frontend/dist; the CLI no longer embeds).
+      - name: Sync frontend to GUI embed directories
+        shell: bash
+        run: |
+          mkdir -p cmd/gline-gui/frontend/dist
+          rm -rf cmd/gline-gui/frontend/dist
+          cp -r frontend/dist cmd/gline-gui/frontend/dist
+          mkdir -p cmd/gline-gui/build
+          cp -f cmd/gline/build/appicon.png cmd/gline-gui/build/appicon.png
+
       - name: Run tests
         run: go test -v ./...
 
@@ -137,31 +148,41 @@ jobs:
             # Console subsystem: the CLI runs the Bubbletea TUI, which opens
             # CONIN$ directly — invalid for a windowsgui-subsystem process.
             GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$ldflags_base" -o "${binary}.exe" ./cmd/gline
+            # GUI: Wails v3 on Windows is pure syscall (no cgo). windowsgui
+            # subsystem keeps the terminal window hidden.
+            GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -tags gui -ldflags "$ldflags_base -H=windowsgui" -o "bin/gline-gui.exe" ./cmd/gline-gui
           else
             # macOS requires CGO for Wails WebKit bindings
             go build -ldflags "$ldflags_base" -o "$binary" ./cmd/gline
+            go build -tags gui -ldflags "$ldflags_base" -o "bin/gline-gui" ./cmd/gline-gui
           fi
 
       - name: Rename & generate checksum
         shell: bash
         run: |
           asset_name="gline-${{ matrix.name }}"
+          gui_asset_name="gline-gui-${{ matrix.name }}"
           cd bin
           if [[ "${{ matrix.name }}" == windows-* ]]; then
             mv gline.exe "${asset_name}.exe"
+            mv gline-gui.exe "${gui_asset_name}.exe"
             sha256sum "${asset_name}.exe" > "${asset_name}.sha256"
-            cat "${asset_name}.sha256"
+            sha256sum "${gui_asset_name}.exe" > "${gui_asset_name}.sha256"
+            cat "${asset_name}.sha256" "${gui_asset_name}.sha256"
           else
             mv gline "$asset_name"
+            mv gline-gui "$gui_asset_name"
             sha256sum "$asset_name" > "${asset_name}.sha256"
-            cat "${asset_name}.sha256"
+            sha256sum "$gui_asset_name" > "${gui_asset_name}.sha256"
+            cat "${asset_name}.sha256" "${gui_asset_name}.sha256"
           fi
 
-      - name: Upload binary
+      - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:
           name: gline-${{ matrix.name }}
-          path: bin/gline-${{ matrix.name }}*
+          # gline-{name}* (CLI) + gline-gui-{name}* (GUI) + *.sha256
+          path: bin/gline*
           if-no-files-found: error
 
   build-summary:
@@ -188,8 +209,8 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Platform | Architecture | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|----------|-------------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| macOS    | ARM64       | ✅ |" >> $GITHUB_STEP_SUMMARY
-          echo "| Windows  | AMD64       | ✅ |" >> $GITHUB_STEP_SUMMARY
+          echo "| macOS    | ARM64 (CLI + GUI) | ✅ |" >> $GITHUB_STEP_SUMMARY
+          echo "| Windows  | AMD64 (CLI + GUI) | ✅ |" >> $GITHUB_STEP_SUMMARY
 
   release:
     name: Create Release
@@ -215,14 +236,13 @@ jobs:
         shell: bash
         run: |
           mkdir -p release
-          find artifacts -type f \( -name "gline-*" -o -name "*.sha256" \) -exec cp {} release/ \;
+          # All CLI + GUI binaries and their .sha256 files share the gline* prefix.
+          find artifacts -type f -name "gline*" -exec cp {} release/ \;
           cd release
           ls -la
-          if command -v sha256sum &> /dev/null; then
-            sha256sum gline-darwin-* gline-windows-* > SHA256SUMS
-          elif command -v shasum &> /dev/null; then
-            shasum -a 256 gline-darwin-* gline-windows-* > SHA256SUMS
-          fi
+          # Checksum every binary (CLI + GUI); skip the .sha256 sidecar files
+          # themselves. Sort for deterministic ordering.
+          find . -maxdepth 1 -type f -name "gline*" ! -name "*.sha256" | sed 's|^\./||' | sort | xargs sha256sum > SHA256SUMS
           cat SHA256SUMS
 
       - name: Generate changelog
@@ -260,8 +280,19 @@ jobs:
             ```
             > Note: Intel Mac (amd64) users can build from source: `go build ./cmd/gline`
 
-            ### Windows
+            ### Windows (CLI)
             Download `gline-windows-amd64.exe` and place it in your PATH.
+
+            ### Windows (GUI desktop app)
+            Download `gline-gui-windows-amd64.exe` and run it directly.
+
+            ### macOS (GUI desktop app)
+            Download `gline-gui-darwin-arm64`, then run:
+            ```bash
+            chmod +x gline-gui-darwin-arm64
+            xattr -d com.apple.quarantine gline-gui-darwin-arm64  # unsigned build, bypass Gatekeeper
+            ./gline-gui-darwin-arm64
+            ```
 
             ## Checksums
             See `SHA256SUMS` file for checksums of all binaries.
@@ -295,14 +326,13 @@ jobs:
         shell: bash
         run: |
           mkdir -p release
-          find artifacts -type f \( -name "gline-*" -o -name "*.sha256" \) -exec cp {} release/ \;
+          # All CLI + GUI binaries and their .sha256 files share the gline* prefix.
+          find artifacts -type f -name "gline*" -exec cp {} release/ \;
           cd release
           ls -la
-          if command -v sha256sum &> /dev/null; then
-            sha256sum gline-darwin-* gline-windows-* > SHA256SUMS
-          elif command -v shasum &> /dev/null; then
-            shasum -a 256 gline-darwin-* gline-windows-* > SHA256SUMS
-          fi
+          # Checksum every binary (CLI + GUI); skip the .sha256 sidecar files
+          # themselves. Sort for deterministic ordering.
+          find . -maxdepth 1 -type f -name "gline*" ! -name "*.sha256" | sed 's|^\./||' | sort | xargs sha256sum > SHA256SUMS
           cat SHA256SUMS
 
       - name: Generate changelog
@@ -339,8 +369,19 @@ jobs:
             sudo mv gline-darwin-arm64 /usr/local/bin/gline
             ```
 
-            ### Windows
+            ### Windows (CLI)
             Download `gline-windows-amd64.exe` and place it in your PATH.
+
+            ### Windows (GUI desktop app)
+            Download `gline-gui-windows-amd64.exe` and run it directly.
+
+            ### macOS (GUI desktop app)
+            Download `gline-gui-darwin-arm64`, then run:
+            ```bash
+            chmod +x gline-gui-darwin-arm64
+            xattr -d com.apple.quarantine gline-gui-darwin-arm64  # unsigned build, bypass Gatekeeper
+            ./gline-gui-darwin-arm64
+            ```
           files: release/*
           draft: false
           prerelease: true
