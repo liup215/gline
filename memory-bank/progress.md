@@ -1,6 +1,6 @@
 # Progress
 
-## 2026-09-25 — CI workflow 同时编译 CLI + GUI ✅（待 push 验证）
+## 2026-09-25 — CI workflow 同时编译 CLI + GUI ✅（已验证全绿，run 36219038359）
 
 **背景**：`.github/workflows/build.yml` 的 build job 此前只编译 `./cmd/gline`（CLI），GUI（gline-gui.exe）仅靠本地 `build-all.ps1` 手工构建，Release 里没有 GUI 产物。
 
@@ -13,7 +13,13 @@
    - **修 bug**：SHA256SUMS 原本用 `sha256sum gline-darwin* gline-windows*`，但 GUI 产物前缀是 `gline-gui-`，glob 匹配不到 —— GUI 二进制的校验和会被漏掉。改为 `find -name "gline*" ! -name "*.sha256" | sort | xargs sha256sum`（同时排除旧逻辑里“校验 .sha256 文件自己”的杂讯，排序保证确定性）；本地干跑模拟验证输出含全部 4 个二进制。
    - Release/Snapshot 说明增加 Windows GUI 与 macOS GUI 下载条目，且 macOS GUI 附 `xattr -d com.apple.quarantine` Gatekeeper 提示（无签名构建）；build summary 表格标注 CLI + GUI。
 
-**注意**：macOS GUI 构建（darwin-arm64）未在 CI 实跑验证过，若失败多半是 runner 上 WebKit/CGO 环境差异。
+**CI 调试过程（连续修三处才全绿）**：
+1. **Test job 红**：`internal/gui [build failed]` —— wails v3 lib（alpha.63）Linux cgo 要 **GTK3 系**（`pkg-config gtk+-3.0 webkit2gtk-4.1 libsoup-3.0`），而 workflow 只装了 `libgtk-4-dev libwebkitgtk-6.0-dev`。修复补装 `libgtk-3-dev libwebkit2gtk-4.1-dev libsoup-3.0-dev libayatana-appindicator3-dev`。
+2. **二次红**：反过来 —— **wails3 CLI 工具本身**（alpha.95）编译要 `gtk4 + webkitgtk-6.0`。两套依赖都要，最终 apt 同时装 gtk4/webkit6 + gtk3/webkit2gtk-4.1 两组。
+3. **三次红**：Build job `all:frontend/dist: no matching files found` —— sync 步骤只加在 Test job，Build job 漏了；补上时又漏 `mkdir -p`（`cmd/gline-gui/frontend/` 不在 git 里，cp 无父目录）。
+4. **验证**：run 36219038359 全绿；snapshot release 含全部 4 个二进制（gline/gline-gui × windows/darwin）+ SHA256SUMS 覆盖正确；手动删掉旧 snapshot 残留资产 gline.exe（action-gh-release 不自动清理）。
+
+**遗留**：bin/gline.exe（70MB）被 git 追踪，push 时 GitHub 报 >50MB 警告，建议 gitignore bin/。
 
 ## 2026-09-24 — 流式 seq 跨 run 重置 → GUI 永久 "AI is thinking..." 修复 ✅（commit 74d57a4，已部署）
 
