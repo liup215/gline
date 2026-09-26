@@ -19,7 +19,7 @@
 3. **三次红**：Build job `all:frontend/dist: no matching files found` —— sync 步骤只加在 Test job，Build job 漏了；补上时又漏 `mkdir -p`（`cmd/gline-gui/frontend/` 不在 git 里，cp 无父目录）。
 4. **验证**：run 36219038359 全绿；snapshot release 含全部 4 个二进制（gline/gline-gui × windows/darwin）+ SHA256SUMS 覆盖正确；手动删掉旧 snapshot 残留资产 gline.exe（action-gh-release 不自动清理）。
 
-**遗留**：bin/gline.exe（70MB）被 git 追踪，push 时 GitHub 报 >50MB 警告，建议 gitignore bin/。
+**遗留**：~~bin/gline.exe（70MB）被 git 追踪~~ 已清理（bb4d6f7）：`git rm --cached bin/gline.exe server.err server.log start_server.py` + .gitignore 补 server 日志/demo-spa；随 **v0.0.4 tag** 发布验证通过（run 36223462830 全绿，Release v0.0.4 含 4 个二进制 + SHA256SUMS，CLI 版本号由 tag 注入）。
 
 ## 2026-09-24 — 流式 seq 跨 run 重置 → GUI 永久 "AI is thinking..." 修复 ✅（commit 74d57a4，已部署）
 
