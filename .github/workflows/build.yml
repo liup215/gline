@@ -140,7 +140,8 @@ jobs:
         shell: bash
         run: |
           rm -rf cmd/gline-gui/frontend/dist
-          cp -r frontend/dist cmd/gline-gui/frontend/dist
+          mkdir -p cmd/gline-gui/frontend/dist
+          cp -r frontend/dist/. cmd/gline-gui/frontend/dist/
           cp -f cmd/gline/build/appicon.png cmd/gline-gui/build/appicon.png
 
       - name: Build Go binary
