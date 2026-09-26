@@ -134,6 +134,15 @@ jobs:
       - name: Build frontend
         run: cd frontend && node ./node_modules/typescript/bin/tsc && node ./node_modules/vite/bin/vite.js build --mode production
 
+      # Sync frontend build output into the standalone GUI entry (gline-gui
+      # embeds it via //go:embed all:frontend/dist; the CLI no longer embeds).
+      - name: Sync frontend to GUI embed directories
+        shell: bash
+        run: |
+          rm -rf cmd/gline-gui/frontend/dist
+          cp -r frontend/dist cmd/gline-gui/frontend/dist
+          cp -f cmd/gline/build/appicon.png cmd/gline-gui/build/appicon.png
+
       - name: Build Go binary
         shell: bash
         run: |
