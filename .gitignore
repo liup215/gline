@@ -36,3 +36,9 @@ Thumbs.db
 
 # Temp files
 tmp/
+
+# Runtime artifacts (local server logs, dev tooling)
+server.err
+server.log
+start_server.py
+demo-spa/
